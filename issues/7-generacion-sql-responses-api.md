@@ -2,7 +2,7 @@
 id: 7
 title: Generar SQL con la Responses API de OpenAI
 type: feat
-status: open
+status: refined
 parent: 1
 created: 2026-10-19
 ---
@@ -13,17 +13,17 @@ Traducir la pregunta del usuario a un SQL que la responda con los datos de `data
 ## Scope
 - In:
   - **Módulo LLM:** el único lugar del código que llama a OpenAI (`docs/ARCHITECTURE.md`, *LLM layer*). En este issue tiene dos cosas:
-    - una función que arma el cliente a partir de `OPENAI_API_KEY` y `OPENAI_MODEL`;
+    - una función que arma el cliente a partir de `OPENAI_API_KEY` y `OPENAI_MODEL`, y lanza un error que nombra la variable que falta;
     - una función que hace un request a la Responses API con Structured Outputs (JSON schema estricto) y devuelve el objeto ya parseado. La reutiliza #8 para los insights.
-  - Dependencias nuevas, en `backend`: `openai` y el motor de plantillas (pendiente: pregunta 1). Ninguna otra (p. ej., no `zod`).
+  - Dependencias nuevas, en `backend`: `openai` y `liquidjs` (LiquidJS, el motor de plantillas). Ninguna otra (p. ej., no `zod`).
   - `OPENAI_API_KEY` y `OPENAI_MODEL` en `.env.example`, con placeholders.
   - **Contexto de esquema:** una función que arma el texto que describe los datos al LLM, a partir de la función del catálogo de #5 (tablas, columnas y relaciones de `meta_*`, sin los índices). Es reutilizable: #12 se lo pasa al juez.
-  - **Prompts en archivos de plantilla** (uno de sistema y uno de usuario), separados del código y renderizados con el motor elegido (pendiente: pregunta 1). Es el pedido del usuario en el epic: "usar algo como Jinja2 para los prompts", como los `.j2` del proyecto de referencia (`{{ }}`, `{% if %}`, `{% for %}`).
-  - **Bucle generar → ejecutar → reintentar:** genera el SQL, lo ejecuta con la función de #6 y, si #6 devuelve un error, vuelve a generar con ese feedback, hasta el tope de intentos (pendiente: pregunta 2).
+  - **Prompts en archivos de plantilla** (uno de sistema y uno de usuario), separados del código y renderizados con LiquidJS. Es el pedido del usuario en el epic: "usar algo como Jinja2 para los prompts". LiquidJS tiene la misma sintaxis base que los `.j2` del proyecto de referencia (`{{ }}`, `{% if %}`, `{% for %}`). Se usa con su comportamiento por defecto, que no escapa HTML, y no se le activa el escape (`outputEscape`), para que la pregunta y el SQL lleguen literales.
+  - **Bucle generar → ejecutar → reintentar:** genera el SQL, lo ejecuta con la función de #6 y, si #6 devuelve un error, vuelve a generar con ese feedback. El tope es de 3 intentos en total (el primero y 2 reintentos), fijado en una constante del código.
   - Una línea de log por paso (generación y ejecución de cada intento), con su duración.
   - Tests unitarios offline, con un cliente OpenAI falso y SQLite en archivos temporales. El cliente falso queda como helper de tests reutilizable, porque también lo usan #8, #9, #11 y #12.
 - NOT in:
-  - `POST /api/chat`, crear el cliente en `server.ts` / `buildApp`, persistir el turno y el mensaje que ve el usuario cuando algo falla: son de #8. Hasta #8, `npm run dev` no necesita las variables de OpenAI.
+  - `POST /api/chat`, crear el cliente al arrancar el backend (`server.ts` / `buildApp`), persistir el turno y el mensaje que ve el usuario cuando algo falla: son de #8. Este issue no toca `server.ts`, así que hasta #8 `npm run dev` arranca sin las variables de OpenAI.
   - El paso de insights (narrativa y sugerencias) y el bloque `table`: #8. El gráfico: #9.
   - Clasificar la pregunta (respondible, necesita aclaración, fuera de alcance): #10. La salida del LLM en este paso no tiene una opción de "no se puede responder".
   - El historial de la conversación en los prompts: #11.
@@ -38,8 +38,8 @@ Traducir la pregunta del usuario a un SQL que la responda con los datos de `data
   4. Si #6 devuelve éxito, la función devuelve el SQL, `columns` y `rows`.
 - Reintentos:
   - Si #6 devuelve un error (`guard`, `sql` o `row_limit`), se genera de nuevo. El prompt del reintento lleva los intentos fallidos anteriores de esa misma pregunta, en orden, cada uno con su SQL y el `message` de #6.
-  - El tope cuenta los intentos en total, incluido el primero (pendiente: pregunta 2). `row_limit` consume el mismo tope que los demás errores.
-  - Si se agota el tope, la función devuelve una falla con el último SQL y su error. No lanza.
+  - El tope es de 3 intentos en total, incluido el primero: como mucho, 2 reintentos. `row_limit` consume el mismo tope que los demás errores.
+  - Si fallan los 3 intentos, la función devuelve una falla con el SQL del tercero y su error. No lanza.
 - Contexto de esquema:
   - Por tabla: nombre y descripción. Por columna: nombre, tipo (`data_type`) y descripción. Por relación: `from_table.from_column → to_table.to_column` y su descripción.
   - Solo entran las tablas con fila en `meta_tables`. Quedan afuera las columnas de una tabla sin esa fila, y las relaciones que la mencionan. Ese filtro y el orden (el de carga de los metadatos) ya los aplica la función del catálogo de #5.
@@ -54,22 +54,22 @@ Traducir la pregunta del usuario a un SQL que la responda con los datos de `data
   - **Resultado vacío (0 filas):** éxito, sin reintento. Lo narra #8.
   - **El LLM devuelve un `sql` vacío o con un fence de markdown:** #6 lo rechaza como `guard` y se reintenta como cualquier otro error.
   - **El LLM repite un SQL que ya falló:** cuenta como otro intento fallido. No hay chequeo de duplicados.
-  - **Pregunta o SQL fallido con `{{ }}`, `{% %}`, comillas, `<` o `>`:** llegan literales al prompt. Van como variables de la plantilla, nunca como parte de ella, y el render no escapa HTML.
-  - **`meta_tables` sin filas:** sin tratamiento especial. El LLM recibe un contexto vacío y lo normal es que se agote el tope. Filtrar esas preguntas antes es tarea de la clasificación (#10).
+  - **Pregunta o SQL fallido con `{{ }}`, `{% %}`, comillas, `<` o `>`:** llegan literales al prompt. Van como variables de la plantilla, nunca como parte de ella, y LiquidJS no escapa HTML (es su default y no se cambia): un `<` sigue siendo `<`, no `&lt;`.
+  - **`meta_tables` sin filas:** sin tratamiento especial. El LLM recibe un contexto vacío y lo normal es que se agoten los 3 intentos. Filtrar esas preguntas antes es tarea de la clasificación (#10).
 - Errors. Estos se **lanzan**, no consumen intentos y no se reintentan; quien llama (#8) decide la respuesta HTTP:
   - Falla la llamada a OpenAI (red, 401, 429, 5xx, timeout), después de los reintentos automáticos del SDK.
   - La respuesta no trae un objeto válido: el modelo se niega (`refusal`) o la respuesta queda incompleta.
   - La función de #6 lanza (p. ej., la conexión está cerrada): se propaga sin volver a llamar al LLM.
   - Falla la lectura del catálogo (p. ej., `data.db` no tiene las tablas `meta_*`): se propaga sin llamar al LLM.
-  - Falta `OPENAI_API_KEY` u `OPENAI_MODEL`: la función que arma el cliente lanza un error que nombra la variable. Si eso frena el arranque del backend o recién el primer `POST /api/chat` depende de dónde la llame #8 (pendiente: pregunta 3).
+  - Falta `OPENAI_API_KEY` u `OPENAI_MODEL`: la función que arma el cliente lanza un error que nombra la variable que falta. #8 la llama al arrancar el backend, así que, desde #8, el backend no arranca sin las dos variables. Es la misma regla que para `APP_ACCESS_KEY` (#3) y `data/data.db` (#5). En este issue nada la llama al arrancar.
 
 ## Data
 - **Entrada** de la función principal: la pregunta (string no vacío, ya validado por #8), la conexión read-only a `data.db`, el cliente LLM y un logger (el `request.log` de Fastify en #8, uno falso en los tests).
 - **Salida.** La forma es indicativa; los nombres exactos se fijan en el plan de `/work-issue`:
   - Éxito: `{ ok: true, sql, columns, rows }`, con `columns` y `rows` tal como los devuelve #6.
-  - Falla por tope agotado: `{ ok: false, sql, kind, message }`, con el último SQL y su error de #6.
+  - Falla por tope agotado: `{ ok: false, sql, kind, message }`, con el SQL del tercer intento y su error de #6.
 - **Request a OpenAI:** el modelo de `OPENAI_MODEL`, el prompt de sistema, y el prompt de usuario con el contexto de esquema, la pregunta y, en los reintentos, los intentos fallidos. El formato es un JSON schema estricto `{ sql: string }`. No usa `previous_response_id`: cada request lleva todo su contexto.
-- **Config:** `OPENAI_API_KEY` y `OPENAI_MODEL`, en `.env`. El tope de intentos es una constante en el código, no configurable (`docs/ARCHITECTURE.md`, *Configuration*) (pendiente: pregunta 2).
+- **Config:** `OPENAI_API_KEY` y `OPENAI_MODEL`, en `.env`. El tope de intentos es una constante en el código con valor 3 (intentos en total), no configurable (`docs/ARCHITECTURE.md`, *Configuration*).
 - **Persistencia:** ninguna. No lee ni escribe `app.db`.
 - **Logs**, por intento: el número de intento, el paso (generación o ejecución), la duración y el resultado (`ok` o el `kind` del error). Nunca la API key.
 
@@ -79,7 +79,7 @@ Traducir la pregunta del usuario a un SQL que la responda con los datos de `data
   - #5: la función del catálogo, que lee `meta_*` y filtra las tablas no declaradas. #5 la deja disponible para #7, y va antes en el epic.
   - #6: la ejecución con guardas y la forma de su resultado (`columns` + `rows`, o `kind` + `message`; los errores que no dependen del SQL se lanzan).
 - Bloquea a:
-  - #8, que llama al bucle desde su función del pipeline, le pasa el logger, crea el cliente con la función de este issue (pendiente: pregunta 3) y suma el paso de insights al módulo LLM;
+  - #8, que llama al bucle desde su función del pipeline, le pasa el logger, crea el cliente al arrancar el backend con la función de este issue (si falta una variable de OpenAI, el backend no arranca) y suma el paso de insights al módulo LLM;
   - #10, que suma la Decisions API al módulo LLM;
   - #11, que agrega el historial a los prompts de este issue;
   - #12, que reutiliza el contexto de esquema, el cliente y el pipeline.
@@ -91,19 +91,20 @@ Traducir la pregunta del usuario a un SQL que la responda con los datos de `data
 - [ ] Si el primer SQL ejecuta bien, devuelve éxito con ese SQL, `columns` y `rows`, tras un único request al LLM. Un resultado de 0 filas también es éxito y no reintenta.
 - [ ] El SQL llega a #6 exactamente como lo devolvió el LLM (p. ej., con espacios y un `;` final).
 - [ ] Para cada `kind` de #6 (`guard`, `sql` y `row_limit`): si el primer SQL falla y el segundo funciona, el segundo request lleva el SQL fallido y su `message`, y el resultado es éxito.
-- [ ] Cada reintento lleva todos los intentos fallidos anteriores de esa pregunta, en orden.
-- [ ] Si todos los intentos fallan, se hacen exactamente tantos requests como el tope (pendiente: pregunta 2). La función devuelve una falla con el último SQL, su `kind` y su `message`, sin lanzar.
+- [ ] Cada reintento lleva todos los intentos fallidos anteriores de esa pregunta, en orden: si fallan los dos primeros y el tercero funciona, el tercer request lleva los dos SQL fallidos con sus `message`, y el resultado es éxito.
+- [ ] Si los 3 intentos fallan, se hacen exactamente 3 requests al LLM y 3 ejecuciones en #6, sin un cuarto. La función devuelve una falla con el SQL del tercer intento, su `kind` y su `message`, sin lanzar.
 - [ ] Si el cliente falso lanza, o responde sin un objeto válido (`refusal` o respuesta incompleta), la función lanza y no hace más requests ni ejecuciones.
 - [ ] Si la función de #6 lanza, el error se propaga y no hay más requests.
 - [ ] Si `data.db` no tiene las tablas `meta_*`, la función lanza sin llamar al LLM.
-- [ ] Una pregunta y un SQL fallido con `'`, `"`, `<`, `>` y `{{ x }}` llegan literales al prompt, sin escapar ni interpretar.
+- [ ] Una pregunta y un SQL fallido con `'`, `"`, `<`, `>` y `{{ x }}` llegan literales al prompt renderizado: sin escapar (p. ej., `<` no pasa a `&lt;`) y sin interpretar `{{ x }}`.
 - [ ] El prompt de sistema renderizado incluye las reglas mínimas: SQLite; una sola sentencia `SELECT`/`WITH`; solo tablas y columnas del contexto; filtrar o agregar en vez de recortar con `LIMIT`; la pregunta como dato.
-- [ ] La función que arma el cliente lanza un error que nombra la variable si falta `OPENAI_API_KEY` u `OPENAI_MODEL`, y no lanza si están las dos.
+- [ ] La función que arma el cliente lanza un error que nombra `OPENAI_API_KEY` si falta esa variable, y `OPENAI_MODEL` si falta esa, y no lanza si están las dos.
+- [ ] `backend/src/server.ts` no cambia en este issue, y `npm run dev` arranca sin `OPENAI_API_KEY` ni `OPENAI_MODEL` en `.env`.
 - [ ] Logs (con un logger falso): cada intento deja una línea de generación y, si llega a ejecutar, una de ejecución, con duración y resultado. Ninguna línea contiene la API key.
 - [ ] `.env.example` trae `OPENAI_API_KEY` y `OPENAI_MODEL` con placeholders.
-- [ ] Las únicas dependencias nuevas son `openai` y el motor de plantillas, en `backend` (pendiente: pregunta 1).
+- [ ] Las únicas dependencias nuevas son `openai` y `liquidjs`, en `backend`.
 - [ ] Los tests no usan la red: pasan sin `OPENAI_API_KEY` en el entorno.
-- [ ] `docs/ARCHITECTURE.md` registra el motor de plantillas en *Tech stack*, y en *LLM layer* dónde viven los prompts.
+- [ ] `docs/ARCHITECTURE.md` registra LiquidJS (`liquidjs`) en *Tech stack*, y en *LLM layer* dónde viven los prompts y que el render no escapa HTML.
 - [ ] Verificación manual, fuera del gate, con una `OPENAI_API_KEY` real y el `data.db` del seed (#2). Desde un script descartable, que no se commitea, tres preguntas del dataset demo (una agregación por mes, una que necesite un join y un ranking) terminan en éxito, con o sin reintentos, y el log muestra cada intento.
 - [ ] `npm run lint` y `npm run test:coverage` pasan con ≥85% en líneas, sentencias, funciones y ramas, y los archivos nuevos quedan cubiertos.
 
@@ -112,12 +113,15 @@ Traducir la pregunta del usuario a un SQL que la responda con los datos de `data
   - La API key vive solo en `.env`: no se loguea ni sale del backend.
   - La pregunta es input no confiable (prompt injection). El prompt la marca como dato, pero la garantía real es la de #6: conexión read-only y una sola sentencia `SELECT`/`WITH`.
   - En este paso el LLM recibe solo metadatos, la pregunta y los SQL fallidos con sus errores. Nunca filas de datos.
-- **Costo y latencia:** en el peor caso, una pregunta hace tantos requests como el tope (pendiente: pregunta 2), en serie. El log con la duración de cada paso lo muestra.
+- **Costo y latencia:** en el peor caso, una pregunta hace 3 requests de generación, en serie. El log con la duración de cada paso lo muestra.
 - **Errores transitorios de OpenAI:** los reintenta el SDK (por defecto, 2 veces con backoff). El bucle no suma reintentos propios.
 - **Idioma:** prompts y logs en inglés, porque son código (`workflow/rules.md`, regla 8). El SQL no depende del idioma de la pregunta.
 
 ## Assumptions
-El usuario no fijó estos puntos literalmente. Salen de una fuente confirmada (`docs/ARCHITECTURE.md`, `workflow/rules.md`, la división del epic) o, si solo afectan la interfaz entre issues, del reparto que hacen los issues hermanos:
+Las tres primeras son decisiones propuestas durante el refinamiento y confirmadas por el usuario el 2026-10-19. El resto no lo fijó el usuario literalmente: sale de una fuente confirmada (`docs/ARCHITECTURE.md`, `workflow/rules.md`, la división del epic) o, si solo afecta la interfaz entre issues, del reparto que hacen los issues hermanos:
+- **Motor de plantillas:** LiquidJS (`liquidjs`), con su default de no escapar HTML, que se mantiene para que el SQL y la pregunta lleguen literales. Decisión propuesta en el refinamiento y confirmada por el usuario el 2026-10-19.
+- **Intentos por pregunta:** 3 en total (1 + 2 reintentos), como constante en el código. Decisión propuesta en el refinamiento y confirmada por el usuario el 2026-10-19.
+- **Faltan `OPENAI_API_KEY` u `OPENAI_MODEL`:** el backend no arranca; #8 arma el cliente al iniciar con la función de #7, que lanza un error que nombra la variable (misma regla que `APP_ACCESS_KEY` en #3 y `data/data.db` en #5). Decisión propuesta en el refinamiento y confirmada por el usuario el 2026-10-19.
 - **Salida del LLM con un único campo `sql`, sin opción de "no se puede responder":** decidir si una pregunta se puede responder es el paso 1 del pipeline (clasificación, #10), no el 3. *Fuente:* `docs/ARCHITECTURE.md`, *Text-to-SQL pipeline*. Por eso tampoco hay tratamiento especial para metadatos vacíos.
 - **`row_limit` consume el mismo tope que los demás errores:** el tope de filas es una de las capas de la guarda, y "on a guard or SQL error the LLM retries with the error as feedback, up to a fixed retry budget". *Fuente:* `docs/ARCHITECTURE.md`, paso 4, y el `kind` `row_limit` de #6.
 - **Lo que no es un error de guarda o de SQL se lanza y no se reintenta:** fallas de OpenAI, `refusal`, respuestas incompletas, errores que lanza #6 y la lectura de metadatos. *Fuente:* `docs/ARCHITECTURE.md` (el reintento es "on a guard or SQL error"), #6 (lanza los errores que no dependen del SQL) y un hecho técnico: el SDK `openai` ya reintenta los errores transitorios. Es coherente con #12 ("no hay reintentos propios, solo los del SDK").
@@ -138,19 +142,3 @@ El usuario no fijó estos puntos literalmente. Salen de una fuente confirmada (`
 - **Timeout y parámetros del modelo** (`max_output_tokens`, temperatura): se usan los valores por defecto del SDK y del modelo. El timeout por defecto del SDK es de 10 minutos por request. Revisarlos si una llamada se cuelga o sale cara.
 - **Caché del contexto de esquema:** se arma en cada pregunta, porque son tres consultas chicas a SQLite.
 - **Detectar en este paso las preguntas que no se pueden responder** (como el `not_related` del proyecto de referencia): lo hace la clasificación (#10).
-
-## Open questions
-1. **¿Qué motor de plantillas usamos para los prompts?**
-   - a) **LiquidJS:** la misma sintaxis base que Jinja2 (`{{ }}`, `{% if %}`, `{% for %}`). Tiene mantenimiento activo (v10.30, release de octubre de 2026), trae sus tipos de TypeScript, tiene una sola dependencia (`commander`) y no escapa HTML por defecto.
-   - b) **Nunjucks:** casi idéntico a Jinja2 (incluye macros y expresiones inline). Pero no tiene releases desde abril de 2023 (v3.2.4) ni tipos propios (hace falta `@types/nunjucks`), y escapa HTML por defecto: hay que desactivarlo para que no corrompa el SQL.
-   - c) **Sin motor:** template literals de TypeScript. Cero dependencias, pero los prompts quedan dentro del código, y se aparta de "algo como Jinja2".
-   - **Recomendación: a) LiquidJS**, porque cubre todo lo que usan los prompts del proyecto de referencia, con mantenimiento y tipos.
-2. **¿Cuántos intentos de generar SQL hay por pregunta, en total?** Cada intento es un request a OpenAI, en serie.
-   - a) **3** (1 + 2 reintentos).
-   - b) **4** (1 + 3 reintentos), como `MAX_RETRIES = 3` del proyecto de referencia.
-   - c) **2** (1 + 1 reintento).
-   - **Recomendación: a) 3**, porque dos correcciones suelen alcanzar para una columna mal escrita o un `row_limit`, y acota la latencia del peor caso.
-3. **¿Qué pasa si faltan `OPENAI_API_KEY` u `OPENAI_MODEL`?** #8 le deja a #7 decidir si se detecta al arrancar o en el primer request. La función que arma el cliente lanza en los dos casos: lo que cambia es dónde la llama #8.
-   - a) **El backend no arranca:** #8 arma el cliente al iniciar, y el error nombra la variable. Desde #8, `npm run dev` necesita el `.env` con las dos variables.
-   - b) **El backend arranca:** `/api/health` y `/api/catalog` funcionan, y `POST /api/chat` falla con el error que nombra la variable. #8 arma el cliente en el primer request.
-   - **Recomendación: a)**, con la misma regla que se elija para `APP_ACCESS_KEY` (#3, pregunta 1, que recomienda que no arranque). El error de configuración aparece enseguida y con un mensaje claro, y queda un solo criterio para todas las variables obligatorias.
