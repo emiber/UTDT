@@ -13,7 +13,7 @@ Que la app pida la access key compartida antes de dejar usarla, la mande en cada
 ## Scope
 - In:
   - Pantalla de access key: un formulario con un campo enmascarado (`type="password"`) y un botón para entrar. Se muestra al abrir la app cuando no hay key guardada.
-  - Guardar la key en `sessionStorage` al enviar el formulario y pasar a la pantalla principal. Hoy la pantalla principal es el estado del backend del scaffold; #5 y #8 la van a extender.
+  - Guardar la key en `sessionStorage` al enviar el formulario y pasar a la pantalla principal. Hoy la pantalla principal es el estado del backend del scaffold; #5 y #13 la van a extender.
   - Cambio de pantalla según haya o no key, en `App.vue`, sin router ni librería de estado (`docs/ARCHITECTURE.md`, *Frontend*).
   - Una única función de request en `frontend/src/api.ts` por la que pasan todas las llamadas a `/api/*` (el plan define su nombre). Agrega `Authorization: Bearer <key>` y maneja el `401`. `getHealth` pasa a usarla.
   - Manejo del `401`: borrar la key de `sessionStorage` y volver a la pantalla de key con un mensaje de que la key fue rechazada.
@@ -23,7 +23,7 @@ Que la app pida la access key compartida antes de dejar usarla, la mande en cada
   - Validar la key contra el backend apenas se ingresa: no hay endpoint para eso (ver *Assumptions*).
   - Botón de logout o de cambiar la key.
   - Guardar la key en `localStorage`, en cookies o en cualquier otro lado, o recordarla entre pestañas.
-  - La vista de catálogo (#5) y el chat (#8). Solo usan la función de request de este issue.
+  - La vista de catálogo (#5) y el chat (#13). Solo usan la función de request de este issue.
   - Router, librería de estado y UI kit (`docs/ARCHITECTURE.md`, *Frontend*).
 
 ## Expected behavior
@@ -45,7 +45,7 @@ Que la app pida la access key compartida antes de dejar usarla, la mande en cada
     - la promesa de esa llamada se rechaza, así que el llamador no recibe datos.
     - Los llamadores no tienen que manejar el `401` por su cuenta.
   - Cualquier otro error (otro status HTTP o error de red): la key se conserva, la pantalla no cambia y el error le llega al llamador como hoy. P. ej., la pantalla principal sigue mostrando *Backend unreachable: …*.
-  - Si el error es una respuesta HTTP, el error rechazado expone su status (p. ej. un campo `status`). Así cada llamador puede mostrarlo o decidir según él: #5 muestra `HTTP 500`, y #8 trata distinto el `404` de un `conversationId` inexistente.
+  - Si el error es una respuesta HTTP, el error rechazado expone su status (p. ej. un campo `status`). Así cada llamador puede mostrarlo o decidir según él: #5 muestra `HTTP 500`, y #13 trata distinto el `404` de un `conversationId` inexistente.
 
 ## Data
 - Entrada: la key que escribe el usuario.
@@ -55,7 +55,7 @@ Que la app pida la access key compartida antes de dejar usarla, la mande en cada
 
 ## Dependencies
 - Depende de #3: el backend responde `401` cuando la key falta o es incorrecta, y `/api/health` sigue público. Los tests de este issue no lo necesitan, porque stubbean `fetch`.
-- Bloquea a #5 y #8: sus llamadas a la API pasan por la función de request de este issue, así que heredan el header y el manejo del `401`.
+- Bloquea a #5 y #13: sus llamadas a la API pasan por la función de request de este issue, así que heredan el header y el manejo del `401`.
 - Sin servicios externos ni dependencias nuevas.
 
 ## Acceptance criteria
@@ -86,7 +86,7 @@ Que la app pida la access key compartida antes de dejar usarla, la mande en cada
   - Fuente: `docs/ARCHITECTURE.md`. La tabla *Backend API* no tiene un endpoint para chequearla, y *Auth* describe el flujo completo: pedir la key, guardarla, mandarla y que el backend responda `401` si no coincide.
   - #3 difiere ese endpoint "solo si el refinamiento de #4 lo necesita", y este issue no lo necesita: la primera llamada protegida ya cumple esa función.
   - Consecuencia: hasta #5, una key incorrecta no se detecta en la UI. Los tests unitarios cubren el `401` igual.
-- **Hasta que existan #5 y #8, la pantalla principal es la del estado del backend, y el health check corre recién después de ingresar la key.** Fuente: `docs/ARCHITECTURE.md`, *Frontend*: primero la pantalla de access key y después la de la app, dos pantallas que cambian según el estado de auth.
+- **Hasta que existan #5 y #13, la pantalla principal es la del estado del backend, y el health check corre recién después de ingresar la key.** Fuente: `docs/ARCHITECTURE.md`, *Frontend*: primero la pantalla de access key y después la de la app, dos pantallas que cambian según el estado de auth.
 - **El header también va a `GET /api/health`, aunque sea público.**
   - Fuente: `docs/ARCHITECTURE.md`, *Auth* ("sends `Authorization: Bearer <key>`", sin excepciones).
   - Así hay un solo camino para todas las llamadas. Es inofensivo, porque #3 ignora el header en health, y permite ver el header en el navegador antes de #5.
@@ -94,7 +94,7 @@ Que la app pida la access key compartida antes de dejar usarla, la mande en cada
 - **Volver a pedir la key ante un `401`, con un mensaje.**
   - Es un hecho técnico: sin logout y con la key en `sessionStorage`, volver a pedirla es la única forma de salir de una key incorrecta o de una `APP_ACCESS_KEY` que cambió.
   - Sin el mensaje, ese caso no se distinguiría del primer ingreso.
-- **El error expone el status HTTP.** Fuente: lo necesitan los issues que usan esta función. #5 muestra el status en su mensaje de error y #8 reacciona a un `404`. Se agregó en la pasada de coherencia entre issues.
+- **El error expone el status HTTP.** Fuente: lo necesitan los issues que usan esta función. #5 muestra el status en su mensaje de error y #13 reacciona a un `404`. Se agregó en la pasada de coherencia entre issues.
 - **Campo enmascarado y `trim`.**
   - La key es un secreto compartido: vive en `.env`, que está gitignored (`docs/ARCHITECTURE.md`, *Configuration*).
   - Recortar los espacios evita fallas por copiar y pegar. Es coherente con #3, que compara la key exacta, porque una `APP_ACCESS_KEY` con espacios al inicio o al final no es un caso real.
