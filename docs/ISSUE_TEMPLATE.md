@@ -1,9 +1,16 @@
 # Refined issue template
 
-Structure an issue should have after going through `/refine-issue`.
+Structure an issue file (`issues/<n>-<slug>.md`) should have after going through `/refine-issue`. The frontmatter fields are described in `workflow/issue-tracker.md`; refinement sets `status: refined`. A child of an epic carries the epic's number in `parent` (see `workflow/epics.md`); leave it empty if standalone.
 
 ```markdown
-**Epic / parent**: #<n> — the epic this issue is a child of. Omit if standalone. (See `workflow/epics.md`.)
+---
+id: <n>
+title: <short, imperative title>
+type: <feat | fix | chore | docs | refactor | test | epic>
+status: refined
+parent: <epicN, or empty>
+created: <YYYY-MM-DD, unchanged>
+---
 
 ## Goal
 What problem it solves and for whom. One or two sentences.

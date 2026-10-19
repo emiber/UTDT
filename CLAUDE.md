@@ -7,8 +7,9 @@ This project uses a workflow defined in `workflow/`. **Read those files before a
 The full, canonical hard rules live in **`workflow/rules.md`** — read them first.
 The essential safety rules, repeated here so they're never missed:
 
-- Never merge or push to `main`. The flow ends with an open PR.
-- Never `git commit` or `git push` unless the user explicitly asks (running the `/work-issue` flow counts as asking). Don't commit or push on your own initiative.
+- Never merge into `main` or commit to it directly — only issue files under `issues/` are committed there, by `/create-issue` and `/refine-issue`. The flow ends with a local PR: a branch left unmerged for human review.
+- Never `git commit` unless the user explicitly asks (running `/create-issue`, `/refine-issue`, `/work-issue`, or `/finish-epic` counts as asking for the commits that flow declares). Don't commit on your own initiative.
+- Local-only: this project has no remote. Never add one, push, or publish anything to an external service unless the user asks.
 - Never commit secrets or credentials. Keep them in gitignored `.env` files; provide a `.env.example` with placeholder values.
 - Plan before non-trivial work, and ask when something is ambiguous — don't invent requirements.
 - Language: write all artifacts (code, comments, commits, branches, issues, PRs, docs) in English unless the user asks otherwise; reply in the language the user writes in.
@@ -24,11 +25,13 @@ You plan with Opus and implement with Sonnet (see `workflow/model-strategy.md`).
 Each command is a thin wrapper: its steps live in the matching playbook, `.agents/skills/<name>/SKILL.md` (shared with Codex).
 
 - `/init-project` — interactive scaffolding of a new project. Reads `workflow/scaffolding.md`.
-- `/create-issue <description>` — creates a new issue in the tracker from a description; may create it as an epic or nest it under an existing one. Reads `workflow/issue-creation.md` and `workflow/epics.md`.
+- `/create-issue <description>` — creates a new issue file under `issues/` from a description; may create it as an epic or nest it under an existing one. Reads `workflow/issue-creation.md`, `workflow/epics.md`, and `workflow/issue-tracker.md`.
 - `/refine-issue <n>` — refines and clarifies an issue. Reads `workflow/issue-refinement.md`.
-- `/work-issue <n>` — implements a refined issue following the git flow: plan approval, implementation, quality gate, self-review in a fresh subagent, PR with a Verification section, and follow-ups offered. Child issues of an epic target the epic's integration branch. Reads `workflow/git-flow.md`, `workflow/epics.md`, and `workflow/pr-review.md`.
-- `/finish-epic <n>` — opens the integration PR (epic branch → `main`) when an epic's children are done. Reads `workflow/epics.md`.
-- `/review-pr <n>` — reviews an open PR against its linked issue(s)' acceptance criteria and the Definition of Done. Read-only: never commits or pushes. Reads `workflow/pr-review.md`.
+- `/work-issue <n>` — implements a refined issue following the git flow: plan approval, implementation, quality gate, self-review in a fresh subagent, a local PR (branch left unmerged, described in the issue file) with a Verification section, and follow-ups offered. Child issues of an epic target the epic's integration branch. Reads `workflow/git-flow.md`, `workflow/epics.md`, and `workflow/pr-review.md`.
+- `/finish-epic <n>` — prepares the integration PR (epic branch → `main`, left unmerged) when an epic's children are done. Reads `workflow/epics.md`.
+- `/review-pr <n>` — reviews a local PR (the branch of issue `<n>`) against its linked issue(s)' acceptance criteria and the Definition of Done. Read-only: never commits, checks out, or merges. Reads `workflow/pr-review.md`.
+
+Issues are Markdown files under `issues/` (format and operations in `workflow/issue-tracker.md`).
 
 ## Reading order at startup
 

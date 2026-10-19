@@ -4,8 +4,9 @@
 #
 #   bash .github/scripts/check-workflow.sh
 #
-# CI runs it on every PR (.github/workflows/workflow-check.yml); /init-project runs
-# it in its integrity check. Prints one error per problem and exits 1 if any.
+# The project is local-only (no CI): run it after changing the workflow files.
+# /init-project runs it in its integrity check. Prints one error per problem and
+# exits 1 if any.
 #
 # Projects created from the starter keep this check on purpose: a command you add
 # needs its playbook in .agents/skills/ and a line in the entry files, like the
@@ -107,24 +108,18 @@ for src in CLAUDE.md AGENTS.md .github/copilot-instructions.md .claude/commands/
   done
 done
 
-# 4. .workflow-config names a supported tracker.
+# 4. .workflow-config names the supported tracker (local Markdown issues).
 if [ ! -f .workflow-config ]; then
   fail "missing .workflow-config"
 else
   tracker=""
-  jira_project=""
   while IFS= read -r line || [ -n "$line" ]; do
     line=${line%$'\r'}
     case "$line" in
       issue_tracker=*) [ -n "$tracker" ] || tracker=${line#issue_tracker=} ;;
-      jira_project=*) jira_project=${line#jira_project=} ;;
     esac
   done < .workflow-config
-  case "$tracker" in
-    github) ;;
-    jira) [ -n "$jira_project" ] || fail ".workflow-config: issue_tracker=jira needs jira_project=<KEY>" ;;
-    *) fail ".workflow-config must set issue_tracker=github or issue_tracker=jira" ;;
-  esac
+  [ "$tracker" = local ] || fail ".workflow-config must set issue_tracker=local"
 fi
 
 if [ "$errors" -gt 0 ]; then

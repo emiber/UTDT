@@ -1,11 +1,11 @@
 ---
 name: work-issue
-description: Implements a refined issue following the git flow main → branch → implementation → PR.
+description: Implements a refined issue following the git flow main → branch → implementation → local PR (a branch left unmerged for review).
 ---
 
 # /work-issue
 
-First read `.agents/skills/work-issue/SKILL.md`, then follow it step by step — it's the single source for this command's steps, shared with Codex. The target issue is $ARGUMENTS (a number on GitHub, a key on Jira).
+First read `.agents/skills/work-issue/SKILL.md`, then follow it step by step — it's the single source for this command's steps, shared with Codex. The target issue is $ARGUMENTS (its issue number).
 
 Claude Code specifics:
 - This is the implementation phase → use the execution model (Sonnet); see `workflow/model-strategy.md`. If you're not on `opusplan`, switch with `/model sonnet`.

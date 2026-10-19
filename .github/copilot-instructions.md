@@ -22,23 +22,24 @@ So with Copilot you have two options:
 
 Read, in order:
 
-1. `workflow/rules.md` — the canonical hard rules (merge/push, commits, secrets, language).
+1. `workflow/rules.md` — the canonical hard rules (merge, commits, local-only, secrets, language).
 2. `workflow/principles.md` — the principles that govern every decision. The main one: do the minimum that solves the problem; don't over-engineer.
 3. `workflow/scaffolding.md` — how to define the architecture and stack of a new project.
-4. `workflow/issue-creation.md` — how to create a new issue in the tracker.
+4. `workflow/issue-creation.md` — how to create a new issue file under `issues/`.
 5. `workflow/issue-refinement.md` — how to refine an issue before implementing it.
-6. `workflow/git-flow.md` — the git flow contract: `main → branch → implementation → PR`.
+6. `workflow/git-flow.md` — the git flow contract: `main → branch → implementation → local PR`.
 7. `workflow/epics.md` — epics: parent/child issues and integration branches, plus the `/finish-epic` contract.
-8. `workflow/pr-review.md` — the read-only PR review contract: linked-issue ACs + Definition of Done.
+8. `workflow/pr-review.md` — the read-only review contract for a local PR: linked-issue ACs + Definition of Done.
 9. `workflow/model-strategy.md` — which model to use in each phase (Claude Code specific; ignore if it doesn't apply).
-10. `workflow/issue-tracker.md` — GitHub (default) or Jira; how it's resolved and each one's commands.
+10. `workflow/issue-tracker.md` — local Markdown issues under `issues/`: file format, operations, and local PRs.
 
 ## Hard rules
 
 The canonical list is in `workflow/rules.md` (read it). The essential safety rules, inline so they're never missed:
 
-- Never merge or push to `main`. The flow ends with an open PR.
-- Never `git commit` or `git push` unless the user explicitly asks (running the `/work-issue` flow counts as asking). Don't commit or push on your own initiative.
+- Never merge into `main` or commit to it directly — only issue files under `issues/` are committed there, by `/create-issue` and `/refine-issue`. The flow ends with a local PR: a branch left unmerged for human review.
+- Never `git commit` unless the user explicitly asks (running `/create-issue`, `/refine-issue`, `/work-issue`, or `/finish-epic` counts as asking for the commits that flow declares). Don't commit on your own initiative.
+- Local-only: this project has no remote. Never add one, push, or publish anything to an external service unless the user asks.
 - Never commit secrets or credentials. Keep them in gitignored `.env` files; provide a `.env.example` with placeholder values.
 - Plan before non-trivial work, and ask when something is ambiguous — don't invent requirements.
 - Language: write all artifacts (code, comments, commits, branches, issues, PRs, docs) in English unless the user asks otherwise; reply in the language the user writes in.

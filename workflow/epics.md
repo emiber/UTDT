@@ -10,33 +10,19 @@ If a piece of work feels like it needs a third level, it's a sign the epic is to
 big — split it into two epics instead. (Ponytail: the boring, minimal structure wins.)
 
 Epics are **opt-in**. Most issues have no parent and follow the plain
-`main → branch → PR` flow in `git-flow.md` unchanged. Everything here is additive and
-only applies when an issue belongs to an epic.
+`main → branch → local PR` flow in `git-flow.md` unchanged. Everything here is additive
+and only applies when an issue belongs to an epic.
 
-## How the hierarchy is represented per tracker
+## How the hierarchy is represented
 
-### GitHub
+Issues are local Markdown files (see `workflow/issue-tracker.md`), so the hierarchy is two
+frontmatter fields:
 
-There is no native "epic" issue type available in every repo (issue *types* are an
-org-level feature), so an epic is:
+- **An epic** is an issue with `type: epic`.
+- **A child** is an issue whose `parent` is the epic's number.
 
-- **A parent issue labeled `epic`.** The label is what makes epics listable and
-  detectable (`gh issue list --label epic --state open`).
-- **Linked to its children via native sub-issues.** GitHub has a real parent/child
-  sub-issue relationship. The concrete commands to link a child, list an epic's children,
-  and detect a child's parent — native `gh` (≥ 2.94), with a REST fallback for older `gh`
-  or GitHub Enterprise Server — live in `workflow/issue-tracker.md` (Parent/child). Use
-  them from there; this guide doesn't repeat the syntax.
-
-The label alone is enough to make the flow work; the sub-issue link adds the native
-tree in GitHub's UI and lets the flow enumerate children reliably. Create both.
-
-### Jira
-
-Jira has a first-class **Epic** issue type. Create the parent as an Epic and link each
-child with the **Epic Link / parent** field (`jira issue create` with the parent, or set
-it on an existing issue with `jira issue edit`). No label convention is needed — the
-Epic type and parent field are native.
+The concrete operations — list open epics, list an epic's children, link or unlink a
+child — live in `workflow/issue-tracker.md` (Parent/child). This guide doesn't repeat them.
 
 ## Integration branch model
 
@@ -45,106 +31,82 @@ An epic's children are **not** merged straight to `main` one by one. Instead:
 ```
 main
  └── epic/<epicN>-<slug>              ← integration branch (one per epic)
-      ├── feat/<child1N>-<slug>       → PR targets the epic branch
-      ├── feat/<child2N>-<slug>       → PR targets the epic branch
+      ├── feat/<child1N>-<slug>       → local PR into the epic branch
+      ├── feat/<child2N>-<slug>       → local PR into the epic branch
       └── ...
- (when the epic is done) epic/<epicN>-<slug> ──PR──▶ main
+ (when the epic is done) epic/<epicN>-<slug> ──local PR──▶ main
 ```
 
 - **One integration branch per epic**, named `epic/<epicN>-<slug>`.
 - It is created **lazily** — the first time a child is worked (see `git-flow.md`), not
   when the epic issue is created. Nothing exists until it's needed.
 - **Child branches** keep the normal `<type>/<childN>-<slug>` convention but are cut
-  from the epic branch, and their PR targets the epic branch (`--base epic/<epicN>-<slug>`).
-- When all children are done, `/finish-epic <epicN>` opens a single PR from the epic
-  branch to `main`.
+  from the epic branch, and their base is the epic branch: the human merges them there.
+- When all children are done, `/finish-epic <epicN>` prepares a single local PR from the
+  epic branch to `main`.
 
-### Why child PRs use `Refs`, not `Closes` (GitHub)
+### When children show as closed
 
-GitHub only auto-closes an issue from a closing keyword (`Closes #n`) when the PR merges
-into the **default branch** (`main`). A child PR merges into the *epic* branch, so
-`Closes` there would do nothing. To avoid dead keywords and surprise, child PRs into the
-epic branch reference their issue with **`Refs #<childN>`** (a link, no auto-close). The
-children are closed all at once when the epic reaches `main`: the `/finish-epic` PR body
-aggregates `Closes #<epicN>` **and** `Closes #<each childN>`, so merging it to `main`
-closes the whole tree. This also matches the intent — a child isn't really "done" until
-it ships in `main`.
-
-This is the default because it needs zero extra machinery: the flow never merges (PRs are
-left open for humans), so the only automatable close point is the epic's merge into `main`.
-The tradeoff is that GitHub's sub-issue progress on the epic won't advance mid-flight — it
-jumps to complete when the `/finish-epic` PR merges. If you want live progress, close each
-child by hand when its PR merges into the epic branch (GitHub won't do it for you on a
-non-default-branch merge); `/finish-epic` then closes whatever is still open. Leaving them
-is fine and is the recommended default.
-
-On Jira, GitHub PRs don't close issues automatically anyway (a human or Jira automation
-does), so just reference the keys; the aggregation note is GitHub-specific.
+`/work-issue` closes each child **on its own branch** (`status: closed`), like any issue.
+That branch merges into the epic branch, so the child is closed there — but on `main` it
+stays open until the epic ships, because the status change only reaches `main` with the
+epic's merge. That matches the intent: a child isn't really done until it's in `main`.
+No extra bookkeeping is needed: merging the epic branch into `main` closes the whole tree
+at once (see `workflow/issue-tracker.md`, Status travels with the branch).
 
 ## `/finish-epic <n>` — contract
 
-Guide for the `/finish-epic` command. Opens the integration PR (`epic/<n>-<slug> → main`)
-when an epic's children are done. Like `git-flow.md`, this is strict: the flow ends with
-an **open PR**; never merge, never push to `main`.
+Guide for the `/finish-epic` command. Prepares the integration PR (`epic/<n>-<slug> → main`)
+when an epic's children are done. Like `git-flow.md`, this is strict: the flow ends with a
+**local PR left unmerged** for review; never merge into `main`, never commit to it.
 
 ### Preflight (read-only — if one fails, stop and report the fix)
 
 | Check | How |
 |---|---|
-| `git` + inside a repo | `git --version`, `git rev-parse --is-inside-work-tree` |
-| `main` exists, `origin` set, `gh` authenticated | as in `git-flow.md` |
-| Tracker resolved | see `workflow/issue-tracker.md` |
-| `<n>` is an epic | GitHub: has the `epic` label. Jira: is an Epic. If not, stop. |
-| Integration branch exists | `epic/<n>-<slug>` exists locally or on `origin`. If it doesn't, no child was ever worked — say so and stop. |
+| `git` + inside a repo, `main` exists, working tree clean | as in `git-flow.md` |
+| Tracker resolved | `.workflow-config` has `issue_tracker=local` (see `workflow/issue-tracker.md`) |
+| `<n>` is an epic | Its issue file has `type: epic`. If not, stop. |
+| Integration branch exists | `git show-ref --verify refs/heads/epic/<n>-<slug>`. If it doesn't, no child was ever worked — say so and stop. |
 
 ### Steps
 
-1. **Fetch the epic and its children.** GitHub: list the epic's children (parent/child
-   commands in `workflow/issue-tracker.md`). Jira: list issues with this Epic as parent.
-2. **Check children are done.** For each child, look for its PR into the epic branch. A
-   child counts as done when that PR is **merged** into `epic/<n>-<slug>` — whether or not
-   the child *issue* is still open. Leaving child issues open until the epic reaches `main`
-   is the recommended default (see above), so an open child issue whose PR is already merged
-   is **not** incomplete and must not warn. If any child's PR into the epic branch is
-   **missing, still open, closed without merging, or merged against the wrong base**,
-   **stop and report those children and do not open the integration PR** — there is no
-   "proceed anyway". The epic ships only once every child's PR is merged into the epic branch,
-   so step 4 (which closes the epic and all children) is reached only when the work is
-   actually there.
-3. **Sync the epic branch with main.** Check out `epic/<n>-<slug>`, and merge the latest
-   `main` into it so the PR diff is clean:
+1. **Find the epic's children.** List the issues with `parent: <n>` on `main` and on the
+   epic branch, and take the union (commands in `workflow/issue-tracker.md`).
+2. **Check children are done.** A child is done when its issue file **on the epic branch**
+   has `status: closed` — its local PR was merged there (or it was explicitly dropped, with
+   a note). If any child is still `open` or `refined` on the epic branch, or has a branch
+   not yet merged into it (`git branch --no-merged epic/<n>-<slug>`), **stop and report
+   those children and don't prepare the integration PR** — there is no "proceed anyway".
+   The epic ships only once all its work is on the epic branch.
+3. **Sync the epic branch with main.** Merge the latest `main` into it so the PR diff is clean:
    ```bash
    git checkout epic/<n>-<slug>
-   git fetch origin
-   git merge origin/main        # resolve conflicts here if any; never force
-   git push origin epic/<n>-<slug>
+   git merge main        # resolve conflicts here if any; never force
    ```
    If there are conflicts you can't resolve safely, stop and report.
-4. **Open the integration PR.**
-   ```bash
-   gh pr create \
-     --base main \
-     --head epic/<n>-<slug> \
-     --title "<type>: <epic title>" \
-     --body "Closes #<n>
-   Closes #<child1>
-   Closes #<child2>
-   ...
+4. **Prepare the integration PR.** On the epic branch, append a `## Pull request` section to
+   the epic's issue file, set the epic's `status: closed`, and commit only that file
+   (`chore(issues): close epic #<n> <title>`):
+   ```markdown
+   ## Pull request
+   Branch: `epic/<n>-<slug>` → `main`
 
-   ## Epic summary
+   ### Epic summary
    What this epic delivers, as a whole.
 
-   ## Children
+   ### Children
    - #<child1> <title>
-   - #<child2> <title>"
+   - #<child2> <title>
    ```
-   On Jira, drop the `Closes` lines, put the Epic key in the title (`[ABC-123] ...`), and
-   list child keys in the body.
-5. **Don't merge.** Leave the PR open for human review and return its link.
+5. **Don't merge.** Leave the epic branch unmerged for human review, and report how to review
+   and merge it (`/review-pr <n>`; `git checkout main` then `git merge --no-ff epic/<n>-<slug>`).
+   Merging it closes the epic and all its children on `main`.
 
 ### Hard rules (same spirit as `git-flow.md`)
 
-- Never merge or push to `main` directly; the epic ships via this open PR.
-- Never `git push --force` to the epic branch (it's shared — children branch off it).
+- Never merge into `main` or commit to it directly; the epic ships when the human merges it.
+- Never rewrite the epic branch's history (no rebase, `reset --hard`, or amend) — children
+  branch off it.
 - Never auto-merge, never skip hooks, never weaken tests.
 - If any step fails, stop and report; don't improvise destructive workarounds.

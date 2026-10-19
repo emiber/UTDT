@@ -1,100 +1,85 @@
-# Issue tracker configuration
+# Issue tracker — local Markdown files
 
-The issue flow supports **GitHub** (by default) and **Jira**. The choice is saved once per project.
+This project keeps its issues as Markdown files in the repo, under `issues/`. There is no remote tracker and no remote repository: everything lives in this local Git repo. `.workflow-config` records the choice (`issue_tracker=local`). Every command that touches issues (`/create-issue`, `/refine-issue`, `/work-issue`, `/finish-epic`, `/review-pr`) reads and writes them as described here. This file is the **single source** for the issue file format and the concrete operations; the other guides point here instead of repeating them.
 
-## Where it's saved
+## Issue files
 
-In `.workflow-config` at the project root. Simple `key=value` format:
+One file per issue: `issues/<n>-<slug>.md`, where `<n>` is the issue number (no zero-padding) and `<slug>` a short kebab-case summary of the title — e.g. `issues/12-contacts-pagination.md`. Create the `issues/` folder if it doesn't exist yet.
 
+```markdown
+---
+id: 12
+title: Contacts list not paginating past page 2
+type: fix
+status: open
+parent:
+created: 2026-10-19
+---
+
+The problem and known context. After /refine-issue, the structure in docs/ISSUE_TEMPLATE.md.
 ```
-issue_tracker=github
+
+| Field | Values |
+|---|---|
+| `id` | The issue number. Must match the file name. |
+| `title` | Short, imperative, specific. |
+| `type` | `feat`, `fix`, `chore`, `docs`, `refactor`, `test` — or `epic` for a parent issue (see `workflow/epics.md`). It's the branch prefix in `workflow/git-flow.md`. |
+| `status` | `open` (captured) → `refined` (implementable) → `closed` (done, or dropped). |
+| `parent` | The epic's number if this issue is a child of an epic; empty otherwise. |
+| `created` | `YYYY-MM-DD`. |
+
+Sections the workflow appends to the body over time:
+
+- `## Notes` — the equivalent of comments: dated entries (`- 2026-10-19: …`) that add context later. Append; don't rewrite earlier entries. Keep it as the last section, except for `## Pull request`.
+- `## Pull request` — written on the working branch by `/work-issue` (or `/finish-epic` for an epic): the PR description and its Verification (see `workflow/git-flow.md` step 6).
+
+## Operations
+
+Commands are shell-neutral (they run the same from PowerShell and Bash); the agent's own file and search tools are fine too.
+
+| Operation | How |
+|---|---|
+| Find issue `<n>` | The file matching `issues/<n>-*.md`. None → the issue doesn't exist on this branch. |
+| Read it on another branch | `git show <branch>:issues/<n>-<slug>.md` |
+| List open issues | Files in `issues/` whose `status` isn't `closed`. |
+| Search (duplicates) | Search key words in titles and bodies, e.g. `git grep -i -l "<word>" -- issues/`. |
+| Next number | The highest `<n>` among the files in `issues/` **and** the issue files on every local branch, plus one. `git log --all --name-only --format= -- issues/` lists every issue file ever committed on any branch; counting them avoids reusing a number that a follow-up took on an unmerged branch. Start at 1. |
+| Add a note (comment) | Append a dated entry to `## Notes` (create the section if missing). |
+| Mark refined | Set `status: refined`. |
+| Close | Set `status: closed`. `/work-issue` does it on the working branch (see below). To drop an issue by hand, close it with a note saying why. |
+
+### Committing issue changes
+
+Issue files are versioned, so every change to them is a commit. Commit **only** the issue file(s) you touched — never anything else in the same commit:
+
+```bash
+git add issues/<n>-<slug>.md
+git commit -m "chore(issues): <open|refine|note> #<n> <title>" -- issues/<n>-<slug>.md
 ```
 
-or
+- `/create-issue` and `/refine-issue` commit on **`main`**. That's the one exception to "never commit to `main`" (`workflow/rules.md`), and the local `main` guard allows it: `.githooks/pre-commit` accepts commits on `main` only when they touch nothing outside `issues/`. Invoking those commands authorizes that commit. If another branch is checked out, say so and ask before committing — switch to `main` if the working tree is clean, or commit on the current branch.
+- Inside `/work-issue`, issue changes (closing the issue, follow-ups) are committed on the **working branch** and reach `main` with the merge.
 
-```
-issue_tracker=jira
-jira_project=ABC
-```
+## Status travels with the branch
 
-## How it's resolved when running an issue command
+Because issue files are versioned, each branch shows its own view of the issues, and `main` shows what has actually shipped:
 
-`.workflow-config` **ships with `issue_tracker=github`**, so by default the agent uses GitHub and never asks. To switch to Jira, edit that file (see below). Any command that touches issues (`/create-issue`, `/refine-issue`, `/work-issue`) resolves the tracker **before doing anything**:
+- `/work-issue` closes the issue **on its working branch**. When the human merges that branch, the issue is closed on the base too — the local equivalent of `Closes #<n>`. If the branch is discarded, the issue stays open.
+- A child of an epic merges into the epic's integration branch, so it shows as closed there, and on `main` only once the whole epic ships (see `workflow/epics.md`).
 
-1. Does `.workflow-config` exist with `issue_tracker`? → use that value, don't ask. (This is the normal case — the file ships preset to `github`.)
-2. Only if the file is missing or has no `issue_tracker` → ask the user:
-   > Which issue tracker do you use in this project? (github / jira) [default: github]
-   Then save the answer in `.workflow-config` so it doesn't ask again.
+## Parent/child (epics)
 
-If the user doesn't answer or answers empty, assume **github**.
+The full model — including the integration branch — is in `workflow/epics.md`. The concrete operations:
 
-## Commands per tracker
+| Operation | How |
+|---|---|
+| An epic | An issue with `type: epic`. |
+| A child | An issue whose `parent` is the epic's number. Two levels only: a child has no children. |
+| List open epics | `type: epic` and `status` isn't `closed`. |
+| List an epic's children | Issues with `parent: <epicN>`, e.g. `git grep -l -w -E "^parent: *<epicN>" <branch> -- issues/` (`-w` so `1` doesn't match `12`). Check `main` and the epic branch, and take the union. |
+| Detect a child's epic | Its `parent` field. |
+| Link / unlink | Set / clear `parent`, then commit the issue file. |
 
-### GitHub (default)
+## Local PRs
 
-- View issue: `gh issue view <n>`
-- Edit issue: `gh issue edit <n>`
-- Create issue: `gh issue create`
-- Reference in PR: `Closes #<n>`
-- Requires: `gh` authenticated (`gh auth status`).
-
-### Jira
-
-The commands below are those of **[`ankitpokhrel/jira-cli`](https://github.com/ankitpokhrel/jira-cli)** (the `jira` binary, v1.5+) — the specific CLI this workflow targets. Other tools also named `jira` have different command trees, so if you use a different one, map these operations to its equivalents. Install it (e.g. `brew install ankitpokhrel/jira-cli/jira-cli`, or a release binary from the repo), then run `jira init` to authenticate and select the default project.
-
-- View issue: `jira issue view <KEY>` (e.g. `jira issue view ABC-123`)
-- Edit/comment: `jira issue edit <KEY>` / `jira issue comment add <KEY>`
-- Create issue: `jira issue create`
-- Reference in PR: include the key in the PR title/body (e.g. `[ABC-123] ...`). Jira does **not** close the issue automatically via the GitHub PR unless there's an integration configured; assume closing is done by a human or Jira automation, not the flow.
-- Requires: `ankitpokhrel/jira-cli` installed and initialized via `jira init` (`jira me` to verify authentication).
-
-> Note on key vs. number: on GitHub the issue is a number (`42`); on Jira it's a key (`ABC-123`). When the user passes the argument, take it as-is: if the tracker is Jira, expect a key; if GitHub, a number.
-
-### Parent/child (epics)
-
-Both trackers can group issues under an epic. The full model — including the integration
-branch — is in `workflow/epics.md`. This section is the **single source for the concrete
-parent/child commands**; other guides reference it instead of repeating the syntax.
-
-- **GitHub**: an epic is an issue with the `epic` label; children are native **sub-issues**.
-  Modern `gh` (**≥ 2.94**) has first-class commands for the relationship — prefer them:
-
-  ```bash
-  gh issue list --label epic --state open                  # list open epics
-  gh issue create --parent <epicN> --title "…" --body "…"  # create a child already linked
-  gh issue edit <epicN> --add-sub-issue <childN>           # link an existing issue as a child
-  gh issue edit <childN> --remove-parent                   # unlink a child
-  gh issue view <n> --json parent,subIssues,subIssuesSummary
-  #   .parent            → the epic this issue belongs to (null if standalone)
-  #   .subIssues.nodes[] → an epic's children (use .number)
-  #   .subIssuesSummary  → { total, completed, percentCompleted }
-  ```
-
-  **Fallback** (gh < 2.94, or GitHub Enterprise Server without these commands): use the REST
-  API via `gh api`. **Quote every path** — the `{owner}/{repo}` braces break unquoted in
-  PowerShell. All three operations have a fallback:
-
-  ```bash
-  # List an epic's children:
-  gh api "repos/{owner}/{repo}/issues/<epicN>/sub_issues" --jq '.[].number'
-
-  # Link a child — two shell-neutral steps (avoid Bash-only command substitution).
-  # 1) read the child's internal id (NOT its issue number):
-  gh api "repos/{owner}/{repo}/issues/<childN>" --jq '.id'
-  # 2) pass that id as <childId>:
-  gh api --method POST "repos/{owner}/{repo}/issues/<epicN>/sub_issues" -F sub_issue_id=<childId>
-
-  # Detect a child's parent epic — read the parent reference from the issue payload
-  # (field name can vary by API version; adjust if empty):
-  gh api "repos/{owner}/{repo}/issues/<n>" --jq '.parent.number // .parent_issue_url // empty'
-  ```
-
-  Last resort for parent detection, if the payload exposes no parent field on your API
-  version: treat the issue as a child when it appears in some `epic`-labeled issue's
-  `sub_issues` list. Only use these when the native commands aren't available.
-- **Jira**: an epic is the native **Epic** issue type; children carry the **Epic Link /
-  parent** field. No label convention needed.
-
-## What does NOT change between trackers
-
-The git flow is identical in both cases: `main → branch → implementation → PR` (see `git-flow.md`). The PR always goes to GitHub. The only thing that changes is where the issue is read from / written to. Epics behave the same way across trackers too — same integration branch and `/finish-epic` flow (see `workflow/epics.md`); only how the parent/child link is stored differs (label + sub-issue on GitHub, Epic type + Epic Link on Jira).
+There's no hosting platform, so a **PR is a local branch left unmerged for review**: its commits are the change, and the `## Pull request` section of its issue file (on that branch) is the PR description. List the open ones with `git branch --no-merged main` (and `git branch --no-merged epic/<epicN>-<slug>` for an epic's children). The human reviews — optionally with `/review-pr <n>` — and merges; the agent never merges (see `workflow/git-flow.md` step 8).

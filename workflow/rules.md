@@ -11,19 +11,24 @@ rules inline and point here for the full list. If a rule changes, change it here
    implementing anything non-trivial. Don't assume requirements.
 3. **Ask when something is ambiguous.** One extra question is cheaper than a wrong
    assumption. Don't invent requirements.
-4. **Never merge or push to `main`.** The flow ends with an open PR (see
-   `workflow/git-flow.md`). A PR may target `main` or, for an issue that belongs to an
-   epic, that epic's integration branch (see `workflow/epics.md`) — either way it's left
-   open for human review, never merged.
-5. **Never `git commit` or `git push` unless the user explicitly asks.** Invoking a
-   mutating workflow explicitly authorizes only the side effects that workflow declares —
-   e.g. `/work-issue` authorizes its commit → push → PR steps, and `/finish-epic` its
-   epic-branch sync/push and integration PR. It does **not** authorize unrelated commits,
-   pushes, merges, or PRs. Outside of an invoked workflow, make the changes and let the
-   user decide when to commit or push — never do it on your own initiative.
-6. **Never commit secrets or credentials.** Keep them in gitignored `.env` files
+4. **Never merge into `main` or commit to it directly.** The flow ends with a local PR:
+   a branch left unmerged for human review (see `workflow/git-flow.md`). Its base is
+   `main` or, for an issue that belongs to an epic, that epic's integration branch (see
+   `workflow/epics.md`) — either way the human merges it, never the agent. The one
+   exception: issue files under `issues/`, which `/create-issue` and `/refine-issue`
+   commit on `main` (see `workflow/issue-tracker.md`).
+5. **Never `git commit` unless the user explicitly asks.** Invoking a mutating workflow
+   explicitly authorizes only the side effects that workflow declares — e.g.
+   `/create-issue` and `/refine-issue` the commit of the issue file they wrote,
+   `/work-issue` its commits on the working branch, and `/finish-epic` its epic-branch
+   sync and closing commit. It does **not** authorize unrelated commits or merges.
+   Outside of an invoked workflow, make the changes and let the user decide when to
+   commit — never do it on your own initiative.
+6. **Local-only.** This project has no remote: never add one, push, or publish
+   anything (issues, code, PRs) to an external service unless the user asks.
+7. **Never commit secrets or credentials.** Keep them in gitignored `.env` files
    and provide a `.env.example` with placeholder values.
-7. **Language.** All artifacts — code, comments, commit messages, branch names,
+8. **Language.** All artifacts — code, comments, commit messages, branch names,
    issues, PRs, and documentation — are written in English unless the user
    explicitly asks otherwise. Reply to the user in the language they write in.
 

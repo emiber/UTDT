@@ -1,19 +1,18 @@
 # Issue creation
 
-Guide for `/create-issue`. The goal: turn a rough idea into a well-formed issue in
-the tracker — clear enough that `/refine-issue` (or a human) can pick it up without
+Guide for `/create-issue`. The goal: turn a rough idea into a well-formed issue file
+under `issues/` — clear enough that `/refine-issue` (or a human) can pick it up without
 guessing what was meant.
 
 This is **capture, not refinement**. Keep it light: a good title, a body that states
-the problem and any known context, and the right tracker. Deep clarification (scope,
-edge cases, acceptance criteria) is `/refine-issue`'s job — don't do it here unless
-the user explicitly asks.
+the problem and any known context. Deep clarification (scope, edge cases, acceptance
+criteria) is `/refine-issue`'s job — don't do it here unless the user explicitly asks.
 
-## Before starting: resolve the tracker
+## Before starting: the tracker
 
-Determine whether the project uses GitHub or Jira following `workflow/issue-tracker.md`
-(check `.workflow-config`; it ships preset to GitHub). Make sure the tracker CLI is
-authenticated first — `gh auth status` for GitHub, `jira me` for Jira.
+Issues are local Markdown files; the format and every operation used below (search, next
+number, commit) are in `workflow/issue-tracker.md`. Check that `.workflow-config` has
+`issue_tracker=local`.
 
 ## Steps
 
@@ -25,24 +24,22 @@ short body:
 
 - **What** — the problem, bug, or feature, in one line.
 - **Why / context** — anything already known: where it happens, links, related issues.
-- **Type** — bug, feature, chore, docs… (drives the title prefix / label if the
-  project uses them).
+- **Type** — `feat`, `fix`, `chore`, `docs`… (the issue's `type`, which becomes its
+  branch prefix).
 
 Ask only what's missing — one or two questions, not the full refinement
 interrogation. If the user gives a one-liner and says "just create it", create it.
 
 ### 2. Check for duplicates
 
-Before drafting, search the open issues for the same problem, using two or three key
-words from the request:
-
-- **GitHub**: `gh issue list --state open --search "<key words>"`
-- **Jira**: `jira issue list -q 'summary ~ "<key words>" AND statusCategory != Done'`
+Before drafting, search the open issues (`status` not `closed`) for the same problem,
+using two or three key words from the request (see `workflow/issue-tracker.md`).
 
 If one plausibly matches, show it and ask: add the new context to the existing issue
-(a comment), or create a new one anyway (and mention the related issue in its body).
-Never decide silently. No match → carry on. This applies to every issue this workflow
-creates, including the follow-ups `/work-issue` offers (`workflow/git-flow.md` step 7).
+(a dated entry in its `## Notes`), or create a new one anyway (and mention the related
+issue in its body). Never decide silently. No match → carry on. This applies to every
+issue this workflow creates, including the follow-ups `/work-issue` offers
+(`workflow/git-flow.md` step 7).
 
 ### 3. Assess size and placement (epics)
 
@@ -52,19 +49,17 @@ structure silently, and never invent a parent. See `workflow/epics.md` for the h
 - **Is it epic-sized?** If the request clearly spans several deliverables or components,
   or would sensibly be more than one PR, it's probably an **epic**, not one issue. Say so
   and ask how to handle it:
-  - create it as an **epic** (a parent issue), and capture children as separate issues
+  - create it as an **epic** (`type: epic`), and capture children as separate issues
     (now or later), or
   - keep it as a **single issue** (it's smaller than it looks, or it'll be split during
     refinement).
 
-  If epic: create the parent labeled `epic` (GitHub) / as an Epic type (Jira). Capturing
-  the children now is optional — offer to, but don't force a full breakdown at capture time.
+  Capturing the children now is optional — offer to, but don't force a full breakdown at
+  capture time.
 
-- **Does it belong under an existing epic?** For a normal (non-epic) issue, list open epics
-  — GitHub `gh issue list --label epic --state open`, Jira the project's epics. If the new
-  issue plausibly fits one, propose linking it as a child and confirm. If confirmed, create
-  it and then link it as a child (GitHub sub-issue / Jira Epic Link — commands in
-  `workflow/issue-tracker.md`). If nothing fits or the user declines, create it standalone.
+- **Does it belong under an existing epic?** For a normal (non-epic) issue, list the open
+  epics. If the new issue plausibly fits one, propose making it a child (`parent: <epicN>`)
+  and confirm. If nothing fits or the user declines, create it standalone.
 
 If neither applies (a plain, self-contained issue with no matching epic), skip this and
 carry on — this is the common case.
@@ -78,26 +73,23 @@ Write a concise issue:
 - **Body**: the problem and known context. Don't invent scope, acceptance criteria,
   or a solution — that's refinement. A short "Context / notes" section is enough.
 
-Show the draft (title + body) to the user and confirm before creating.
+Show the draft (title, type, parent if any, and body) to the user and confirm before
+creating.
 
-### 5. Create it in the tracker
+### 5. Create the file
 
-- **GitHub**: `gh issue create --title "<title>" --body-file <file>` (add
-  `--label <type>` if the project uses type labels). Returns the issue URL/number.
-- **Jira**: `jira issue create` with the summary, description, and the project's
-  issue type. Returns the key.
-
-If step 3 decided this is an **epic** or a **child**, apply the hierarchy now
-(details in `workflow/epics.md`):
-
-- **Epic**: add the `epic` label on GitHub (`--label epic`) / create it as an Epic type
-  on Jira.
-- **Child**: after creating it, link it to its parent — GitHub sub-issue / Jira Epic Link
-  (commands in `workflow/issue-tracker.md`) — and confirm the link took.
+1. Take the next issue number (see `workflow/issue-tracker.md` — it counts every branch,
+   not only the working tree).
+2. Write `issues/<n>-<slug>.md` with the frontmatter (`id`, `title`, `type`,
+   `status: open`, `parent` if step 3 made it a child, `created` with today's date) and
+   the body.
+3. Commit only that file: `chore(issues): open #<n> <title>` — on `main`, or on the
+   working branch for a `/work-issue` follow-up (see `workflow/issue-tracker.md`,
+   Committing issue changes). Invoking `/create-issue` authorizes this commit.
 
 ### 6. Output
 
-Confirm with the issue number/key and its URL. Suggest `/refine-issue <n>` to make it
+Confirm with the issue number and file path. Suggest `/refine-issue <n>` to make it
 implementable, then `/work-issue <n>` to build it.
 
 ## Keep it minimal

@@ -6,7 +6,7 @@
 #   bash .github/scripts/check-workflow.test.sh
 #
 # The fixture is synthetic, so the test doesn't depend on which commands a project
-# ships. CI runs it next to the check (.github/workflows/workflow-check.yml).
+# ships. Run it next to the check after changing either script.
 set -uo pipefail
 case "$0" in
   */*) cd "${0%/*}/../.." || exit 1 ;;
@@ -34,7 +34,7 @@ make_fixture() {
   printf -- '# Guide\n' > "$d/workflow/guide.md"
   printf -- '---\nname: demo\n---\n\nFirst read `.agents/skills/demo/SKILL.md`.\n' > "$d/.claude/commands/demo.md"
   printf -- '---\nname: demo\n---\n\nSee `workflow/guide.md`.\n' > "$d/.agents/skills/demo/SKILL.md"
-  printf 'issue_tracker=github\n' > "$d/.workflow-config"
+  printf 'issue_tracker=local\n' > "$d/.workflow-config"
 }
 
 # One function per case; each runs inside a fresh fixture.
@@ -54,8 +54,10 @@ unlisted_command() {
     printf -- '---\nname: extra\n---\n\nFirst read `.agents/skills/extra/SKILL.md`.\n' > .claude/commands/extra.md
 }
 dangling_reference() { printf -- 'See `workflow/missing.md`.\n' >> workflow/guide.md; }
-jira_without_project() { printf 'issue_tracker=jira\n' > .workflow-config; }
-unknown_tracker() { printf 'issue_tracker=linear\n' > .workflow-config; }
+crlf_config() { printf '# comment\r\nissue_tracker=local\r\n' > .workflow-config; }
+remote_tracker() { printf 'issue_tracker=github\n' > .workflow-config; }
+missing_tracker() { printf '# no tracker set\n' > .workflow-config; }
+missing_config() { rm .workflow-config; }
 
 passed=0
 failed=0
@@ -92,8 +94,10 @@ run_case "command that doesn't delegate" 1 ".claude/commands/demo.md must delega
 run_case "wrong frontmatter name" 1 ".agents/skills/demo/SKILL.md: frontmatter name must be 'demo'" wrong_frontmatter_name
 run_case "command missing from the entry files" 1 "CLAUDE.md doesn't list the extra command" unlisted_command
 run_case "dangling guide reference" 1 "workflow/guide.md references workflow/missing.md, which does not exist" dangling_reference
-run_case "jira tracker without a project" 1 "issue_tracker=jira needs jira_project" jira_without_project
-run_case "unknown tracker" 1 "must set issue_tracker=github or issue_tracker=jira" unknown_tracker
+run_case "CRLF .workflow-config passes" 0 "Workflow integrity: OK." crlf_config
+run_case "remote tracker" 1 "must set issue_tracker=local" remote_tracker
+run_case "tracker not set" 1 "must set issue_tracker=local" missing_tracker
+run_case "missing .workflow-config" 1 "missing .workflow-config" missing_config
 
 echo "$passed passed, $failed failed"
 [ "$failed" -eq 0 ]

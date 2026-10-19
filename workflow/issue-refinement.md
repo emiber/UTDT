@@ -2,18 +2,17 @@
 
 Guide for `/refine-issue <n>`. The goal: take a raw issue and make it clear enough to implement without guessing.
 
-## Before starting: resolve the tracker
+## Before starting: the tracker
 
-Determine whether the project uses GitHub or Jira following `workflow/issue-tracker.md` (check `.workflow-config`; it ships preset to GitHub). Make sure the tracker CLI is authenticated first — `gh auth status` for GitHub, `jira me` for Jira. The concrete commands below depend on that.
+Issues are local Markdown files under `issues/`; the format and operations (find, edit, commit) are in `workflow/issue-tracker.md`. Check that `.workflow-config` has `issue_tracker=local`.
 
 ## Steps
 
 ### 1. Fetch the issue
 
-- **GitHub**: `gh issue view <n> --json title,body,labels,comments`
-- **Jira**: `jira issue view <KEY>`
+Read `issues/<n>-*.md` — frontmatter, body, and `## Notes`.
 
-If it doesn't exist, say so and offer to create it with `/create-issue` (see `workflow/issue-creation.md`), or directly with `gh issue create` / `jira issue create`.
+If it doesn't exist, say so and offer to create it with `/create-issue` (see `workflow/issue-creation.md`). If it's `closed`, say so and ask before refining it.
 
 ### 2. Detect ambiguities
 
@@ -35,10 +34,7 @@ Apply Ponytail: don't inflate the scope. If the issue asks for something small, 
 
 ### 4. Write the refined issue
 
-Update the issue with the structure in `docs/ISSUE_TEMPLATE.md`:
-
-- **GitHub**: `gh issue edit <n> --body-file <file>` and add the `refined` label with `gh issue edit <n> --add-label "refined"`.
-- **Jira**: `jira issue edit <KEY>` with the refined body, and leave a comment noting it was refined (`jira issue comment add <KEY>`). If the project uses a label/status for this, apply it.
+Rewrite the issue file's body with the structure in `docs/ISSUE_TEMPLATE.md`, keep its existing `## Notes`, and set `status: refined` (adjust `title` or `type` if refinement changed them). Then commit only that file: `chore(issues): refine #<n> <title>` — on `main` (see `workflow/issue-tracker.md`, Committing issue changes). Invoking `/refine-issue` authorizes this commit.
 
 ### 5. Output
 

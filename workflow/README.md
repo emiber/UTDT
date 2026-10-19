@@ -1,18 +1,24 @@
-# AI Workflow Starter
+# AI Workflow Starter — local edition
 
 A base for kicking off projects with AI-assisted development. Optimized for **Claude Code**, with best-effort support for **GitHub Copilot** and **Codex**.
+
+This project runs the workflow **fully locally**: no remote repository, no hosting platform, no CI. Issues are Markdown files in the repo (`issues/`), a "PR" is a local branch left unmerged for review, and the quality gate runs on your machine.
 
 > **This file documents the workflow itself.** The project's own README lives at the repo root (`README.md`) and is generated/replaced by `/init-project`. This file is not touched by scaffolding.
 
 It gives you two things:
 
 1. **Interactive scaffolding** — the agent asks what kind of project you're building, defines the components (APIs, frontend, database, queues, etc.), suggests technologies, and generates the base.
-2. **Issue → PR workflow** — interactive issue refinement and the `main → branch → implementation → PR` cycle.
+2. **Issue → PR workflow** — interactive issue refinement and the `main → branch → implementation → local PR` cycle.
 
 ## Getting started
 
-1. **Copy this repo** as the base of your new project (clone it, or copy its contents into your project folder).
-2. **Check the requirements**: `git` and `gh` (GitHub CLI) authenticated. For Jira issues, also the `jira` CLI. See [Git flow requirements](#git-flow-requirements).
+1. **Check the requirements**: `git` (on Windows, Git for Windows, which brings the `bash` the workflow scripts and hook use). Nothing else — no `gh`, no accounts.
+2. **Activate the `main` guard** once per clone (it's a local git setting, so it isn't versioned):
+   ```bash
+   git config core.hooksPath .githooks
+   ```
+   `.githooks/pre-commit` then rejects commits on `main` that touch anything outside `issues/`. Issue-tracker commits and merge commits pass. That's what makes "never commit to `main`" real instead of just a convention. `/init-project` sets it for you.
 3. **Open Claude Code** in the folder, ideally in Opus-plan mode so it plans with Opus and implements with Sonnet (details in `workflow/model-strategy.md`):
    ```bash
    claude --model opusplan
@@ -21,27 +27,47 @@ It gives you two things:
    ```
    /init-project
    ```
-5. **Protect `main`** — `/init-project` attempts to enable branch protection on `main` automatically (require a PR, require CI to pass, block direct pushes). If it couldn't — the repo isn't on GitHub yet, or you lack admin — enable it by hand in repo **Settings → Branches**: add a rule for `main` that requires a pull request, requires the CI check to pass, and disallows direct pushes. This is what makes "never push to `main`" real instead of just a convention.
-6. **Work in the issue → PR loop** — create an issue (optional), refine it, then implement it:
+5. **Work in the issue → PR loop** — create an issue, refine it, implement it:
    ```
    /create-issue "contacts list not paginating past page 2"
-   /refine-issue 42
-   /work-issue 42
+   /refine-issue 1
+   /work-issue 1
    ```
-   The agent stops at an open PR; it never merges, and it won't commit or push unless you ask (running `/work-issue` is that ask).
+   The agent stops at a local PR — the branch `fix/1-…`, unmerged, with its description in `issues/1-….md`. You review it (`/review-pr 1` helps) and merge it yourself:
+   ```bash
+   git checkout main
+   git merge --no-ff fix/1-contacts-pagination
+   ```
+   Merging closes the issue on `main`, because the branch already set `status: closed` in the issue file.
 
 ### Commands
 
 | Command | What it does | Phase |
 |---|---|---|
 | `/init-project` | Interactive scaffolding: asks project type, components and stack, then generates a runnable base. | Design (Opus) |
-| `/create-issue <description>` | Creates a new issue in the tracker from a description — light capture, not full refinement. Can create it as an epic or nest it under an existing one. | Capture (Opus) |
+| `/create-issue <description>` | Creates a new issue file under `issues/` from a description — light capture, not full refinement. Can create it as an epic or nest it under an existing one. | Capture (Opus) |
 | `/refine-issue <n>` | Turns a raw issue into an implementable one by asking every question needed. | Analysis (Opus) |
-| `/work-issue <n>` | Implements a refined issue: `main → branch → approved plan → code → self-review → PR`, then offers follow-ups. A child of an epic targets the epic's integration branch. | Implementation (Sonnet) |
-| `/finish-epic <n>` | Opens the integration PR (epic branch → `main`) once an epic's children are done. | Integration (Sonnet) |
-| `/review-pr <n>` | Reviews an open PR against its linked issue(s)' acceptance criteria and the Definition of Done. Read-only: never commits or pushes. | Review (Sonnet) |
+| `/work-issue <n>` | Implements a refined issue: `main → branch → approved plan → code → self-review → local PR`, then offers follow-ups. A child of an epic targets the epic's integration branch. | Implementation (Sonnet) |
+| `/finish-epic <n>` | Prepares the integration PR (epic branch → `main`) once an epic's children are done. | Integration (Sonnet) |
+| `/review-pr <n>` | Reviews the local PR of issue `<n>` against its linked issue(s)' acceptance criteria and the Definition of Done. Read-only: never commits, checks out, or merges. | Review (Sonnet) |
 
-> Not on Claude Code? The same workflow works with Codex (`AGENTS.md`) and GitHub Copilot (`.github/copilot-instructions.md`). Each command's steps live once, as a playbook in `.agents/skills/<name>/SKILL.md`: Codex runs those skills directly (invoked with `/skills` or `$skill-name`), and the Claude Code commands are thin wrappers that delegate to them. Copilot supports slash commands via prompt files under `.github/prompts/`, but those aren't shipped here — with Copilot, use natural language ("refine issue 42") and follow the matching playbook, or add the equivalent prompt files. Either way the detailed rules live in `workflow/`.
+> Not on Claude Code? The same workflow works with Codex (`AGENTS.md`) and GitHub Copilot (`.github/copilot-instructions.md`, read locally by Copilot in VS Code). Each command's steps live once, as a playbook in `.agents/skills/<name>/SKILL.md`: Codex runs those skills directly (invoked with `/skills` or `$skill-name`), and the Claude Code commands are thin wrappers that delegate to them. Copilot supports slash commands via prompt files under `.github/prompts/`, but those aren't shipped here — with Copilot, use natural language ("refine issue 42") and follow the matching playbook, or add the equivalent prompt files. Either way the detailed rules live in `workflow/`.
+
+## Issues as files
+
+Each issue is `issues/<n>-<slug>.md`: a small frontmatter (`id`, `title`, `type`, `status`, `parent`, `created`) plus a Markdown body. Status goes `open` → `refined` → `closed`. An epic is `type: epic`; its children carry `parent: <epicN>`. Full format and operations: `workflow/issue-tracker.md`.
+
+- **Versioned.** Issues live in git next to the code, so you get their history for free.
+- **Status travels with the branch.** `/work-issue` closes the issue on its working branch. Merging the branch closes it on `main`; discarding the branch leaves it open.
+- **Commits on `main`.** `/create-issue` and `/refine-issue` commit their issue file directly on `main` (`chore(issues): …`). That's the only kind of commit `main` accepts besides merges.
+
+Handy commands:
+
+```bash
+git grep -l "^status: open" -- issues/      # open issues (use "refined" for the ready ones)
+git branch --no-merged main                 # local PRs waiting for review
+git diff main...<branch>                    # what a local PR changes
+```
 
 ## Philosophy
 
@@ -73,17 +99,20 @@ Reply to the user in the language they write in. But all artifacts — code, com
 
 A few rules the agents enforce (full detail in `workflow/principles.md` and `workflow/git-flow.md`):
 
+- **Local-only.** No remote, no push, nothing published to an external service unless you ask.
 - **Atomic components + tests.** Prefer the smallest composable units; each ships with unit tests and coverage meets the project threshold (default 85%).
 - **Plan approval before code.** `/work-issue` posts a structured plan and waits for your explicit OK before writing code (trivial changes: a one-sentence confirmation).
-- **Independent self-review before the PR.** A fresh agent with a clean context reviews the diff against the issue, the Definition of Done, and a security checklist; blockers are fixed before the PR opens.
-- **No hidden gates.** Every PR has a Verification section listing each gate (lint, tests, coverage, self-review, security, docs) as pass or n/a with the reason.
-- **No commits or pushes unless you ask.** The agent implements and stops; running `/work-issue` is what authorizes its commit → push → PR flow.
+- **Independent self-review before the PR.** A fresh agent with a clean context reviews the diff against the issue, the Definition of Done, and a security checklist; blockers are fixed before the PR is prepared.
+- **No hidden gates.** Every local PR has a Verification section, in its issue file, listing each gate (lint, tests, coverage, self-review, security, docs) as pass or n/a with the reason.
+- **No commits unless you ask.** The agent implements and stops. Running a workflow command authorizes only the commits it declares: the issue file for `/create-issue` and `/refine-issue`, the working branch for `/work-issue`, the epic branch for `/finish-epic`.
+- **You merge.** The agent never merges a branch into its base.
 - **No secrets in the repo.** Credentials live in gitignored `.env` files; a `.env.example` holds placeholders.
 - **Minimal dependencies.** Every new dependency has to be justified.
 - **One PR = one issue.** Changes stay small and focused; unrelated work becomes its own issue — `/work-issue` offers to create those follow-ups (only with your approval, after checking for duplicates).
-- **Epics for big work.** Work too large for one PR becomes an epic (a parent issue). Its children each merge into a shared integration branch, and the whole epic ships to `main` via one PR opened with `/finish-epic` (see `workflow/epics.md`).
+- **Epics for big work.** Work too large for one PR becomes an epic (a parent issue). Its children each merge into a shared integration branch, and the whole epic ships to `main` via one local PR prepared with `/finish-epic` (see `workflow/epics.md`).
 - **Docs travel with code.** Behavior or setup changes update the docs in the same PR.
-- **CI enforces the gate.** A GitHub Actions workflow runs lint + tests + the coverage threshold (default 85%) on every PR, using the commands recorded in `docs/ARCHITECTURE.md` (`/init-project` fills it in for your stack). A second workflow checks the workflow files themselves (commands ↔ skills, referenced guides, listings); it stays in your project, so a command you add needs its playbook in `.agents/skills/` and a line in the entry files, like the built-in ones.
+- **The quality gate runs locally.** There's no CI: `/work-issue` runs the lint and test-with-coverage commands recorded in `docs/ARCHITECTURE.md` (`/init-project` fills them in for your stack) before every PR, and you can run the same ones.
+- **Workflow integrity check.** After changing the workflow files, run `bash .github/scripts/check-workflow.sh` (commands ↔ skills, referenced guides, listings, `.workflow-config`). Its tests are `bash .github/scripts/check-workflow.test.sh`. A command you add needs its playbook in `.agents/skills/` and a line in the entry files, like the built-in ones.
 
 ## Structure
 
@@ -93,24 +122,24 @@ A few rules the agents enforce (full detail in `workflow/principles.md` and `wor
 ├── CLAUDE.md                       # Pointer + rules for Claude Code
 ├── AGENTS.md                       # Pointer for Codex
 ├── .gitignore                      # Safe baseline (/init-project extends it per stack)
-├── .gitattributes                  # Keeps *.sh with LF endings (runs from a Windows checkout)
+├── .gitattributes                  # Keeps *.sh and hooks with LF endings (they run from a Windows checkout)
 ├── .env.example                    # Placeholder env vars; copy to gitignored .env
-├── .workflow-config                # Issue tracker selection (github by default)
+├── .workflow-config                # Issue tracker selection (issue_tracker=local)
+├── .githooks/
+│   └── pre-commit                  # main guard: on main, only issues/ commits (and merges) pass
+├── issues/                         # The issues, one Markdown file each (created by /create-issue)
 ├── .github/
 │   ├── copilot-instructions.md     # Pointer for Copilot
-│   ├── scripts/
-│   │   ├── check-workflow.sh       # Workflow integrity check (commands ↔ skills, guide refs)
-│   │   └── check-workflow.test.sh  # Tests for the check, on a synthetic fixture
-│   └── workflows/
-│       ├── ci.yml                  # Lint + tests + coverage threshold (default 85%) on PRs
-│       └── workflow-check.yml      # Runs the check's tests, then the check, on PRs
+│   └── scripts/
+│       ├── check-workflow.sh       # Workflow integrity check (commands ↔ skills, guide refs)
+│       └── check-workflow.test.sh  # Tests for the check, on a synthetic fixture
 ├── .claude/commands/               # Claude Code slash commands (thin wrappers over .agents/skills/)
 │   ├── init-project.md             # Interactive scaffolding
-│   ├── create-issue.md             # Create a new issue in the tracker
+│   ├── create-issue.md             # Create a new issue file
 │   ├── refine-issue.md             # Issue refinement
-│   ├── work-issue.md               # main → branch → impl → self-review → PR
-│   ├── finish-epic.md              # Epic integration branch → main PR
-│   └── review-pr.md                # Read-only PR review against linked issue + DoD
+│   ├── work-issue.md               # main → branch → impl → self-review → local PR
+│   ├── finish-epic.md              # Epic integration branch → main local PR
+│   └── review-pr.md                # Read-only review of a local PR against linked issue + DoD
 ├── .agents/skills/                 # The six playbooks — single source, run directly by Codex
 │   ├── init-project/SKILL.md
 │   ├── create-issue/SKILL.md
@@ -127,18 +156,10 @@ A few rules the agents enforce (full detail in `workflow/principles.md` and `wor
 │   ├── issue-refinement.md         # How to refine an issue
 │   ├── git-flow.md                 # The git flow contract
 │   ├── epics.md                    # Epics: parent/child issues + integration branches
-│   ├── issue-tracker.md            # GitHub (default) or Jira
+│   ├── issue-tracker.md            # Local Markdown issues: format, operations, local PRs
 │   ├── model-strategy.md           # Opus to plan, Sonnet to implement
 │   └── pr-review.md                # PR review: linked issue ACs + Definition of Done
 └── docs/
     ├── ARCHITECTURE.md             # (generated by /init-project)
     └── ISSUE_TEMPLATE.md           # Refined issue template
 ```
-
-## Issue tracker
-
-Defaults to **GitHub**, already set in `.workflow-config` (`issue_tracker=github`), so the agent doesn't ask. To use Jira instead, edit that file (`issue_tracker=jira` plus `jira_project=...`). If the file is ever missing, the agent falls back to asking and defaults to GitHub. The PR always goes to GitHub, whatever tracker you use. Details in `workflow/issue-tracker.md`.
-
-## Git flow requirements
-
-`git` and `gh` (GitHub CLI) authenticated. For Jira, additionally the `jira` CLI configured. The agent does **not** merge; it leaves the PR open for human review.

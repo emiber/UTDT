@@ -18,7 +18,7 @@ _(pending)_
 - **Measured by:** _(pending — e.g. vitest coverage, pytest-cov)_
 - **Lint command:** _(pending — e.g. `npm run lint`, `ruff check .`)_
 - **Test-with-coverage command:** _(pending — e.g. `npx vitest run --coverage`, `pytest --cov --cov-fail-under=85`)_
-- Enforced identically in local scripts and in CI (`.github/workflows/ci.yml`): CI runs these same commands, and `/work-issue` runs them before every PR.
+- These two commands are the whole gate: the project is local-only, so there's no CI. `/work-issue` runs them before every PR, and anyone checking a branch runs the same ones.
 
 ## Deferred decisions
 _(things we decided NOT to include now and why)_

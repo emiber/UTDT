@@ -1,6 +1,6 @@
 ---
 name: create-issue
-description: Creates a new issue (GitHub or Jira) from a description, asking only what's needed to write a clear title and body.
+description: Creates a new local issue file (issues/) from a description, asking only what's needed to write a clear title and body.
 ---
 
 # /create-issue

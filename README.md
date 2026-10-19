@@ -9,8 +9,9 @@
 
 ## Quick start with the workflow
 
-1. Open Claude Code in this folder: `claude --model opusplan`
-2. Run `/init-project` to scaffold the project (this replaces this README).
-3. Then use `/refine-issue <n>` and `/work-issue <n>` for the issue → PR loop.
+1. Once per clone, activate the `main` guard: `git config core.hooksPath .githooks`
+2. Open Claude Code in this folder: `claude --model opusplan`
+3. Run `/init-project` to scaffold the project (this replaces this README).
+4. Then use `/create-issue`, `/refine-issue <n>` and `/work-issue <n>` for the issue → local PR loop. Issues live in `issues/`; everything stays local.
 
 Full details: **[workflow/README.md](workflow/README.md)**.

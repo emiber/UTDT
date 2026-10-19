@@ -1,0 +1,17 @@
+#!/bin/sh
+# Local stand-in for branch protection: no direct commits on main, except
+# issue-tracker updates (files under issues/) and merge commits.
+# Activate once per clone:  git config core.hooksPath .githooks
+# See workflow/git-flow.md and workflow/issue-tracker.md.
+
+[ "$(git symbolic-ref --short -q HEAD)" = main ] || exit 0
+
+# Concluding a merge (e.g. after resolving conflicts) is how branches land on main.
+git rev-parse -q --verify MERGE_HEAD >/dev/null && exit 0
+
+outside=$(git diff --cached --name-only | grep -v '^issues/')
+[ -z "$outside" ] && exit 0
+
+echo "pre-commit: commits on main may only touch issues/. Commit these on a branch instead:" >&2
+echo "$outside" | sed 's/^/  /' >&2
+exit 1

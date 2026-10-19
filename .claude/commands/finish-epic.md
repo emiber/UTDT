@@ -1,11 +1,11 @@
 ---
 name: finish-epic
-description: Opens the integration PR (epic branch → main) when an epic's children are done. Reads workflow/epics.md.
+description: Prepares the integration PR (epic branch → main, left unmerged for review) when an epic's children are done. Reads workflow/epics.md.
 ---
 
 # /finish-epic
 
-First read `.agents/skills/finish-epic/SKILL.md`, then follow it step by step — it's the single source for this command's steps, shared with Codex. The target epic is $ARGUMENTS (a number on GitHub, a key on Jira).
+First read `.agents/skills/finish-epic/SKILL.md`, then follow it step by step — it's the single source for this command's steps, shared with Codex. The target epic is $ARGUMENTS (its issue number).
 
 Claude Code specifics:
 - This wraps up implementation → the execution model (Sonnet) is fine; see `workflow/model-strategy.md`.
