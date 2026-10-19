@@ -49,13 +49,21 @@ Keeping them separate means a generated query can't read or touch app state.
 - `meta_relationships` — `from_table`, `from_column`, `to_table`, `to_column`, `description`.
 
 The schema context sent to the LLM is built only from these tables. A table without
-a `meta_tables` row doesn't exist as far as the bot is concerned.
+a `meta_tables` row doesn't exist as far as the bot is concerned. All their columns are
+`TEXT NOT NULL`, with the natural keys as primary keys and no foreign keys between them.
+They are plain rowid tables, so readers return rows in load order.
 
-**Initial data** *(later issue)*: a seed script (`npm run seed`) creates `data.db` with the metadata
-tables and a small, generic sample dataset (sales: customers, products, orders) whose
-only purpose is to exercise the pipeline. The sample lives in one seed file and is
-meant to be replaced. Until the import feature exists, real data is loaded manually
-(e.g. DB Browser for SQLite) together with its metadata rows.
+**Initial data:** `npm run seed` creates `data/data.db` with the metadata tables and a
+small, fictitious sales dataset (`customers`, `products`, `orders` for 2024–2025) whose
+only purpose is to exercise the pipeline.
+
+- The demo lives in one file, `backend/src/demo-dataset.ts`: its schema, its rows and its
+  metadata. It's the only code that knows those tables, and it's meant to be replaced.
+  The seeding code itself (`backend/src/seed.ts`, `backend/src/metadata.ts`) is generic.
+- Re-running the seed **recreates `data.db` from scratch**: anything in it is deleted,
+  including data and metadata loaded by hand. The load runs in one transaction.
+- Until the import feature exists, real data is loaded manually (e.g. DB Browser for
+  SQLite) together with its metadata rows.
 
 ### Backend API (Fastify)
 

@@ -22,8 +22,17 @@ Prerequisites: **Node.js 24+** (it runs the backend's TypeScript natively and sh
 ```bash
 npm install
 git config core.hooksPath .githooks   # once per clone: activates the local main guard
+npm run seed                          # creates data/data.db with the demo dataset
 npm run dev
 ```
+
+`npm run seed` loads a small, fictitious sales dataset and the metadata that describes it
+to the bot (see *Data* in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)). Two warnings:
+
+- Running it again **recreates `data/data.db` from scratch**: everything in it is deleted,
+  including data loaded by hand.
+- **Stop the backend before re-seeding.** Once the backend reads `data.db`, it keeps the
+  file open, and on Windows the seed then fails with a permission error.
 
 `npm run dev` starts both packages:
 
@@ -48,7 +57,9 @@ npm run test:coverage   # Vitest for both packages; fails under 85% coverage
 ## Project layout
 
 ```
-backend/src/    Fastify app (app.ts), entry point (server.ts), SQLite helpers (db.ts)
+backend/src/    Fastify app (app.ts), entry points (server.ts, seed-cli.ts), SQLite helpers
+                (db.ts), metadata tables and seeding (metadata.ts, seed.ts), demo data
+                (demo-dataset.ts)
 frontend/src/   Vue app (App.vue), API client (api.ts), styles (styles/)
 data/           SQLite files, generated and gitignored
 docs/           ARCHITECTURE.md: design, stack, quality gate, deferred decisions
