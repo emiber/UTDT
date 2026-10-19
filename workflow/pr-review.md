@@ -1,6 +1,6 @@
 # PR review
 
-Guide for `/review-pr <n>`. Reviews a local PR — a branch left unmerged for review (see `workflow/issue-tracker.md`, Local PRs) — against its linked issue(s)' acceptance criteria and the Definition of Done from `workflow/git-flow.md`. The output is a structured report with **blockers** (must fix before merge) and **suggestions** (improvements worth considering).
+Guide for `/review-pr <n>`. Reviews a local PR — an issue's branch that isn't merged yet (see `workflow/issue-tracker.md`, Local PRs) — against its linked issue(s)' acceptance criteria and the Definition of Done from `workflow/git-flow.md`. The output is a structured report with **blockers** (must fix before merge) and **suggestions** (improvements worth considering).
 
 This is a **read-only command**: it never commits, checks out, merges, or modifies files. Read the branch with `git show` and `git diff` instead of checking it out, so the working tree doesn't change.
 
@@ -113,7 +113,7 @@ Improvements worth considering but not required for merge. Same format as blocke
 
 #### Summary
 
-One short paragraph: overall assessment, whether any blockers were found, what remains unverifiable from the diff alone, and the recommended next validation step. Do not state that the PR is "ready to merge" or recommend merging — that decision belongs to the human reviewer (see Hard rules).
+One short paragraph: overall assessment, whether any blockers were found, what remains unverifiable from the diff alone, and the recommended next validation step. Do not state that the PR is "ready to merge" or recommend merging. That decision belongs to the flow's merge step (`workflow/git-flow.md` step 8), which acts on your blockers (see Hard rules).
 
 ## Output conventions
 
@@ -125,5 +125,5 @@ One short paragraph: overall assessment, whether any blockers were found, what r
 ## Hard rules
 
 - Never commit, check out, merge, or modify files — this command is strictly read-only.
-- Never auto-approve or recommend merging. Leave that decision to the human reviewer.
+- Never auto-approve or recommend merging. Report; the flow's merge step (`workflow/git-flow.md` step 8) decides.
 - If the branch is already merged into its base, stop immediately and report without further analysis.

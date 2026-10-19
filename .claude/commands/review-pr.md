@@ -1,6 +1,6 @@
 ---
 name: review-pr
-description: Reviews a local PR (a branch left unmerged for review) against its linked issue(s) and the Definition of Done. Read-only. Reads workflow/pr-review.md.
+description: Reviews a local PR (an issue's branch that isn't merged yet) against its linked issue(s) and the Definition of Done. Read-only. Reads workflow/pr-review.md.
 ---
 
 # /review-pr

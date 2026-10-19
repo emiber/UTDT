@@ -1,6 +1,6 @@
 # Git flow — contract
 
-Guide for `/work-issue <n>`. Defines the `main → branch → implementation → local PR` cycle. This project is **local-only**: there's no remote and no hosting platform, so the PR is a branch left unmerged for human review, described in its issue file (see `workflow/issue-tracker.md`, Local PRs). This contract is **strict**: don't modify it unless the user asks. Issues that belong to an epic add an integration-branch layer on top of this cycle (child branches target the epic's branch, not `main`) — see `workflow/epics.md`.
+Guide for `/work-issue <n>`. Defines the `main → branch → implementation → local PR → merge` cycle. This project is **local-only**: there's no remote and no hosting platform, so the PR is a branch described in its issue file (see `workflow/issue-tracker.md`, Local PRs). Once every gate passes, the agent merges it into its base (step 8): the user authorized automatic commits and merges for this POC (`workflow/rules.md`). This contract is **strict**: don't modify it unless the user asks. Issues that belong to an epic add an integration-branch layer on top of this cycle (child branches target the epic's branch, not `main`) — see `workflow/epics.md`.
 
 ## Preflight checks
 
@@ -131,23 +131,24 @@ No push, no platform: the PR is the working branch plus a description in its iss
 
 If the work surfaced **real** loose ends — unrelated bugs you noticed, scope deliberately left out, self-review findings outside the issue's scope, a deliberate TODO — list them and **offer** to create them as issues. Nothing is created until the user approves; they may edit or drop items.
 
-- Create each approved item following `workflow/issue-creation.md` (it checks for duplicates first), with `Follow-up of #<n>` in its body. Create and commit it **on the working branch**, so it reaches `main` with the merge (the next-number rule in `workflow/issue-tracker.md` keeps numbers unique across branches). For a child of an epic, ask whether the follow-up belongs under the same epic.
+- The merge (step 8) doesn't wait for this answer.
+- Create each approved item following `workflow/issue-creation.md` (it checks for duplicates first), with `Follow-up of #<n>` in its body. Commit it on the branch the work was merged into: `main`, or the epic branch for an epic child. If the working branch isn't merged yet, commit it there. The next-number rule in `workflow/issue-tracker.md` keeps numbers unique across branches. For a child of an epic, ask whether the follow-up belongs under the same epic.
 - Then update the **Out of scope / follow-ups** list in the `## Pull request` section with the new issue numbers, and commit the issue file.
 - No real loose ends → say so and skip. Never invent follow-ups to look thorough.
 
-### 8. Closing
+### 8. Merge
 
-- **Don't merge.** Leave the branch unmerged for human review, and leave it checked out.
-- Report the branch, its base, and the commands the human uses to review and merge it:
+Only with every gate passing (or `n/a`), no unresolved self-review blockers, and the `## Pull request` section committed. Merge the branch into its base and delete it:
 
-  ```bash
-  git diff <base>...<branch>     # or /review-pr <n>
-  git checkout <base>
-  git merge --no-ff <branch>     # the human merges — never the agent
-  git branch -d <branch>         # optional, after merging
-  ```
+```bash
+git checkout <base>            # main, or epic/<epicN>-<slug> for an epic child
+git merge --no-ff <branch>
+git branch -d <branch>
+```
 
-  `--no-ff` keeps one merge commit per PR, so `main`'s history reads as a list of PRs.
+`--no-ff` keeps one merge commit per PR, so the base's history reads as a list of PRs. Git's default merge message is fine. If the merge conflicts, stop and report; don't force it.
+
+Then report the merge (branch, base, merge commit) and how to undo it if needed (`git revert -m 1 <merge-commit>`). If this was the last child of an epic, suggest `/finish-epic`.
 
 ## Definition of Done
 
@@ -161,13 +162,13 @@ An issue isn't done until all of these hold. Check them before preparing the PR:
 - [ ] No secrets or credentials committed, and the change passes the Security checklist in `workflow/pr-review.md` (or touches no security surface).
 - [ ] Docs updated if behavior or setup changed (`README` / `ARCHITECTURE` / etc.).
 - [ ] The `## Pull request` section's **Verification** reports every gate — pass, or `n/a` with the reason — and **Out of scope / follow-ups** lists what was left out (or "None").
-- [ ] The issue is closed on the working branch, and the branch is left unmerged for review — based on `main`, or on the epic's integration branch if the issue is a child of an epic (see `workflow/epics.md`).
+- [ ] The issue is closed on the working branch, and the branch is merged into its base: `main`, or the epic's integration branch if the issue is a child of an epic (see `workflow/epics.md`).
 
 ## Hard rules
 
 - Never commit to `main` directly. The one exception: issue files under `issues/`, committed by `/create-issue` and `/refine-issue` (see `workflow/issue-tracker.md`).
-- Never merge a working branch into its base — the human merges. (The only merge the flow does is `/finish-epic` syncing `main` into the epic branch.)
-- Never `git commit` unless the user explicitly asked for it (running `/work-issue` is an explicit request for its commits on the working branch). Don't commit on your own initiative.
+- Merge a working branch into its base only when it's ready (step 8): never with a failing gate, open self-review blockers, or an unwritten `## Pull request` section.
+- Commits and merges are automatic: the user authorized them for this POC (`workflow/rules.md`), so don't ask before committing or merging.
 - This project is local-only: never add a remote or push anywhere unless the user asks.
 - Never rewrite the history of `main` or an epic branch (no rebase, `reset --hard`, or amend there).
 - Never skip git hooks (`--no-verify`) or weaken tests just to get a green run.

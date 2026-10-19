@@ -1,6 +1,6 @@
 ---
 name: finish-epic
-description: Prepares the integration PR (epic branch → main, left unmerged for review) when an epic's children are done. Reads workflow/epics.md.
+description: Prepares the integration PR (epic branch → main) when an epic's children are done, and merges it once the quality gate passes. Reads workflow/epics.md.
 ---
 
 # /finish-epic
