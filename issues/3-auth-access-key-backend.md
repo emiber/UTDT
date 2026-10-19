@@ -2,7 +2,7 @@
 id: 3
 title: Agregar autenticación con access key en el backend
 type: feat
-status: refined
+status: closed
 parent: 1
 created: 2026-10-19
 ---
@@ -93,3 +93,43 @@ Que solo quien conoce la access key compartida (`APP_ACCESS_KEY`) pueda usar la 
   - No se agrega: no está en la tabla de endpoints de `docs/ARCHITECTURE.md`, y #4 no lo necesita.
   - Sin él, una key incorrecta se detecta en el primer request protegido: ese request devuelve `401` y #4 vuelve a pedir la key. Ese request llega enseguida, porque #5 carga el catálogo apenas se monta la pantalla principal.
   - Costo: entre #4 y #5 no hay ninguna ruta protegida real para probar la key a mano.
+
+## Pull request
+Branch: `feat/3-auth-access-key-backend` → `epic/1-poc-chatbot-text-to-sql`
+
+### What it does
+- **`backend/src/auth.ts`:**
+  - `readAccessKey`: falla si `APP_ACCESS_KEY` falta o está vacía, con un mensaje que nombra la variable y `.env.example`;
+  - `hasValidAccessKey`: parsea `Bearer <key>` sin distinguir mayúsculas en el esquema, y compara la key exacta con SHA-256 + `timingSafeEqual`, así que funciona con cualquier largo.
+- **`backend/src/app.ts`:** un hook `onRequest` deny-by-default. Toda ruta, actual, futura o inexistente, exige la key, salvo `GET /api/health`. Las rutas públicas se identifican por método y patrón de ruta.
+  - Corre antes de la validación del body.
+  - Ante un fallo responde un `401` genérico con el formato de Fastify y `WWW-Authenticate: Bearer`.
+- **`backend/src/server.ts`:** lee la key antes de abrir nada. Sin ella, el backend no arranca.
+- **Docs:**
+  - `.env.example`: `APP_ACCESS_KEY` obligatoria, con un placeholder;
+  - `README.md`: copiar `.env.example` a `.env` en la raíz, definir la key y cómo generar una aleatoria;
+  - `docs/ARCHITECTURE.md`: *Auth* y *Configuration*.
+
+### Verification
+- Lint: `npm run lint` — pass
+- Tests: `npm run test:coverage` — pass (8 archivos, 75 tests). Una primera corrida falló porque los workers de Vitest del frontend no arrancaron a tiempo en frío ("Timeout waiting for worker to respond"). No toca este cambio, y las 3 corridas siguientes pasaron (ver follow-ups).
+- Coverage: 100% en sentencias, ramas, funciones y líneas (umbral 85%); archivos nuevos o cambiados bajo el umbral: ninguno
+- Manual (AC de arranque): pass.
+  - `npm run dev -w backend` sin `APP_ACCESS_KEY` no escucha en `127.0.0.1:3000` y muestra `APP_ACCESS_KEY is not set. Copy .env.example to .env…`.
+  - Con la variable:
+    - health da `200` sin key;
+    - una ruta inexistente da `401` (`WWW-Authenticate: Bearer`) sin key o con una key incorrecta, y `404` con la correcta;
+    - la key no aparece en el log.
+- Self-review: sin blockers. Se aplicaron las tres sugerencias:
+  - rutas públicas por método y path;
+  - `auth.ts` en la estructura del README;
+  - cómo generar la key en el README.
+
+  No se aplicó rechazar el placeholder al arrancar, porque las reglas de fortaleza quedan fuera de este issue. Va propuesto como follow-up. (separate agent)
+- Security: pass. Hook deny-by-default con comparación timing-safe y un mismo `401` para cualquier fallo, sin la key en logs ni respuestas. No hay secretos: `.env.example` solo trae un placeholder.
+- Docs: updated `.env.example`, `README.md`, `docs/ARCHITECTURE.md`
+
+### Out of scope / follow-ups
+Propuestos, pendientes de aprobación:
+- Estabilizar el arranque en frío de los workers de Vitest del frontend (el timeout hace fallar el gate de forma intermitente).
+- Rechazar al arrancar el placeholder de `.env.example` como `APP_ACCESS_KEY`.
