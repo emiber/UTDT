@@ -6,8 +6,9 @@ translates the question into SQL with an LLM (OpenAI), runs it on a read-only co
 and turns the result into a structured answer. The app is domain-agnostic: it learns
 what the data means from metadata tables.
 
-**Status:** runnable scaffold. The backend has a health endpoint and the frontend shows
-its status. Features are built one small issue at a time; see
+**Status:** early POC. `npm run seed` loads a demo dataset, and the API is protected by a
+shared access key. The frontend first asks for that key (the `APP_ACCESS_KEY` value from
+your `.env`), then shows the backend status. Features are built one small issue at a time; see
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design and the decisions behind it.
 
 ## Stack
@@ -70,7 +71,8 @@ npm run test:coverage   # Vitest for both packages; fails under 85% coverage
 backend/src/    Fastify app (app.ts), entry points (server.ts, seed-cli.ts), access-key check
                 (auth.ts), SQLite helpers (db.ts), metadata tables and seeding (metadata.ts,
                 seed.ts), demo data (demo-dataset.ts)
-frontend/src/   Vue app (App.vue), API client (api.ts), styles (styles/)
+frontend/src/   Vue app (App.vue), API client (api.ts), access-key state (auth.ts),
+                components (components/), styles (styles/)
 data/           SQLite files, generated and gitignored
 docs/           ARCHITECTURE.md: design, stack, quality gate, deferred decisions
 issues/         local issue tracker (Markdown files)

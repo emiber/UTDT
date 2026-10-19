@@ -83,8 +83,11 @@ The backend listens on `127.0.0.1:3000`; the Vite dev server (port 5173) proxies
   constant time, before body validation. On failure it returns a generic `401` (Fastify's
   error format, with `WWW-Authenticate: Bearer`), so a route without the key answers `401`
   even if it doesn't exist.
-- **Frontend** *(later issue)*: asks for the key once, keeps it in `sessionStorage`, and sends it
-  on every request.
+- **Frontend:** asks for the key once, keeps it (trimmed) in `sessionStorage`, and sends it on
+  every request through a single request function (`apiFetch` in `frontend/src/api.ts`).
+  A `401` on any call forgets the key and goes back to the key screen with a "rejected"
+  message, so callers never handle it. Other errors reject with the HTTP `status`.
+  `/api/health` is public, so a wrong key only shows up on the first protected call.
 
 Enough for a local demo, not for real users (see deferred decisions).
 
@@ -147,8 +150,10 @@ issue.
 
 ### Frontend (Vue 3)
 
-- Scaffold: one page showing the backend health status.
-- *(later issues)* Access-key screen, then the chat view: question input, conversation
+- Access-key screen first: it asks for the `APP_ACCESS_KEY` value from `.env` before
+  showing anything else. Then the main screen, which for now shows the backend health
+  status.
+- *(later issues)* The main screen gains the chat view: question input, conversation
   thread, and rendered blocks (markdown text, HTML table, chart).
 - Plain components and composables: no router (two screens, switched by auth state),
   no state library, no UI kit. Styles in SCSS.
