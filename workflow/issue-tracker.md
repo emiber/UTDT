@@ -64,7 +64,7 @@ git commit -m "chore(issues): <open|refine|note> #<n> <title>" -- issues/<n>-<sl
 
 Because issue files are versioned, each branch shows its own view of the issues, and `main` shows what has actually shipped:
 
-- `/work-issue` closes the issue **on its working branch**. When the human merges that branch, the issue is closed on the base too — the local equivalent of `Closes #<n>`. If the branch is discarded, the issue stays open.
+- `/work-issue` closes the issue **on its working branch**. When it merges that branch, the issue is closed on the base too — the local equivalent of `Closes #<n>`. If the branch is discarded, the issue stays open.
 - A child of an epic merges into the epic's integration branch, so it shows as closed there, and on `main` only once the whole epic ships (see `workflow/epics.md`).
 
 ## Parent/child (epics)
@@ -82,4 +82,4 @@ The full model — including the integration branch — is in `workflow/epics.md
 
 ## Local PRs
 
-There's no hosting platform, so a **PR is a local branch left unmerged for review**: its commits are the change, and the `## Pull request` section of its issue file (on that branch) is the PR description. List the open ones with `git branch --no-merged main` (and `git branch --no-merged epic/<epicN>-<slug>` for an epic's children). The human reviews — optionally with `/review-pr <n>` — and merges; the agent never merges (see `workflow/git-flow.md` step 8).
+There's no hosting platform, so a **PR is a local branch**: its commits are the change, and the `## Pull request` section of its issue file (on that branch) is the PR description. The agent merges it into its base as soon as every gate passes (see `workflow/git-flow.md` step 8), so normally none stay open. A branch that stopped short — blockers, a failing gate, a conflict — stays unmerged. List those with `git branch --no-merged main` (and `git branch --no-merged epic/<epicN>-<slug>` for an epic's children); `/review-pr <n>` can review one. After the merge, the PR description stays in the issue file, and `git show <merge-commit>` shows the change.

@@ -41,9 +41,10 @@ main
 - It is created **lazily** — the first time a child is worked (see `git-flow.md`), not
   when the epic issue is created. Nothing exists until it's needed.
 - **Child branches** keep the normal `<type>/<childN>-<slug>` convention but are cut
-  from the epic branch, and their base is the epic branch: the human merges them there.
+  from the epic branch, and their base is the epic branch: `/work-issue` merges them there
+  once they're ready (`workflow/git-flow.md` step 8).
 - When all children are done, `/finish-epic <epicN>` prepares a single local PR from the
-  epic branch to `main`.
+  epic branch to `main` and merges it.
 
 ### When children show as closed
 
@@ -57,8 +58,9 @@ at once (see `workflow/issue-tracker.md`, Status travels with the branch).
 ## `/finish-epic <n>` — contract
 
 Guide for the `/finish-epic` command. Prepares the integration PR (`epic/<n>-<slug> → main`)
-when an epic's children are done. Like `git-flow.md`, this is strict: the flow ends with a
-**local PR left unmerged** for review; never merge into `main`, never commit to it.
+when an epic's children are done, and merges it into `main` once the quality gate passes.
+Commits and merges are automatic (`workflow/rules.md`). Like `git-flow.md`, this is strict:
+never commit to `main` directly, and never merge with a failing gate.
 
 ### Preflight (read-only — if one fails, stop and report the fix)
 
@@ -84,7 +86,9 @@ when an epic's children are done. Like `git-flow.md`, this is strict: the flow e
    git checkout epic/<n>-<slug>
    git merge main        # resolve conflicts here if any; never force
    ```
-   If there are conflicts you can't resolve safely, stop and report.
+   If there are conflicts you can't resolve safely, stop and report. Then run the lint and
+   test-with-coverage commands from the **Quality gate** in `docs/ARCHITECTURE.md` on the epic
+   branch. If either fails, stop and report: don't prepare or merge the PR.
 4. **Prepare the integration PR.** On the epic branch, append a `## Pull request` section to
    the epic's issue file, set the epic's `status: closed`, and commit only that file
    (`chore(issues): close epic #<n> <title>`):
@@ -99,14 +103,21 @@ when an epic's children are done. Like `git-flow.md`, this is strict: the flow e
    - #<child1> <title>
    - #<child2> <title>
    ```
-5. **Don't merge.** Leave the epic branch unmerged for human review, and report how to review
-   and merge it (`/review-pr <n>`; `git checkout main` then `git merge --no-ff epic/<n>-<slug>`).
-   Merging it closes the epic and all its children on `main`.
+5. **Merge it into `main`** and delete the epic branch. Merging closes the epic and all its
+   children on `main`:
+   ```bash
+   git checkout main
+   git merge --no-ff epic/<n>-<slug>
+   git branch -d epic/<n>-<slug>
+   ```
+   If the merge conflicts, stop and report. Report the merge commit and how to undo it
+   (`git revert -m 1 <merge-commit>`).
 
 ### Hard rules (same spirit as `git-flow.md`)
 
-- Never merge into `main` or commit to it directly; the epic ships when the human merges it.
+- Never commit to `main` directly. The epic ships when `/finish-epic` merges it, and only
+  with every child closed on the epic branch and the quality gate green.
 - Never rewrite the epic branch's history (no rebase, `reset --hard`, or amend) — children
   branch off it.
-- Never auto-merge, never skip hooks, never weaken tests.
+- Never skip hooks, never weaken tests.
 - If any step fails, stop and report; don't improvise destructive workarounds.

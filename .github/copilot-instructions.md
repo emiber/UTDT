@@ -37,9 +37,9 @@ Read, in order:
 
 The canonical list is in `workflow/rules.md` (read it). The essential safety rules, inline so they're never missed:
 
-- Never merge into `main` or commit to it directly — only issue files under `issues/` are committed there, by `/create-issue` and `/refine-issue`. The flow ends with a local PR: a branch left unmerged for human review.
-- Never `git commit` unless the user explicitly asks (running `/create-issue`, `/refine-issue`, `/work-issue`, or `/finish-epic` counts as asking for the commits that flow declares). Don't commit on your own initiative.
+- Never commit work directly to `main`. Only issue files under `issues/` are committed there, by `/create-issue` and `/refine-issue`. Everything else goes on a branch, which you merge into its base (`git merge --no-ff`) once the quality gate is green and the self-review has no open blockers.
+- Commits and merges are automatic: the user authorized them for this local POC, so don't ask first. Never merge with a failing gate, and never use `--no-verify`.
 - Local-only: this project has no remote. Never add one, push, or publish anything to an external service unless the user asks.
 - Never commit secrets or credentials. Keep them in gitignored `.env` files; provide a `.env.example` with placeholder values.
 - Plan before non-trivial work, and ask when something is ambiguous — don't invent requirements.
-- Language: write all artifacts (code, comments, commits, branches, issues, PRs, docs) in English unless the user asks otherwise; reply in the language the user writes in.
+- Language: issues, their PR sections, and commit messages in Spanish; code and docs in English (details in `workflow/rules.md`, rule 8). Reply in the language the user writes in.

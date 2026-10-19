@@ -1,6 +1,6 @@
 ---
 name: work-issue
-description: Implements a refined issue following the git flow main → branch → implementation → local PR (a branch left unmerged for review).
+description: Implements a refined issue following the git flow main → branch → implementation → local PR → merge (automatic once every gate passes).
 ---
 
 # /work-issue
