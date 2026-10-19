@@ -86,7 +86,8 @@ The backend listens on `127.0.0.1:3000`; the Vite dev server (port 5173) proxies
 - **Frontend:** asks for the key once, keeps it (trimmed) in `sessionStorage`, and sends it on
   every request through a single request function (`apiFetch` in `frontend/src/api.ts`).
   A `401` on any call forgets the key and goes back to the key screen with a "rejected"
-  message, so callers never handle it. Other errors reject with the HTTP `status`.
+  message, so callers never handle it. Other HTTP errors reject with an `ApiError` carrying
+  the `status`; network errors propagate unchanged.
   `/api/health` is public, so a wrong key only shows up on the first protected call.
 
 Enough for a local demo, not for real users (see deferred decisions).

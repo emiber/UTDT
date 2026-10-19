@@ -17,11 +17,21 @@ export class ApiError extends Error {
  * callers never handle a 401 themselves. Any other non-2xx rejects with an ApiError.
  */
 export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  const sentKey = auth.key;
   const headers = new Headers(init.headers);
-  if (auth.key) headers.set('Authorization', `Bearer ${auth.key}`);
+  if (sentKey) {
+    try {
+      headers.set('Authorization', `Bearer ${sentKey}`);
+    } catch (error) {
+      // A key that can't travel in a header (e.g. it has '€') can never be valid.
+      rejectKey();
+      throw error;
+    }
+  }
 
   const res = await fetch(path, { ...init, headers });
-  if (res.status === 401) rejectKey();
+  // A late 401 for a key the user has already replaced must not wipe the new one.
+  if (res.status === 401 && auth.key === sentKey) rejectKey();
   if (!res.ok) throw new ApiError(res.status);
   return res;
 }

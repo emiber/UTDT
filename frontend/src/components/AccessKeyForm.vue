@@ -16,7 +16,8 @@ function submit() {
       Access key rejected. Enter it again.
     </p>
     <label for="access-key">Access key</label>
-    <input id="access-key" v-model="key" type="password" autocomplete="current-password" />
+    <!-- "off": the key lives only in this tab's sessionStorage, not in a password manager. -->
+    <input id="access-key" v-model="key" type="password" autocomplete="off" />
     <button type="submit" :disabled="isBlank">Enter</button>
   </form>
 </template>

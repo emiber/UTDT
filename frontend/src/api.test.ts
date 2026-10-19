@@ -60,6 +60,36 @@ describe('apiFetch', () => {
     expect(auth.rejected).toBe(true);
   });
 
+  it('keeps a key entered while an older request was failing with 401', async () => {
+    let answerLate: (res: Response) => void = () => {};
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(null, { status: 401 }))
+      .mockReturnValueOnce(new Promise<Response>((resolve) => (answerLate = resolve)));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const first = apiFetch('/api/a');
+    const late = apiFetch('/api/b');
+    await expect(first).rejects.toMatchObject({ status: 401 });
+    saveKey('new-key');
+    answerLate(new Response(null, { status: 401 }));
+
+    await expect(late).rejects.toMatchObject({ status: 401 });
+    expect(auth.key).toBe('new-key');
+    expect(auth.rejected).toBe(false);
+  });
+
+  it('treats a key that cannot be sent in a header as rejected', async () => {
+    const fetchMock = stubFetch(Response.json({}));
+    saveKey('abc€');
+
+    await expect(apiFetch('/api/anything')).rejects.toThrow(TypeError);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(auth.key).toBeNull();
+    expect(auth.rejected).toBe(true);
+  });
+
   it.each([[500], [404]])('on a %i keeps the key and rejects with the status', async (status) => {
     stubFetch(new Response(null, { status }));
 

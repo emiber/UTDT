@@ -1,7 +1,10 @@
-import { mount } from '@vue/test-utils';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { enableAutoUnmount, mount } from '@vue/test-utils';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { auth, loadStoredKey, rejectKey } from '../auth.ts';
 import AccessKeyForm from './AccessKeyForm.vue';
+
+// The auth state is shared, so a component left mounted would react to the next test.
+enableAutoUnmount(afterEach);
 
 beforeEach(() => {
   sessionStorage.clear();
@@ -13,6 +16,7 @@ describe('AccessKeyForm', () => {
     const wrapper = mount(AccessKeyForm);
 
     expect(wrapper.find('input').attributes('type')).toBe('password');
+    expect(wrapper.find('input').attributes('autocomplete')).toBe('off');
     expect(wrapper.find('[role="alert"]').exists()).toBe(false);
   });
 
