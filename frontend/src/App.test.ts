@@ -1,25 +1,65 @@
 import { flushPromises, mount } from '@vue/test-utils';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App.vue';
-import { getHealth } from './api.ts';
 
-vi.mock('./api.ts', () => ({ getHealth: vi.fn() }));
+const STORAGE_KEY = 'utdt.accessKey';
 
-describe('App', () => {
-  afterEach(() => {
-    vi.mocked(getHealth).mockReset();
-  });
+function stubFetch(impl: () => Promise<Response>) {
+  const fetchMock = vi.fn<typeof fetch>(impl);
+  vi.stubGlobal('fetch', fetchMock);
+  return fetchMock;
+}
 
-  it('shows a checking message while the health request is pending', () => {
-    vi.mocked(getHealth).mockReturnValue(new Promise(() => {}));
+beforeEach(() => {
+  sessionStorage.clear();
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+describe('App without a stored key', () => {
+  it('shows the key screen and calls no API', () => {
+    const fetchMock = stubFetch(() => new Promise<Response>(() => {}));
 
     const wrapper = mount(App);
 
+    expect(wrapper.find('form.access-key').exists()).toBe(true);
+    expect(wrapper.find('.status').exists()).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('switches to the main screen once a key is entered, sending it', async () => {
+    const fetchMock = stubFetch(async () => Response.json({ status: 'ok', sqliteVersion: '3' }));
+    const wrapper = mount(App);
+
+    await wrapper.find('input').setValue('entered-key');
+    await wrapper.find('form').trigger('submit');
+    await flushPromises();
+
+    expect(wrapper.find('form.access-key').exists()).toBe(false);
+    expect(wrapper.find('.status--ok').exists()).toBe(true);
+    const headers = new Headers((fetchMock.mock.calls[0][1] as RequestInit).headers);
+    expect(headers.get('Authorization')).toBe('Bearer entered-key');
+  });
+});
+
+describe('App with a stored key', () => {
+  beforeEach(() => {
+    sessionStorage.setItem(STORAGE_KEY, 'stored-key');
+  });
+
+  it('opens straight on the main screen', () => {
+    stubFetch(() => new Promise<Response>(() => {}));
+
+    const wrapper = mount(App);
+
+    expect(wrapper.find('form.access-key').exists()).toBe(false);
     expect(wrapper.find('.status').text()).toBe('Checking backend…');
   });
 
   it('shows the backend status and SQLite version', async () => {
-    vi.mocked(getHealth).mockResolvedValue({ status: 'ok', sqliteVersion: '3.50.0' });
+    stubFetch(async () => Response.json({ status: 'ok', sqliteVersion: '3.50.0' }));
 
     const wrapper = mount(App);
     await flushPromises();
@@ -27,14 +67,24 @@ describe('App', () => {
     expect(wrapper.find('.status--ok').text()).toBe('Backend ok · SQLite 3.50.0');
   });
 
-  it('shows the error when the backend is unreachable', async () => {
-    vi.mocked(getHealth).mockRejectedValue(new Error('Health check failed: HTTP 503'));
+  it('shows the error and keeps the key when the backend fails', async () => {
+    stubFetch(async () => new Response(null, { status: 503 }));
 
     const wrapper = mount(App);
     await flushPromises();
 
-    expect(wrapper.find('.status--error').text()).toBe(
-      'Backend unreachable: Health check failed: HTTP 503',
-    );
+    expect(wrapper.find('.status--error').text()).toBe('Backend unreachable: HTTP 503');
+    expect(sessionStorage.getItem(STORAGE_KEY)).toBe('stored-key');
+  });
+
+  it('goes back to the key screen with a message when the key is rejected', async () => {
+    stubFetch(async () => new Response(null, { status: 401 }));
+
+    const wrapper = mount(App);
+    await flushPromises();
+
+    expect(wrapper.find('form.access-key').exists()).toBe(true);
+    expect(wrapper.find('[role="alert"]').text()).toBe('Access key rejected. Enter it again.');
+    expect(sessionStorage.getItem(STORAGE_KEY)).toBeNull();
   });
 });
