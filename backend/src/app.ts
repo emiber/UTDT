@@ -9,15 +9,19 @@ export interface AppOptions {
   logger?: boolean;
 }
 
-/** Routes anyone may call; every other route, existing or not, requires the access key. */
-const PUBLIC_ROUTES = new Set(['/api/health']);
+/**
+ * Routes anyone may call, as "METHOD /path". Every other route, existing or not, requires
+ * the access key; keying by method too means a new POST on a public path isn't public.
+ */
+const PUBLIC_ROUTES = new Set(['GET /api/health']);
 
 export function buildApp({ db, accessKey, logger = false }: AppOptions): FastifyInstance {
   const app = Fastify({ logger });
 
   // onRequest runs before body parsing and validation, so a bad key never reaches a 400.
   app.addHook('onRequest', async (request, reply) => {
-    if (PUBLIC_ROUTES.has(request.routeOptions.url ?? '')) return;
+    const { method, url } = request.routeOptions;
+    if (PUBLIC_ROUTES.has(`${method} ${url}`)) return;
     if (hasValidAccessKey(request.headers.authorization, accessKey)) return;
     return reply.code(401).header('WWW-Authenticate', 'Bearer').send({
       statusCode: 401,

@@ -90,6 +90,16 @@ describe('access key', () => {
     });
   });
 
+  it('keeps another method on a public path protected', async () => {
+    app.post('/api/health', async () => ({ written: true }));
+
+    const withoutKey = await app.inject({ method: 'POST', url: '/api/health' });
+    const withKey = await app.inject({ method: 'POST', url: '/api/health', headers: AUTH });
+
+    expect(withoutKey.statusCode).toBe(401);
+    expect(withKey.statusCode).toBe(200);
+  });
+
   it('answers 401 for an unknown route without the key, 404 with it', async () => {
     const withoutKey = await app.inject({ method: 'GET', url: '/api/nope' });
     const withKey = await app.inject({ method: 'GET', url: '/api/nope', headers: AUTH });
