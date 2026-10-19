@@ -1,0 +1,8 @@
+# Prettier also skips everything in .gitignore.
+# Markdown (workflow, docs, issues) keeps its own hand formatting; Prettier is for code.
+*.md
+.agents/
+.claude/
+.github/
+.githooks/
+package-lock.json
