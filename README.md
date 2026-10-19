@@ -22,9 +22,15 @@ Prerequisites: **Node.js 24+** (it runs the backend's TypeScript natively and sh
 ```bash
 npm install
 git config core.hooksPath .githooks   # once per clone: activates the local main guard
+cp .env.example .env                  # in the repo root; then set APP_ACCESS_KEY in .env
 npm run seed                          # creates data/data.db with the demo dataset
 npm run dev
 ```
+
+`APP_ACCESS_KEY` is the shared key that protects the API: every route except
+`/api/health` requires `Authorization: Bearer <key>`. It's **required**: without it (no
+`.env`, or the variable empty) the backend refuses to start and says which variable is
+missing.
 
 `npm run seed` loads a small, fictitious sales dataset and the metadata that describes it
 to the bot (see *Data* in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)). Two warnings:
@@ -39,9 +45,9 @@ to the bot (see *Data* in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)). Two war
 - Frontend: <http://localhost:5173>. Vite proxies `/api` to the backend.
 - Backend: <http://127.0.0.1:3000/api/health>
 
-The app database is created on first start at `data/app.db` (gitignored). No `.env` is
-needed yet. When a feature needs configuration, it adds the variables to
-[.env.example](.env.example); copy that file to `.env` and fill it in.
+The app database is created on first start at `data/app.db` (gitignored). Configuration
+lives in the root `.env` (gitignored); [.env.example](.env.example) lists every variable
+with a placeholder. When a feature adds one, copy it over to your `.env`.
 
 ## Quality gate
 

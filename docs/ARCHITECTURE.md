@@ -75,10 +75,18 @@ only purpose is to exercise the pipeline.
 
 The backend listens on `127.0.0.1:3000`; the Vite dev server (port 5173) proxies `/api` there.
 
-**Auth** *(later issue)*: a single shared access key (`APP_ACCESS_KEY` in `.env`). The frontend asks for
-it once, keeps it in `sessionStorage`, and sends `Authorization: Bearer <key>`; the
-backend compares it with a timing-safe comparison and returns `401` otherwise. Enough
-for a local demo, not for real users (see deferred decisions).
+**Auth**: a single shared access key (`APP_ACCESS_KEY` in `.env`).
+
+- **Required:** without it, the backend refuses to start, with an error naming the variable.
+- **Backend:** a deny-by-default `onRequest` hook protects every route (existing,
+  future or unknown) except `/api/health`. It compares `Authorization: Bearer <key>` in
+  constant time, before body validation. On failure it returns a generic `401` (Fastify's
+  error format, with `WWW-Authenticate: Bearer`), so a route without the key answers `401`
+  even if it doesn't exist.
+- **Frontend** *(later issue)*: asks for the key once, keeps it in `sessionStorage`, and sends it
+  on every request.
+
+Enough for a local demo, not for real users (see deferred decisions).
 
 ### Text-to-SQL pipeline *(later issues)*
 
@@ -194,8 +202,9 @@ markdown renderer come with their issues.
 ## Configuration
 
 Root `.env` (gitignored; placeholders in `.env.example`), loaded by Node's
-`--env-file-if-exists`. The scaffold needs no variables. Each issue adds the ones it uses:
-`APP_ACCESS_KEY` (auth) and `OPENAI_API_KEY` / `OPENAI_MODEL` (LLM). Fixed for now, and
+`--env-file-if-exists`. `APP_ACCESS_KEY` (auth) is **required**: without it the backend
+refuses to start. Each issue adds the variables it uses; still to come:
+`OPENAI_API_KEY` / `OPENAI_MODEL` (LLM). Fixed for now, and
 not configurable: the database paths (`data/app.db`, `data/data.db`, relative to the repo
 root), the backend port (3000), and tuning values (retry budget, row cap, context turns).
 They become config only when there's a reason.
