@@ -15,6 +15,6 @@ created: 2026-10-19
 6. #7 Generar SQL con la Responses API de OpenAI
 7. #8 Agregar el chat: POST /api/chat y UI con narrativa y tabla
 8. #9 Mostrar gráficos en las respuestas
-9. #10 Clasificar preguntas con la Decisions API
-10. #11 Agregar memoria multi-turn a las conversaciones
+9. #11 Agregar memoria multi-turn a las conversaciones
+10. #10 Clasificar preguntas con la Decisions API
 11. #12 Evaluar respuestas offline con LLM-as-a-judge
