@@ -2,7 +2,7 @@
 id: 6
 title: Ejecutar SQL sobre data.db con guardas de seguridad
 type: feat
-status: open
+status: refined
 parent: 1
 created: 2026-10-19
 ---
@@ -16,12 +16,13 @@ Que el pipeline Text-to-SQL pueda ejecutar sobre `data/data.db` el SQL que gener
   - Las tres capas de seguridad del diseño (paso 4 del pipeline en `docs/ARCHITECTURE.md`):
     1. la ejecución corre sobre una conexión **read-only**;
     2. un chequeo previo acepta exactamente una sentencia que empiece con `SELECT` o `WITH`;
-    3. un tope de filas: un resultado más grande se rechaza, no se trunca.
-  - La función que abre `data/data.db` en modo read-only, sin crear el archivo si falta. Si ya la agregó un issue anterior (#2, o #5, que también lee `data.db`), se reutiliza y #6 solo suma los tests que falten.
+    3. un tope de 500 filas: un resultado más grande se rechaza, no se trunca.
   - Tests unitarios offline, con SQLite en archivos temporales.
+  - Los tests que le falten a la apertura read-only de #2 (ver *Acceptance criteria*). Solo los tests: la función no se toca.
 - NOT in:
-  - El LLM, el contexto de esquema y el bucle de reintentos con su tope: son de #7.
-  - Endpoints, el cableado en `server.ts` / `buildApp` y la persistencia del turno: son de #8 (el catálogo, de #5).
+  - `DATA_DB_PATH` y la función que abre `data.db` en read-only: son de #2, y #6 no agrega otra.
+  - El LLM, el contexto de esquema y el bucle de reintentos con su tope de intentos: son de #7.
+  - Endpoints y la persistencia del turno: son de #8. La conexión a `data.db` en `server.ts` / `buildApp` y el catálogo son de #5.
   - Logs y medición de duración: el log de cada paso con su duración lo hace quien orquesta el pipeline (#7/#8). Este módulo no loguea.
   - Armar los bloques `table` y `chart`: son de #8 y #9.
   - El timeout de consultas, una lista blanca de tablas y la conversión de BLOBs o de enteros grandes (ver *Deferred decisions*).
@@ -29,14 +30,14 @@ Que el pipeline Text-to-SQL pueda ejecutar sobre `data/data.db` el SQL que gener
 
 ## Expected behavior
 - Normal case:
-  - Un `SELECT` o un `WITH … SELECT` válido que devuelve hasta N filas (pendiente: pregunta 1) responde con éxito. Trae `columns` (los nombres, en el orden del `SELECT`) y `rows` (una lista por fila, alineada con `columns`).
+  - Un `SELECT` o un `WITH … SELECT` válido que devuelve hasta 500 filas responde con éxito. Trae `columns` (los nombres, en el orden del `SELECT`) y `rows` (una lista por fila, alineada con `columns`).
   - Se acepta `SELECT`/`WITH` en mayúsculas o minúsculas, con espacios o saltos de línea al principio y al final, y con un único `;` final.
 - Edge cases:
   - **Resultado vacío:** éxito, con `columns` completas y `rows: []`. No es un error: "no hay datos" es una respuesta válida, y la narra #8.
   - **Columnas con el mismo nombre** (`SELECT a.id, b.id …`): se conservan todas. Por eso las filas son listas y no objetos: con objetos, una columna pisa a la otra.
   - **`;` que no separa sentencias:** si está dentro de un string literal, de un identificador entre comillas o de un comentario, no cuenta (`WHERE name = 'a;b'` es válido). Un comentario en medio o al final de la sentencia, sin `;` después, también se acepta.
   - **Texto después del `;` final:** solo pueden venir espacios. Cualquier otra cosa, incluso un comentario, cuenta como otra sentencia.
-  - **Tope de filas:** exactamente N filas es éxito, y más de N es error `row_limit` (pendiente: pregunta 1). La lectura se corta en la fila N+1 sin leer el resultado completo. Así, una CTE recursiva infinita termina en `row_limit` en vez de colgar el servidor.
+  - **Tope de filas:** exactamente 500 filas es éxito, y 501 o más es error `row_limit`. La lectura se corta en la fila 501, sin leer el resto del resultado. Así, una CTE recursiva infinita termina en `row_limit` en vez de colgar el servidor.
   - **Funciones de tabla de solo lectura** dentro de un `SELECT` (p. ej. `SELECT name FROM pragma_table_info('t')`): se aceptan, porque son lectura y la conexión es read-only.
 - Errors: se **devuelven** (no se lanzan), cada uno con un `kind` y un mensaje en inglés pensado para el LLM. En ningún caso cambia el contenido de `data.db`.
   - **`guard`:** se rechaza antes de tocar la base. El mensaje dice qué regla se violó. Cubre tres casos:
@@ -47,7 +48,7 @@ Que el pipeline Text-to-SQL pueda ejecutar sobre `data/data.db` el SQL que gener
     - un error de sintaxis, o una tabla o columna inexistente;
     - un `WITH … DELETE/UPDATE/INSERT`: pasa el chequeo previo, pero la conexión read-only lo rechaza ("attempt to write a readonly database");
     - un entero mayor que 2^53 en el resultado, que no se puede representar como número de JS. El LLM lo puede resolver con un `CAST`.
-  - **`row_limit`:** el resultado tiene más de N filas (pendiente: pregunta 1). El mensaje indica el tope y pide una consulta más selectiva (agregar o filtrar). No informa el total, porque la lectura se corta en N+1.
+  - **`row_limit`:** el resultado tiene más de 500 filas. El mensaje indica el tope (500) y pide una consulta más selectiva (agregar o filtrar). No informa el total, porque la lectura se corta en la fila 501.
   - **Errores que no dependen del SQL** (p. ej. la conexión está cerrada): **se lanzan**. Reescribir el SQL no los arregla, así que no tiene sentido mandárselos al LLM. Quien llama los deja subir (en un endpoint, terminan en un 500).
 
 ## Data
@@ -55,14 +56,14 @@ Que el pipeline Text-to-SQL pueda ejecutar sobre `data/data.db` el SQL que gener
 - **Salida:** la forma es indicativa; los nombres exactos se fijan en el plan de `/work-issue`.
   - Éxito: `{ ok: true, columns: string[], rows: unknown[][] }`. Los valores llegan como los entrega `node:sqlite`: `number`, `string`, `null`, y `Uint8Array` para los BLOB.
   - Error: `{ ok: false, kind: 'guard' | 'sql' | 'row_limit', message: string }`.
-- **Tope de filas N:** una constante fija en el código, no configurable por `.env` (`docs/ARCHITECTURE.md`, *Configuration*). Su valor está por definir (pendiente: pregunta 1).
+- **Tope de filas:** 500, una constante fija en el código, no configurable por `.env` (`docs/ARCHITECTURE.md`, *Configuration*).
 - **Persistencia:** ninguna. No lee ni escribe `app.db`.
 
 ## Dependencies
 - Depende de #2, que crea `data/data.db` (la ruta fija, relativa a la raíz del repo) y el dataset demo para probar a mano. Los tests de #6 no lo necesitan: arman su propia base temporal.
-- Usa la apertura read-only de `data.db` que agrega #2 (`DATA_DB_PATH` y la función de apertura). La conexión la abre `server.ts` y la pasa a `buildApp` desde #5, y #8 la reutiliza para este ejecutor.
+- Usa la apertura read-only de `data.db` que agrega #2 (`DATA_DB_PATH` y la función de apertura). La conexión la abre `server.ts` al arrancar y la pasa a `buildApp` desde #5 (sin `data.db`, el backend no arranca), y #8 la reutiliza para este ejecutor.
 - Bloquea a:
-  - #7, que reintenta con `message` como feedback y define el tope de reintentos;
+  - #7, que reintenta con `message` como feedback, con 3 intentos en total por pregunta; un `row_limit` consume el mismo presupuesto que los demás errores;
   - #8, que arma el bloque `table` con `columns` y `rows`;
   - #9, que arma los datos del gráfico desde `rows`;
   - #12, a través del pipeline.
@@ -82,9 +83,9 @@ Que el pipeline Text-to-SQL pueda ejecutar sobre `data/data.db` el SQL que gener
 - [ ] `WITH x AS (SELECT 1) DELETE FROM t` devuelve `sql` con el error de base read-only, y `t` conserva sus filas.
 - [ ] Un error de sintaxis y una columna inexistente devuelven `sql` con el mensaje de SQLite (p. ej., contiene `no such column`).
 - [ ] Un entero mayor que 2^53 en el resultado devuelve `sql`, en vez de lanzar.
-- [ ] Con exactamente N filas hay éxito, y con N+1 se devuelve `row_limit` con un mensaje que menciona N (pendiente: pregunta 1). Una CTE recursiva infinita devuelve `row_limit`, y el test termina.
+- [ ] Con exactamente 500 filas hay éxito, con las 500 en `rows`. Con 501 se devuelve `row_limit`, con un mensaje que menciona `500`. Una CTE recursiva infinita devuelve `row_limit`, y el test termina.
 - [ ] Con la conexión cerrada, la función lanza en vez de devolver un error.
-- [ ] La función con la que la app abre `data.db` usa modo read-only: un test que intenta escribir falla. Si el archivo no existe, la apertura falla sin crearlo.
+- [ ] No se agrega otra función para abrir `data.db`: se usa la de #2. Al cerrar #6, los tests de esa función cubren estos dos casos (#6 suma el que falte): una escritura por esa conexión falla, y con el archivo inexistente la apertura falla sin crearlo.
 - [ ] No se agregan dependencias ni endpoints.
 - [ ] `npm run lint` y `npm run test:coverage` pasan con ≥85% en líneas, sentencias, funciones y ramas, y los archivos nuevos quedan cubiertos.
 
@@ -103,10 +104,13 @@ El usuario aprobó el alcance original del issue ("Ok con esto.", comentario en 
 - **Enteros mayores que 2^53:** cuentan como error `sql`. *Fuente:* el diseño ("On a guard or SQL error the LLM retries with the error as feedback") y un hecho verificado en Node 24.15: `node:sqlite` lanza `ERR_OUT_OF_RANGE` y un `CAST` lo evita.
 - **Filas como listas:** van alineadas con `columns`, no como objetos. *Fuente:* el bloque `table` del diseño es "columns + rows", y un hecho verificado: con filas-objeto, dos columnas del mismo nombre se pisan.
 - **`;` final y comentarios:** se acepta un `;` final, y se rechazan un comentario inicial y cualquier texto después del `;`. *Fuente:* la lectura literal de "exactly one statement starting with SELECT or WITH". Un `;` final no agrega una sentencia.
-- **Resultado más grande que el tope:** se rechaza, no se trunca, y se detecta leyendo como máximo N+1 filas, así que el mensaje no da el total. *Fuente:* el diseño ("an oversized result is sent back for a more selective query").
+- **Resultado más grande que el tope:** se rechaza, no se trunca, y se detecta leyendo como máximo 501 filas, así que el mensaje no da el total. *Fuente:* el diseño ("an oversized result is sent back for a more selective query").
 - **Logs:** el módulo no loguea; el log del paso con su duración lo hace el orquestador. *Fuente:* el diseño (*Observability*: una línea de log por paso del pipeline). Este módulo es una función sin logger ni endpoint.
 - **Campo `kind`:** el error lo lleva para que los tests (y los logs del orquestador) distingan qué capa rechazó. No cambia nada que vea el usuario. *Fuente:* las tres capas del diseño.
-- **Apertura read-only de `data.db`:** la agrega #2 y #6 la reutiliza. Así lo dejó la pasada de coherencia entre issues, porque #2 ya la incluye en su alcance. *Fuente:* #2 ("La app abre `data.db` con una conexión read-only; solo el seed escribe") y el diseño (*Data*).
+- **Apertura read-only de `data.db`:** la agrega #2 y #6 la reutiliza; #6 solo suma los tests que le falten. Así lo dejó la pasada de coherencia entre issues, porque #2 ya la incluye en su alcance. *Fuente:* #2 ("La app abre `data.db` con una conexión read-only; solo el seed escribe") y el diseño (*Data*).
+
+Esta decisión se propuso durante el refinamiento y el usuario la confirmó el 2026-10-19:
+- **Tope de filas: 500** (opción B, entre 200, 500 y 1000): entra un año de datos diarios (365) para un gráfico de línea y la tabla sigue manejable sin paginar.
 
 ## Deferred decisions
 - **Timeout de consultas / worker thread:** ya está diferido en `docs/ARCHITECTURE.md`. Hasta entonces, una consulta que tarda mucho antes de devolver la primera fila bloquea el servidor. Le pasa, p. ej., a un `count(*)` sobre una CTE recursiva infinita: el tope de filas no lo corta.
@@ -114,10 +118,3 @@ El usuario aprobó el alcance original del issue ("Ok con esto.", comentario en 
 - **BLOBs:** se devuelven como `Uint8Array`, sin convertir, y el dataset demo no tiene. Resolverlo cuando un dataset real los traiga.
 - **Enteros mayores que 2^53:** hoy son un error `sql` que el LLM resuelve con `CAST`. Leerlos como `bigint` o string solo si un dataset real usa IDs así.
 - **Consultas con parámetros:** el SQL del LLM llega literal, así que no hacen falta.
-
-## Open questions
-1. **¿Cuál es el tope de filas N?** Más de N filas hace que el LLM tenga que escribir una consulta más selectiva. La tabla se muestra entera, en HTML plano y sin paginar, y el gráfico se arma con todas las filas.
-   - a) **200:** la tabla queda legible sin paginar; es el tope de tabla del proyecto de referencia (`MAX_TABLE_ROWS`). Obliga a agregar, p. ej., un año de datos diarios.
-   - b) **500:** entra un año de datos diarios (365) para un gráfico de línea, y la tabla sigue siendo manejable.
-   - c) **1000:** es el tope de datos del proyecto de referencia (`MAX_DATA_ROWS`), pero da una tabla pesada sin paginar.
-   - **Recomendación: b) 500**, porque cubre series diarias de un año sin necesidad de paginar la tabla.
