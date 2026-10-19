@@ -56,7 +56,8 @@ const fixture: Dataset = {
   },
 };
 
-// The last row points at a widget that doesn't exist, so the load fails at the very end.
+// The last data row points at a widget that doesn't exist, so the load fails after most
+// tables and rows are already in.
 const invalidFixture: Dataset = {
   ...fixture,
   data: [
@@ -128,6 +129,16 @@ describe('seedDatabase', () => {
     expect(db.isTransaction).toBe(false);
     db.close();
   });
+
+  it('rethrows the original error when SQLite already ended the transaction', () => {
+    const db = openDatabase(':memory:');
+    // The schema ends the transaction itself, then fails: there's nothing left to roll back.
+    const endsTransaction: Dataset = { ...fixture, schema: 'ROLLBACK; CREATE TABLE broken (' };
+
+    expect(() => seedDatabase(db, endsTransaction)).toThrow(/syntax error|incomplete input/);
+    expect(db.isTransaction).toBe(false);
+    db.close();
+  });
 });
 
 describe('seedFile', () => {
@@ -176,15 +187,15 @@ describe('seedFile', () => {
     expect(existsSync(`${file}-journal`)).toBe(false);
   });
 
-  it('propagates a failed load and leaves no half-loaded tables', () => {
+  it('propagates a failed load and leaves no file behind, so opening it says to seed', () => {
     const file = tempFile('data.db');
+    seedFile(file, fixture);
 
     expect(() => seedFile(file, invalidFixture)).toThrow(/FOREIGN KEY/);
 
-    const db = openReadOnlyDatabase(file);
-    expect(tableNames(db)).toEqual([]);
-    db.close();
-    // The seed closed its connection, so the file isn't locked (this matters on Windows).
-    expect(() => rmSync(file)).not.toThrow();
+    // The file could only be removed because the seed closed its connection first
+    // (Windows refuses to delete an open file).
+    expect(existsSync(file)).toBe(false);
+    expect(() => openReadOnlyDatabase(file)).toThrow('npm run seed');
   });
 });

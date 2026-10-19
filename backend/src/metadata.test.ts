@@ -7,7 +7,6 @@ interface ColumnInfo {
   name: string;
   type: string;
   notnull: number;
-  pk: number;
 }
 
 const EXPECTED_COLUMNS = {
@@ -58,13 +57,26 @@ describe('createMetadataTables', () => {
     },
   );
 
+  // Same key, different non-key values: only the key columns may make a row unique.
   it.each([
-    ['meta_tables', "INSERT INTO meta_tables VALUES ('t', 'd')"],
-    ['meta_columns', "INSERT INTO meta_columns VALUES ('t', 'c', 'TEXT', 'd')"],
-    ['meta_relationships', "INSERT INTO meta_relationships VALUES ('t', 'c', 'u', 'd', 'x')"],
-  ])('rejects a duplicate primary key in %s', (_table, insert) => {
-    db.exec(insert);
-    expect(() => db.exec(insert)).toThrow(/UNIQUE constraint failed/);
+    [
+      'meta_tables',
+      "INSERT INTO meta_tables VALUES ('t', 'first')",
+      "INSERT INTO meta_tables VALUES ('t', 'second')",
+    ],
+    [
+      'meta_columns',
+      "INSERT INTO meta_columns VALUES ('t', 'c', 'TEXT', 'first')",
+      "INSERT INTO meta_columns VALUES ('t', 'c', 'INTEGER', 'second')",
+    ],
+    [
+      'meta_relationships',
+      "INSERT INTO meta_relationships VALUES ('t', 'c', 'u', 'd', 'first')",
+      "INSERT INTO meta_relationships VALUES ('t', 'c', 'u', 'd', 'second')",
+    ],
+  ])('rejects a duplicate primary key in %s', (_table, first, sameKey) => {
+    db.exec(first);
+    expect(() => db.exec(sameKey)).toThrow(/UNIQUE constraint failed/);
   });
 });
 

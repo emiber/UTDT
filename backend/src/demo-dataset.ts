@@ -87,7 +87,8 @@ function generateOrders(): SQLInputValue[][] {
     const orderCount = 8 + (month % 4) + (month >= 11 ? 4 : 0) + (year === 2025 ? 3 : 0);
     for (let i = 0; i < orderCount; i++) {
       const customerId = ((i * 7 + m * 3) % customers.length) + 1;
-      const productId = ((i * 5 + m * 2) % products.length) + 1;
+      // Strides coprime with 20 and 15, so each month spreads over many customers and products.
+      const productId = ((i * 4 + m * 2) % products.length) + 1;
       const day = ((i * 11 + m * 5) % 28) + 1;
       const quantity = ((i * 3 + m) % 5) + 1;
       const unitPrice = products[productId - 1][3];

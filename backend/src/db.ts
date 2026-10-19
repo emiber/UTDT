@@ -16,7 +16,11 @@ export function openDatabase(file: string): DatabaseSync {
   return new DatabaseSync(file);
 }
 
-/** Opens an existing database read-only, so SQLite itself rejects any write. Never creates the file. */
+/**
+ * Opens an existing database read-only, so SQLite itself rejects any write to the file.
+ * Temp tables are still allowed, so code that runs untrusted SQL must also check the
+ * statement. Never creates the file.
+ */
 export function openReadOnlyDatabase(file: string): DatabaseSync {
   if (!existsSync(file)) {
     throw new Error(`Database not found at ${file}. Run \`npm run seed\` to create it.`);

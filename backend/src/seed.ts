@@ -28,22 +28,32 @@ export function seedDatabase(db: DatabaseSync, dataset: Dataset): void {
     insertMetadata(db, dataset.metadata);
     db.exec('COMMIT');
   } catch (error) {
-    db.exec('ROLLBACK');
+    // SQLite may already have rolled back (e.g. disk full); a second ROLLBACK would mask the error.
+    if (db.isTransaction) db.exec('ROLLBACK');
     throw error;
   }
 }
 
-/** Recreates a database file from scratch: whatever it held before is deleted. */
+/**
+ * Recreates a database file from scratch: whatever it held before is deleted. If the load
+ * fails, no file is left behind, so opening it reports that the seed has to run.
+ */
 export function seedFile(file: string, dataset: Dataset): void {
-  // Leftover journal files would otherwise be replayed onto the new database.
-  for (const suffix of ['', '-journal', '-wal', '-shm']) rmSync(file + suffix, { force: true });
-
+  removeDatabaseFiles(file);
   const db = openDatabase(file);
   try {
     seedDatabase(db, dataset);
-  } finally {
+  } catch (error) {
     db.close();
+    removeDatabaseFiles(file);
+    throw error;
   }
+  db.close();
+}
+
+function removeDatabaseFiles(file: string): void {
+  // Leftover journal files would otherwise be replayed onto a new database.
+  for (const suffix of ['', '-journal', '-wal', '-shm']) rmSync(file + suffix, { force: true });
 }
 
 function insertRows(db: DatabaseSync, { table, columns, rows }: TableRows): void {
