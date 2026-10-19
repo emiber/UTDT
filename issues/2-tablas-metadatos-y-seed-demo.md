@@ -2,7 +2,7 @@
 id: 2
 title: Crear tablas de metadatos y seed demo
 type: feat
-status: refined
+status: closed
 parent: 1
 created: 2026-10-19
 ---
@@ -150,3 +150,44 @@ Generar `data/data.db` con `npm run seed`. La base trae las tablas de metadatos 
 - **Conservar datos cargados a mano al re-seedear** (fallar si el archivo existe, o reemplazar solo lo del demo): no se hace. Cargar datos reales a mano es un flujo posterior, y en un POC de un solo usuario alcanza con la advertencia del README.
 - **Un modo "solo metadatos" del seed**, para arrancar con datos reales: no hace falta. Según `docs/ARCHITECTURE.md`, reemplazar el demo es editar su archivo.
 - **Una tabla "oculta" en el demo** (sin fila en `meta_tables`), para mostrar que el bot no la ve: no se agrega. Los tests de #5 y #7 lo cubren con sus propios fixtures.
+
+## Pull request
+Branch: `feat/2-tablas-metadatos-y-seed-demo` → `epic/1-poc-chatbot-text-to-sql`
+
+### What it does
+- **`backend/src/db.ts`:**
+  - `DATA_DB_PATH` (`data/data.db` en la raíz del repo);
+  - `openReadOnlyDatabase(file)`, que abre en modo read-only. Si el archivo no existe, falla con un error que nombra la ruta y sugiere `npm run seed`, sin crearlo.
+- **`backend/src/metadata.ts`:** `createMetadataTables` e `insertMetadata`, la parte genérica de las tablas `meta_*`. No conocen ningún dataset, y los tests de #5 y #7 pueden usarlas para armar sus propios fixtures.
+- **`backend/src/seed.ts`:** el seed genérico.
+  - `seedDatabase` carga todo en una transacción y hace rollback si algo falla.
+  - `seedFile` recrea el archivo desde cero, junto con sus journals. Si la carga falla, no deja archivo, así que abrirlo vuelve a sugerir el seed.
+- **`backend/src/demo-dataset.ts`:** el dataset demo reemplazable, el único archivo que conoce `customers`, `products` y `orders`:
+  - 20 clientes en 5 países y 15 productos en 4 categorías;
+  - 280 pedidos en los 24 meses de 2024 y 2025, generados con una fórmula fija. Cada mes tiene entre 8 y 15 productos y las 4 categorías, y 2025 vende más que 2024;
+  - índices en las FK de `orders` y metadatos en inglés.
+- **`npm run seed`**, desde la raíz o desde `backend/`, con `backend/src/seed-cli.ts` excluido de coverage como `server.ts`.
+- **Docs:**
+  - `README.md`: el paso de seed y las dos advertencias (re-seedear borra todo; frenar el backend antes);
+  - `docs/ARCHITECTURE.md`: *Initial data* deja de ser *(later issue)*.
+
+### Verification
+- Lint: `npm run lint` — pass
+- Tests: `npm run test:coverage` — pass (7 archivos, 48 tests)
+- Coverage: 100% en sentencias, ramas, funciones y líneas (umbral 85%); archivos nuevos o cambiados bajo el umbral: ninguno
+- Manual (AC 1): pass.
+  - `npm run seed` dos veces desde la raíz y una desde `backend/`: código 0 y la misma ruta.
+  - Con `data.db` abierto por otro proceso: código 1 y `Seed failed: EPERM, Permission denied: …data.db`, como advierte el README. Al liberarlo, código 0.
+- Dominio: `git grep` de `customers|products|orders` en `backend/src` y `frontend/src` solo encuentra `demo-dataset.ts` y su test — pass
+- Self-review: sin blockers. Se aplicaron las sugerencias 1–4:
+  - si la carga falla, no queda archivo;
+  - el `ROLLBACK` no tapa el error original;
+  - la distribución del demo usa un paso coprimo, así cada mes tiene las 4 categorías;
+  - el test de clave primaria repite la clave con otros valores.
+
+  Sugerencias no aplicadas: la 5 (`CREATE TEMP TABLE` en una conexión read-only) ya está cubierta entre los casos de guarda de #6; acá solo se precisó el comentario de `db.ts`. (separate agent)
+- Security: pass. Toca manejo de archivos y acceso a datos, pero sin entrada de red ni input externo. Los identificadores van entre comillas y los valores como parámetros, sin secretos.
+- Docs: updated `README.md`, `docs/ARCHITECTURE.md`
+
+### Out of scope / follow-ups
+None
