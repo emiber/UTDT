@@ -1,0 +1,138 @@
+# Scaffolding — defining architecture and stack
+
+Guide for `/init-project`. The goal is, through questions, to define the project's components, suggest technologies, and generate the minimal base. Apply the principles in `principles.md`: don't propose components the project doesn't need.
+
+## Pre-check: existing ARCHITECTURE.md
+
+Before starting the question flow, check whether `docs/ARCHITECTURE.md` already exists in the project root.
+
+- **If it exists:** show its contents to the user and ask:
+  > `docs/ARCHITECTURE.md` already exists. Do you want to **(a)** redo the design questions and overwrite it, or **(b)** skip to code generation using the existing file?
+  - Answer **a** → proceed with the full question flow below, then overwrite the file.
+  - Answer **b** → before entering 4b, do a quick sanity check of the file: warn the user if it contains any `_(pending)_` placeholders or is missing a coverage threshold or the Quality gate commands, and ask them to fix those before continuing. Also warn: step 4b will regenerate all base files (README, `.gitignore`, `ci.yml`, etc.) from the existing `ARCHITECTURE.md` — any manual edits to those files will be overwritten. Confirm the user is aware before proceeding. If they confirm, skip directly to **step 4b**.
+  - **Any other answer** → re-ask with the same two options.
+- **If it does not exist:** proceed with the full question flow below.
+
+## Question flow
+
+Ask **one at a time or in small groups**, not all at once. After each answer, adjust the following questions.
+
+### 1. Project type
+
+Ask what's being built. Typical categories:
+
+- API / backend service
+- Full-stack web application
+- SPA / frontend only
+- CLI / tool
+- Worker / batch or queue processing
+- Library / package
+- Monorepo with several of the above
+
+### 2. Required components
+
+Based on the type, confirm which components are needed. **Don't assume: ask which ones apply.**
+
+- **API**: REST, GraphQL, gRPC? Public or internal? Authentication?
+- **Frontend**: SSR or SPA? Does it need SEO?
+- **Database**: relational or document? Expected volume? Transactions?
+- **Cache**: is it needed? (don't add it by default)
+- **Queues / messaging**: is there real async work, or is it premature?
+- **File storage**: blobs, images?
+- **Auth**: your own, or a provider (Auth0/Clerk/Cognito)?
+- **Observability**: logs, metrics, tracing.
+
+> Apply YAGNI: if the user says "maybe in the future we'll need queues", don't add them now. Note it as a deferred decision in `ARCHITECTURE.md`.
+
+### 3. Technologies
+
+For each confirmed component, **suggest options with a short reason and ask**. Don't impose. Examples of default suggestions (boring and proven):
+
+| Component | Default suggestion | Alternatives to mention |
+|---|---|---|
+| Backend | Node + TypeScript (Fastify/Express) or Python (FastAPI) | Go, .NET, Java Spring |
+| Frontend | React + Vite + TypeScript | Next.js (if it needs SSR/SEO), Svelte, Vue |
+| Relational DB | PostgreSQL | MySQL, SQLite (for small/embedded projects) |
+| Document DB | MongoDB | DynamoDB, Firestore |
+| ORM/query | Prisma / Drizzle (TS), SQLAlchemy (Py) | plain query builder |
+| Queues | Redis + BullMQ (small), RabbitMQ / SQS (serious) | Kafka only if there's real streaming |
+| Cache | Redis | in-memory if it's a single node |
+| Auth | Managed provider (Clerk/Auth0) | your own only with a strong reason |
+| Tests | Vitest/Jest (JS), pytest (Py) | — |
+| Containers | Docker + docker-compose for local dev | — |
+
+> **Windows / cross-platform note:** Avoid packages that require native compilation (node-gyp).
+> They fail on Windows machines without Visual Studio Build Tools. Specific cases to watch:
+> - SQLite: use **`@libsql/client`** (prebuilt binaries, no compilation) — not `better-sqlite3`.
+> - Image processing: `sharp` has prebuilt binaries; `canvas` requires node-gyp — avoid it.
+> - Any package whose install runs `node-gyp rebuild` is a red flag unless prebuilt binaries
+>   exist for the target Node version and OS.
+> If the user's environment is Windows (or unknown), default to pure-JS / WASM / prebuilt-binary
+> alternatives and note the trade-off.
+
+Also ask about the user's preferences (language they know well, cloud they already use, client constraints). Their preferences win over the default suggestions.
+
+### 4a. Design phase — emit ARCHITECTURE.md and pause
+
+After the question flow is complete:
+
+1. Summarize the chosen architecture in a short list (in chat).
+2. Write `docs/ARCHITECTURE.md` with the decisions (including deferred ones and why), plus the Quality gate: coverage threshold (default 85%), how it's measured, and the exact **lint** and **test-with-coverage** commands. Those two commands are the single definition of the gate — CI runs them and `/work-issue` runs them before every PR.
+3. **Stop.** Tell the user:
+   > `docs/ARCHITECTURE.md` has been written. Review it and reply **"continue"** (or **"proceed"** / **"looks good"**) to generate the project files — or describe what you'd like to change.
+
+Do **not** generate any code, folders, or other files at this point. Wait for an explicit positive reply before entering step 4b.
+
+**Handling the user's reply at this pause:**
+
+- **Positive reply** ("continue", "proceed", "looks good", "yes", "go ahead", "generate") → enter step 4b.
+- **Change request** ("change X to Y", "use MongoDB instead", etc.) → apply the change to `docs/ARCHITECTURE.md`, then **re-pause** with the same prompt. Do not advance to 4b automatically.
+- **Abort / restart** ("abort", "start over", "no", "cancel", "stop") → offer two options: restart from the question flow (go back to step 1, overwriting `ARCHITECTURE.md` at the end of the new flow) or stop entirely and leave the file as-is for later. Do not enter step 4b.
+- **Ambiguous reply** (a question, "interesting", "hmm", partial agreement with an open question) → answer or clarify, then re-display the pause prompt. Do not interpret ambiguous replies as confirmation.
+
+### 4b. Generation phase — create the project files
+
+Only after the user confirms (or after arriving here from the pre-check with an existing `ARCHITECTURE.md`):
+
+1. Generate:
+   - Minimal folder structure for the chosen components.
+   - Base files: **extend** the baseline `.gitignore` that ships with the template with stack-specific entries (don't replace it — it already excludes `.env` and secrets), the project `README.md` (replace the placeholder root README with one describing the project — what it is and how to run it; leave `workflow/README.md` untouched), linter/formatter config, a test runner set up to report coverage, `.env.example` with the placeholder config your stack needs, `docker-compose.yml` if it applies, and the dependency manifest (`package.json` / `pyproject.toml` / etc.) with only what's needed.
+   - `.github/workflows/ci.yml` filled in for the chosen stack: on every PR to `main` or an epic integration branch (`epic/**`), run lint + tests and fail if coverage is below the threshold in `docs/ARCHITECTURE.md` (default 85%). Child PRs of an epic target `epic/**`, so they must be gated too (see `workflow/epics.md`); keep the `on.pull_request.branches` filter that ships with the template. Replace the placeholder guard step with real setup/install steps plus the lint and test-with-coverage commands recorded in `docs/ARCHITECTURE.md` (the same commands, not variants), and rename the workflow back to `name: CI` and the job to a real name. Leave `.github/workflows/workflow-check.yml` as is — it checks the workflow files, not the stack.
+   - **No** dependencies or component folders that weren't confirmed.
+
+### 5. Enable branch protection on `main`
+
+After generation, protect `main` at the platform so the "never push/merge to `main`" rule is enforced by GitHub, not just by agent discipline (a direct push otherwise runs no CI and nothing blocks it). **Attempt** it automatically; never fail the whole scaffold if it can't be done.
+
+1. Determine the required CI check name — it is the **job name** set in `.github/workflows/ci.yml` (you renamed it from the template placeholder to a real name in step 4b). The required status check context must match it **exactly**, or the gate isn't enforced.
+2. Attempt to enable protection on `main` via `gh api` (classic branch protection shown; a ruleset works too):
+
+   ```bash
+   gh api -X PUT "repos/{owner}/{repo}/branches/main/protection" --input - <<'JSON'
+   {
+     "required_status_checks": { "strict": true, "contexts": ["<CI job name>"] },
+     "enforce_admins": true,
+     "required_pull_request_reviews": { "required_approving_review_count": 0 },
+     "restrictions": null
+   }
+   JSON
+   ```
+
+   `required_approving_review_count: 0` requires a PR without locking out a solo maintainer (who can't approve their own PR); raise it for a team that wants mandatory review. `enforce_admins: true` blocks direct pushes to `main` even for admins — that is the point.
+3. **On failure — do not abort.** If the call fails (the repo isn't on GitHub yet, you lack admin, or the plan doesn't support protection), warn and print the exact manual steps instead of erroring out:
+   > Couldn't enable branch protection automatically. Enable it by hand: repo **Settings → Branches → Add branch ruleset** (or **Add rule**) for `main` — require a pull request before merging, require the status check **<CI job name>** to pass, and block direct pushes (including admins). See `workflow/README.md` "Getting started".
+
+## Golden rule
+
+The generated scaffolding has to start and run (even if it's a "hello world" per component). Don't leave a skeleton that doesn't compile.
+
+## Template integrity check
+
+After scaffolding, do a quick, lightweight self-check (no extra tooling — just verify, and fix what's off):
+
+1. **Workflow files are consistent.** Run `bash .github/scripts/check-workflow.sh` (the same check CI runs). It verifies that every command has its skill and delegates to it, that every guide referenced by the entry files, commands, skills, and `workflow/` exists, that every command is listed in the entry files, and that `.workflow-config` is valid (`issue_tracker=github`, or `jira` with `jira_project=...`). Fix whatever it reports. If `bash` isn't available (e.g. Windows without Git Bash), do those same checks by hand and say so.
+2. **No leftover placeholders.** The root `README.md` no longer contains the "bootstrapped from the AI Workflow Starter" placeholder, and `docs/ARCHITECTURE.md` has real decisions — including the Quality gate commands — instead of `_(pending)_`.
+3. **CI is initialized.** `.github/workflows/ci.yml` no longer has the "template not initialized" guard step and runs the Quality gate commands from `docs/ARCHITECTURE.md`.
+4. **Branch protection attempted.** `/init-project` tried to protect `main` (require a PR, require the CI check, block direct pushes) and either applied it or reported the manual steps — the required check name matches the `ci.yml` job name.
+
+Report anything still off; don't silently leave the template half-initialized.
