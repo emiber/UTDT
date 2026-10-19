@@ -8,7 +8,13 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       include: ['backend/src/**/*.ts', 'frontend/src/**/*.{ts,vue}'],
-      exclude: ['**/*.test.ts', 'backend/src/server.ts', 'frontend/src/main.ts'],
+      // Entry points only: they just call tested functions.
+      exclude: [
+        '**/*.test.ts',
+        'backend/src/server.ts',
+        'backend/src/seed-cli.ts',
+        'frontend/src/main.ts',
+      ],
       reporter: ['text', 'html'],
       thresholds: {
         lines: 85,
