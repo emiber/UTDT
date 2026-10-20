@@ -223,7 +223,7 @@ classification step gets the same history.)*
 - The window of 5 is a constant: no summarizing or truncation. A reload starts a new
   conversation, because the frontend keeps the id only in memory.
 
-### LLM layer (OpenAI API) *(Responses built; Decisions in a later issue)*
+### LLM layer (OpenAI API) *(Responses and the Decisions client built; classification in a later issue)*
 
 - **Responses API** for everything that generates text: SQL and insights. Structured
   Outputs (JSON schema) guarantee parseable responses — no "strip the markdown fence and
@@ -231,8 +231,12 @@ classification step gets the same history.)*
 - **Decisions API** for everything that picks from a fixed set: question classification
   and the judge's scores. It's fast and cheap (input tokens only). It's in **public beta**
   and returns no rationale.
-- One SDK: the official `openai` package. If it lacks typed support for the Decisions beta,
-  call the endpoint through the SDK's generic request method.
+- One SDK: the official `openai` package, which types the Decisions beta
+  (`decisions.create`). `createDecisionClient` builds its client from `OPENAI_API_KEY` and
+  its own model variable, `OPENAI_DECISIONS_MODEL` (the beta supports only `gpt-6-luna`
+  today), and `requestDecision` returns the answers in question order, as they come; any
+  of them can be a `refusal`. Failures are `LlmError`s too. The fake for tests is
+  `fakeDecisions` in `backend/src/testing/fake-llm.ts`.
 - All OpenAI calls live in one small module (`backend/src/llm.ts`), so a beta API change
   touches one file. `createLlmClient` builds the client from `OPENAI_API_KEY` and
   `OPENAI_MODEL` and throws naming a missing variable; `requestStructured` makes one
@@ -248,16 +252,38 @@ classification step gets the same history.)*
   and errors go in as template variables, and HTML escaping stays off (LiquidJS's default),
   so they reach the LLM literally. The history is one partial, `history.liquid`, that both
   user prompts include with `{% render %}`.
-- Model ids come from `.env` (`OPENAI_MODEL`), not from code.
+- Model ids come from `.env` (`OPENAI_MODEL`, `OPENAI_DECISIONS_MODEL`), not from code.
 
-### Evaluation (LLM-as-a-judge, offline) *(later issue)*
+### Evaluation (LLM-as-a-judge, offline)
 
-`npm run eval` runs a file of golden questions through the pipeline and scores each answer
-with the Decisions API (`scores` against an ordered rubric, `predicates` for yes/no checks).
-Example criteria: the SQL answers the question, the narrative is faithful to the data, and
-the chart fits. It prints a summary and writes a JSON report (gitignored). It is **not**
-part of the quality gate, because it costs money and isn't deterministic. Built in a later
-issue.
+`npm run eval` (`backend/src/eval-command.ts`, `evaluate.ts`) runs the golden questions in
+`backend/eval/golden.json` (each case is only an `id` and a `question`, for the demo
+dataset) through the pipeline in process — no server, no access key, nothing written to
+`app.db`, each question as a new conversation — and has the Decisions API judge each
+answer. It is **not** part of the quality gate, because it costs money and isn't
+deterministic.
+
+- **Before the first OpenAI call** it checks `OPENAI_API_KEY`, `OPENAI_MODEL`,
+  `OPENAI_DECISIONS_MODEL`, the golden file and `data/data.db`. A problem prints why and
+  exits 1, with no report.
+- **The judge** gets one request per answered question, with the answer as content (never
+  as instructions): the question, the schema context, the SQL, every result row, the
+  narrative and the chart spec. Three criteria:
+  - *the SQL answers the question* — a `score` on 3 levels (does not answer / partially /
+    fully), 0 to 2;
+  - *the narrative is faithful to the data* — a `score` on 3 levels (contradicts or invents
+    figures / minor inaccuracies / fully faithful), 0 to 2;
+  - *the chart fits* — a `predicate` (a probability), asked only when there's a chart
+    spec; otherwise it's *not applicable*.
+- A question the pipeline can't answer (every SQL attempt failed) is *without an answer*,
+  with the reason, and isn't judged. A refused criterion is *refused*. A pipeline or judge
+  failure is recorded on that question, and the run goes on.
+- **Output:** one line per question, then a summary — the average per criterion over judged
+  values only (scores over 2, the chart as an average probability) and the counts. No
+  verdict, no thresholds: it exits 0 whenever the run finishes. The JSON report goes to
+  `data/eval/eval-<timestamp>.json` (gitignored), with the models used, the summary, and
+  per question the SQL, row count, narrative, chart spec and each criterion's answer as the
+  Decisions API returned it.
 
 ### Frontend (Vue 3)
 
@@ -340,14 +366,16 @@ only what the scaffold's code uses. `openai` and `liquidjs` came with SQL genera
 ## Configuration
 
 Root `.env` (gitignored; placeholders in `.env.example`), loaded by Node's
-`--env-file-if-exists`. All three variables are **required**: without any of them the
-backend refuses to start, with an error naming it. `APP_ACCESS_KEY` is the app's shared
-key (auth); `OPENAI_API_KEY` and `OPENAI_MODEL` (a model with Structured Outputs in the
-Responses API) are for the LLM. Each issue adds the variables it uses. Fixed for now, and
-not configurable: the database paths (`data/app.db`, `data/data.db`, relative to the repo
-root), the backend port (3000), and tuning values (retry budget, row cap, insights row
-sample, context turns).
-They become config only when there's a reason.
+`--env-file-if-exists`. Three variables are **required**: without any of them the backend
+refuses to start, with an error naming it. `APP_ACCESS_KEY` is the app's shared key
+(auth); `OPENAI_API_KEY` and `OPENAI_MODEL` (a model with Structured Outputs in the
+Responses API) are for the LLM. `OPENAI_DECISIONS_MODEL` (the Decisions API model) is
+needed only by `npm run eval`, which checks it. Each issue adds the variables it uses.
+
+Fixed for now, and not configurable: the database paths (`data/app.db`, `data/data.db`,
+relative to the repo root), the backend port (3000), the golden file and report paths, and
+tuning values (retry budget, row cap, insights row sample, context turns). They become
+config only when there's a reason.
 
 ## Deferred decisions
 

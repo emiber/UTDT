@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import type { Decision, DecisionCreateParams } from 'openai/resources/decisions';
 import type { ResponseCreateParamsNonStreaming } from 'openai/resources/responses/responses';
 
 // The only module that calls OpenAI. Pipeline functions receive an LlmClient as a
@@ -30,7 +31,7 @@ export function createLlmClient(env: NodeJS.ProcessEnv = process.env): LlmClient
 function requireVariable(env: NodeJS.ProcessEnv, name: string): string {
   const value = env[name]?.trim();
   if (!value) {
-    throw new Error(`${name} is not set. Copy .env.example to .env in the repo root and set it.`);
+    throw new Error(`${name} is not set. Add it to the .env in the repo root (see .env.example).`);
   }
   return value;
 }
@@ -105,4 +106,52 @@ function parseObject(text: string): object {
     // Not JSON: same error as JSON that isn't an object.
   }
   throw new LlmError('The model returned no valid JSON object.');
+}
+
+/** One question for the Decisions API: a predicate, a choice or a score. */
+export type DecisionQuestion = DecisionCreateParams['questions'][number];
+
+/** One answer, in question order; any question can come back as a refusal. */
+export type DecisionAnswer = Decision['answers'][number];
+
+export interface DecisionClient {
+  /** The model id from `OPENAI_DECISIONS_MODEL`. */
+  model: string;
+  /** The Decisions API: the SDK's `decisions.create`, or a fake in tests. */
+  createDecision(body: DecisionCreateParams): Promise<{ answers: DecisionAnswer[] }>;
+}
+
+/**
+ * Builds the Decisions API client from the environment. It has its own model variable: the
+ * Decisions beta supports fewer models than the Responses API. Throws naming a missing one.
+ */
+export function createDecisionClient(env: NodeJS.ProcessEnv = process.env): DecisionClient {
+  const apiKey = requireVariable(env, 'OPENAI_API_KEY');
+  const model = requireVariable(env, 'OPENAI_DECISIONS_MODEL');
+  const openai = new OpenAI({ apiKey });
+  return { model, createDecision: (body) => openai.decisions.create(body) };
+}
+
+/**
+ * Asks the Decisions API questions about an input, which is evidence, not instructions.
+ * Returns the answers in question order, as they came. Throws an LlmError when the call
+ * fails or the answers don't match the questions.
+ */
+export async function requestDecision(
+  client: DecisionClient,
+  input: string,
+  questions: DecisionQuestion[],
+): Promise<DecisionAnswer[]> {
+  let answers: DecisionAnswer[];
+  try {
+    ({ answers } = await client.createDecision({ model: client.model, input, questions }));
+  } catch (error) {
+    throw new LlmError(`OpenAI decision failed: ${(error as Error).message}`, { cause: error });
+  }
+  if (answers?.length !== questions.length) {
+    throw new LlmError(
+      `The decision has ${answers?.length ?? 0} answers for ${questions.length} questions.`,
+    );
+  }
+  return answers;
 }

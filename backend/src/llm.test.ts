@@ -1,6 +1,21 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createLlmClient, LlmError, requestStructured, type StructuredRequest } from './llm.ts';
-import { fakeLlm, incompleteResponse, jsonResponse, refusalResponse } from './testing/fake-llm.ts';
+import {
+  createDecisionClient,
+  createLlmClient,
+  LlmError,
+  requestDecision,
+  requestStructured,
+  type DecisionAnswer,
+  type DecisionQuestion,
+  type StructuredRequest,
+} from './llm.ts';
+import {
+  fakeDecisions,
+  fakeLlm,
+  incompleteResponse,
+  jsonResponse,
+  refusalResponse,
+} from './testing/fake-llm.ts';
 
 const ENV = { OPENAI_API_KEY: 'sk-test-key', OPENAI_MODEL: 'test-model' };
 
@@ -132,6 +147,96 @@ describe('fakeLlm', () => {
   it('fails loudly on a request it has no reply for', async () => {
     await expect(requestStructured(fakeLlm(), REQUEST)).rejects.toThrow(
       'Unexpected LLM request #1',
+    );
+  });
+});
+
+describe('createDecisionClient', () => {
+  const DECISION_ENV = { OPENAI_API_KEY: 'sk-test-key', OPENAI_DECISIONS_MODEL: 'judge-model' };
+
+  it.each([
+    ['OPENAI_API_KEY', { OPENAI_DECISIONS_MODEL: 'judge-model' }],
+    ['OPENAI_DECISIONS_MODEL', { OPENAI_API_KEY: 'sk-test-key', OPENAI_MODEL: 'test-model' }],
+  ])('throws naming %s when it is missing', (name, env) => {
+    expect(() => createDecisionClient(env)).toThrow(`${name} is not set`);
+  });
+
+  it('sends requests to the OpenAI Decisions API with the key', async () => {
+    const answers = [{ type: 'predicate', name: 'p', probability: 0.9 }];
+    const fetchMock = vi.fn<typeof fetch>(async () =>
+      Response.json({ answers, model: 'judge-model', usage: {} }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    vi.stubEnv('OPENAI_BASE_URL', 'https://api.openai.com/v1');
+    const client = createDecisionClient(DECISION_ENV);
+
+    const result = await requestDecision(client, 'Some input.', [
+      { type: 'predicate', name: 'p', instructions: 'Is it true?' },
+    ]);
+
+    expect(client.model).toBe('judge-model');
+    expect(result).toEqual(answers);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toBe('https://api.openai.com/v1/decisions');
+    expect(new Headers(init?.headers).get('Authorization')).toBe('Bearer sk-test-key');
+  });
+});
+
+describe('requestDecision', () => {
+  const QUESTIONS: DecisionQuestion[] = [
+    {
+      type: 'score',
+      name: 's',
+      instructions: 'How good?',
+      levels: [{ label: 'bad' }, { label: 'good' }],
+    },
+    { type: 'predicate', name: 'p', instructions: 'Is it true?' },
+  ];
+
+  it('sends the model, the input and the questions, and returns the answers as they come', async () => {
+    const answers: DecisionAnswer[] = [
+      { type: 'score', name: 's', score: 0.7, confidence: 0.6, probabilities: [] },
+      { type: 'refusal', name: 'p' },
+    ];
+    const judge = fakeDecisions(answers);
+
+    expect(await requestDecision(judge, 'The input.', QUESTIONS)).toEqual(answers);
+    expect(judge.requests).toEqual([
+      { model: 'fake-decisions-model', input: 'The input.', questions: QUESTIONS },
+    ]);
+  });
+
+  it('wraps API errors in an LlmError that keeps the original as its cause', async () => {
+    const apiError = new Error('400 Unsupported model');
+
+    const error = await requestDecision(fakeDecisions(apiError), 'x', QUESTIONS).catch(
+      (e: unknown) => e,
+    );
+
+    expect(error).toBeInstanceOf(LlmError);
+    expect(error).toMatchObject({ message: 'OpenAI decision failed: 400 Unsupported model' });
+    expect((error as LlmError).cause).toBe(apiError);
+  });
+
+  it('throws an LlmError when the answers do not match the questions', async () => {
+    const judge = fakeDecisions([{ type: 'predicate', name: 'p', probability: 1 }]);
+
+    await expect(requestDecision(judge, 'x', QUESTIONS)).rejects.toThrow(
+      'The decision has 1 answers for 2 questions.',
+    );
+  });
+
+  it('throws an LlmError when the response has no answers', async () => {
+    const client = { model: 'm', createDecision: async () => ({}) as never };
+
+    await expect(requestDecision(client, 'x', QUESTIONS)).rejects.toThrow(
+      'The decision has 0 answers for 2 questions.',
+    );
+  });
+
+  it('fails loudly on a request the fake has no reply for', async () => {
+    await expect(requestDecision(fakeDecisions(), 'x', QUESTIONS)).rejects.toThrow(
+      'Unexpected decision request #1',
     );
   });
 });

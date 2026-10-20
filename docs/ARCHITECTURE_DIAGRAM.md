@@ -66,9 +66,9 @@ flowchart TB
   classify -.->|"Decisions"| openai
   genSql -->|"Responses"| openai
   insights -->|"Responses"| openai
-  evalCmd -.->|"golden questions"| classify
-  evalCmd -.->|"Decisions: scores"| openai
+  evalCmd -->|"golden questions"| genSql
+  evalCmd -->|"Decisions: scores"| openai
 
   classDef planned stroke-dasharray: 5 5
-  class classify,evalCmd planned
+  class classify planned
 ```
