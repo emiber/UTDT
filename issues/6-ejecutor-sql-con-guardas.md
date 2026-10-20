@@ -2,7 +2,7 @@
 id: 6
 title: Ejecutar SQL sobre data.db con guardas de seguridad
 type: feat
-status: refined
+status: closed
 parent: 1
 created: 2026-10-19
 ---
@@ -118,3 +118,40 @@ Esta decisión se propuso durante el refinamiento y el usuario la confirmó el 2
 - **BLOBs:** se devuelven como `Uint8Array`, sin convertir, y el dataset demo no tiene. Resolverlo cuando un dataset real los traiga.
 - **Enteros mayores que 2^53:** hoy son un error `sql` que el LLM resuelve con `CAST`. Leerlos como `bigint` o string solo si un dataset real usa IDs así.
 - **Consultas con parámetros:** el SQL del LLM llega literal, así que no hacen falta.
+
+## Pull request
+Branch: `feat/6-ejecutor-sql-con-guardas` → `epic/1-poc-chatbot-text-to-sql`
+
+### What it does
+- **`backend/src/execute-sql.ts`:** `executeSql(db, sql)` corre una consulta de lectura sobre la conexión read-only y devuelve `{ ok: true, columns, rows }` o `{ ok: false, kind, message }`, con `kind` en `guard`, `sql` o `row_limit`.
+  - **Guarda, antes de tocar la base:** rechaza el SQL vacío y una primera palabra que no sea `SELECT` o `WITH`.
+  - **Sentencia única:** el límite de la primera sentencia lo decide SQLite (`statement.sourceSQL`), no un escáner propio. Cualquier texto después de esa sentencia es `guard`, incluso un comentario. Así un `;` dentro de un string, de un identificador o de un comentario no cuenta, y un token como `$a([)` no esconde una segunda sentencia.
+  - **Tope de 500 filas (`MAX_ROWS`):** la lectura se corta en la fila 501 y devuelve `row_limit`, con un mensaje que nombra el tope. Una CTE recursiva infinita termina ahí.
+  - Las filas son listas alineadas con `columns`, así dos columnas con el mismo nombre conservan sus valores.
+  - **Clasificación de errores, con una lista permitida:** vuelven al LLM como `sql` `SQLITE_ERROR` (sintaxis, tabla o columna inexistente, overflow, JSON mal formado…), `SQLITE_READONLY` exacto (una escritura detrás de un `WITH`), `SQLITE_TOOBIG`, `SQLITE_MISMATCH` (`LIMIT` no entero) y `ERR_OUT_OF_RANGE` (entero mayor que 2^53). Todo lo demás se lanza: conexión cerrada, base bloqueada, archivo corrupto o que no es una base, hot journal y errores de I/O.
+  - El iterador se cierra en un `finally`. Sin eso, un valor ilegible dejaba un lock de lectura sobre `data.db` mientras viviera la conexión.
+- **Tests de la apertura read-only de #2:** no hizo falta sumar ninguno. `db.test.ts` ya cubre que una escritura falla y que un archivo inexistente no se crea.
+- **Docs:** `docs/ARCHITECTURE.md` (paso 4 del pipeline y la fila *Query timeout / worker thread*) y `README.md` (estructura).
+
+### Verification
+- Lint: `npm run lint` — pass
+- Tests: `npm run test:coverage` — pass (13 archivos, 177 tests). Una corrida intermedia falló por el flake conocido de arranque de los workers del frontend ("Timeout waiting for worker to respond"); al repetirla pasó.
+- Coverage: 100% en sentencias, ramas, funciones y líneas (umbral 85%); archivos nuevos o cambiados bajo el umbral: ninguno
+- Manual: pass. Contra el `data.db` del seed, una agregación por mes devuelve 24 filas y `SELECT * FROM orders` devuelve 280. `DELETE FROM orders` da `guard`, y `WITH x AS (SELECT 1) DELETE FROM orders` da `sql` con "attempt to write a readonly database".
+- Self-review: 4 rondas con agente separado.
+  - Blockers encontrados y arreglados, cada uno con su test de regresión:
+    - el lock de lectura que quedaba tomado después de un valor ilegible (ronda 2);
+    - `SQLITE_MISMATCH` se lanzaba en vez de volver al LLM (ronda 3).
+  - Sugerencias aplicadas:
+    - el límite de sentencia de SQLite en vez del escáner, que se podía engañar;
+    - los errores de entorno se lanzan;
+    - la lista permitida, para que un hot journal no gaste reintentos;
+    - el doc aclara que el tope corta filas, no trabajo, y que un valor gigante puede tirar el proceso.
+  - La ronda 4 no encontró blockers. Sugerencias no aplicadas, fuera del alcance: ver follow-ups. (separate agent)
+- Plan: aprobado de antemano por el usuario para el trabajo desatendido del 2026-10-19.
+- Security: pass. La garantía dura es la conexión read-only. Se probaron escrituras (`WITH … DELETE/INSERT/REPLACE`), segundas sentencias (con NUL, surrogates, `$a([)`, comentarios y `;;`), `load_extension`, las funciones `pragma_*` y la liberación del lock, y no pasó ninguna.
+- Docs: updated `README.md`, `docs/ARCHITECTURE.md`
+
+### Out of scope / follow-ups
+- Propuesto, sin crear: abrir `data.db` con `limits: { length: … }` en `openReadOnlyDatabase` (#2). Hoy un valor de cientos de MB (`hex(zeroblob(300000000))`) tira el proceso de Node. Con un tope, vuelve como `sql` "string or blob too big" por la rama de `SQLITE_TOOBIG`.
+- Propuesto, sin crear: sumar `pragma_database_list` (expone la ruta absoluta de `data.db`), `dbstat` y `sqlite_master` a la decisión diferida de la lista blanca de tablas.
