@@ -19,3 +19,9 @@ created: 2026-10-19
 10. #11 Agregar memoria multi-turn a las conversaciones
 11. #10 Clasificar preguntas con la Decisions API
 12. #12 Evaluar respuestas offline con LLM-as-a-judge (npm run eval)
+13. #14 Responder los errores 5xx con un mensaje genérico
+14. #15 Poner un tope de tamaño por valor en la conexión read-only a data.db
+15. #16 Documentar en la lista blanca diferida qué puede leer el SQL del LLM
+16. #17 Agregar timeouts de punta a punta al chat
+17. #18 Estabilizar el arranque de los workers de Vitest
+18. #19 Rechazar al arrancar el placeholder de APP_ACCESS_KEY
