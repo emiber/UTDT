@@ -2,6 +2,7 @@
 import { auth, loadStoredKey } from './auth.ts';
 import AccessKeyForm from './components/AccessKeyForm.vue';
 import BackendStatus from './components/BackendStatus.vue';
+import ChatView from './components/ChatView.vue';
 import DataCatalog from './components/DataCatalog.vue';
 
 // Two screens, switched by auth state: the key screen until there's a key, then the app.
@@ -14,6 +15,7 @@ loadStoredKey();
     <template v-if="auth.key">
       <BackendStatus />
       <DataCatalog />
+      <ChatView />
     </template>
     <AccessKeyForm v-else />
   </main>

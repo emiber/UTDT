@@ -102,6 +102,34 @@ describe('App with a stored key', () => {
     expect(details.text()).toContain('No tables are described yet.');
   });
 
+  it('shows the chat on the main screen, after the "Available data" section', async () => {
+    const fetchMock = stubFetch(healthyBackend);
+
+    const wrapper = mount(App);
+    await flushPromises();
+
+    const sections = wrapper.findAll('main > *').map((el) => el.classes()[0]);
+    expect(sections.slice(1)).toEqual(['status', 'catalog', 'chat']);
+    expect(wrapper.find('.chat input').exists()).toBe(true);
+    expect(fetchMock.mock.calls.map(([url]) => url)).not.toContain('/api/chat');
+  });
+
+  it('goes back to the key screen, with no chat error, when a question gets a 401', async () => {
+    stubFetch(async (url) =>
+      url === '/api/chat' ? new Response(null, { status: 401 }) : healthyBackend(url),
+    );
+    const wrapper = mount(App);
+    await flushPromises();
+
+    await wrapper.find('.chat input').setValue('Names?');
+    await wrapper.find('.chat form').trigger('submit');
+    await flushPromises();
+
+    expect(wrapper.find('.chat').exists()).toBe(false);
+    expect(wrapper.find('[role="alert"]').text()).toBe('Access key rejected. Enter it again.');
+    expect(sessionStorage.getItem(STORAGE_KEY)).toBeNull();
+  });
+
   it('goes back to the key screen with a message when the key is rejected', async () => {
     stubFetch(async () => new Response(null, { status: 401 }));
 

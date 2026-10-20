@@ -67,3 +67,28 @@ export async function getCatalog(): Promise<Catalog> {
   const res = await apiFetch('/api/catalog');
   return (await res.json()) as Catalog;
 }
+
+/** A response block of the chat, rendered in order. */
+export type Block =
+  | { type: 'text'; markdown: string }
+  | { type: 'table'; columns: string[]; rows: (string | number | null)[][] };
+
+export interface ChatResponse {
+  conversationId: string;
+  turnId: number;
+  blocks: Block[];
+  suggestions: string[];
+}
+
+/** Asks a question; without a `conversationId` the backend starts a new conversation. */
+export async function postChat(body: {
+  question: string;
+  conversationId?: string;
+}): Promise<ChatResponse> {
+  const res = await apiFetch('/api/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  return (await res.json()) as ChatResponse;
+}

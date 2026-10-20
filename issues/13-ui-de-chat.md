@@ -2,7 +2,7 @@
 id: 13
 title: Agregar la UI de chat con narrativa, tabla y sugerencias
 type: feat
-status: refined
+status: closed
 parent: 1
 created: 2026-10-19
 ---
@@ -148,3 +148,57 @@ Derivadas de una fuente, sin pregunta:
 Ya están diferidos en `docs/ARCHITECTURE.md`:
 - Tablas con orden, paginado o exportación (UI kit) y descarga CSV.
 - Botones de feedback.
+
+## Pull request
+Branch: `feat/13-ui-de-chat` → `epic/1-poc-chatbot-text-to-sql`
+
+### What it does
+- **`postChat`** (`frontend/src/api.ts`) hace `POST /api/chat` con `apiFetch`. Así lleva la key, un `401` vuelve a la pantalla de key y los demás errores son `ApiError` con su status. Suma los tipos `Block` y `ChatResponse`.
+- **`ChatView.vue`**, en la pantalla principal, debajo de *Available data*: un input y el hilo.
+  - **Conversación:** la primera pregunta va sin `conversationId`, y las siguientes con el recibido.
+  - **Espera:** cada pregunta muestra "Thinking…" (`role="status"`). El input, el botón y las sugerencias quedan deshabilitados hasta la respuesta. Una pregunta en blanco no se puede enviar.
+  - **Sugerencias:** son botones que mandan la pregunta en el momento, en la misma conversación.
+  - **Errores:** se muestran en el hilo. Un `404` descarta el `conversationId` y muestra *This conversation is no longer available…*. Los demás, *Could not get an answer: …*, y conservan el id.
+  - **Memoria:** el hilo y el id viven solo en memoria. Cuando llega la respuesta, el foco vuelve al input sin scrollear.
+- **`ResponseBlocks.vue`** renderiza los bloques en orden.
+  - `text` es markdown con `micromark`: escapa el HTML crudo, vacía los links `javascript:`, apaga las imágenes (`![x](url)` queda como link, así ninguna URL remota carga sola) y abre los links en otra pestaña.
+  - `table` es una tabla HTML con las celdas por posición, así que las columnas repetidas conservan su valor.
+- **Dependencia nueva:** `micromark` 4.0.3 en `frontend`. Es la única.
+  - Es segura por defecto y trae sus propios tipos, así que no hace falta un sanitizador al lado.
+  - Se descartaron `markdown-it`, que pediría también `@types/markdown-it`, y `marked`, que no sanitiza y necesitaría DOMPurify.
+  - El bundle pasa de 69 kB a 126 kB (43 kB gzip).
+- **Estilos:** tokens `$color-surface` y `$color-border`.
+- **Docs:** `docs/ARCHITECTURE.md` (*Frontend*, *Tech stack* y la nota de dependencias), `README.md` (*Status* y estructura) y `docs/ARCHITECTURE_DIAGRAM.md` (la vista de chat pasa a sólida).
+
+### Verification
+- Lint: `npm run lint` — pass. Una corrida intermedia falló por `HTMLInputElement` sin definir en un `.vue`, y quedó commiteada en la rama. Se arregló en el commit siguiente, antes de la review.
+- Tests: `npm run test:coverage` — pass (22 archivos, 281 tests). El flake de arranque de los workers del frontend apareció en corridas sueltas; al repetirlas pasaron.
+- Coverage: 100% en sentencias, funciones y líneas, y 99,44% en ramas (umbral 85%). La única rama sin cubrir es de #8 (`conversations.ts:78`). Archivos nuevos o cambiados bajo el umbral: ninguno.
+- Build: `npm run build -w frontend` — pass
+- Manual: pass, en un navegador real: Edge headless manejado por DevTools, con `npm run dev`, el `.env` real (`gpt-5.4-mini`) y el seed demo.
+  - La key se ingresó por el formulario. La sección *Available data* arranca cerrada.
+  - "¿Cuáles fueron las ventas totales por país en 2025?" mostró la narrativa en español con negritas, una tabla `country,total_sales_2025` de 5 filas y 3 sugerencias en español.
+  - "Which are the top 3 products by revenue?" mostró la narrativa en inglés, una tabla de 3 filas y 3 sugerencias.
+  - El clic en una sugerencia se respondió con una tabla de 5 columnas.
+  - Durante la espera se vieron "Thinking…" y el input deshabilitado.
+  - Los 3 turnos quedaron en la misma conversación en `app.db`.
+  - La captura de pantalla se revisó: el hilo, las tablas, los botones y el input se ven bien.
+- Self-review: 2 rondas con agente separado, sin blockers. Sugerencias aplicadas:
+  - foco al input y `role="status"`;
+  - imágenes markdown apagadas;
+  - test del `401` desde el chat;
+  - links en otra pestaña;
+  - `preventScroll`;
+  - redacción del doc.
+
+  Las últimas, links y `preventScroll`, son dos cambios chicos con su test, y se verificaron con el gate y el build. (separate agent)
+- Plan: aprobado de antemano por el usuario para el trabajo desatendido del 2026-10-19.
+- Security: pass.
+  - Pasa XSS: `v-html` solo recibe la salida de micromark. El reviewer probó `<script>`, `<img onerror>`, `javascript:` con mayúsculas y entidades, `data:`, `vbscript:` y autolinks.
+  - Las celdas, las preguntas y las sugerencias se interpolan con `{{ }}`.
+  - Los errores solo muestran el status o el mensaje de red.
+  - No hay secretos.
+- Docs: updated `README.md`, `docs/ARCHITECTURE.md`, `docs/ARCHITECTURE_DIAGRAM.md`
+
+### Out of scope / follow-ups
+- Propuesto, sin crear: un timeout para el chat de punta a punta, con `AbortSignal.timeout` en `postChat` y un timeout del SDK de OpenAI en el backend. Hoy una llamada colgada deja "Thinking…" y el input deshabilitado hasta recargar, y recargar pierde el hilo.
