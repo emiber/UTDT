@@ -1,4 +1,5 @@
 import { mount } from '@vue/test-utils';
+import { registry } from 'chart.js';
 import { describe, expect, it, vi } from 'vitest';
 import type { ChartBlock as ChartBlockData } from '../api.ts';
 import ChartBlock from './ChartBlock.vue';
@@ -41,6 +42,12 @@ describe('ChartBlock', () => {
     expect(chart.props('options')).toMatchObject({
       plugins: { title: { display: true, text: 'Sales by month' } },
     });
+  });
+
+  it("registers Chart.js's Colors plugin, which gives the default palette", () => {
+    mount(ChartBlock, { props: { block: block('bar') } });
+
+    expect(registry.plugins.get('colors')).toBeDefined();
   });
 
   it('keeps pie and doughnut charts narrower', () => {

@@ -141,11 +141,10 @@ describe('POST /api/chat', () => {
   });
 
   it('adds the chart block after the table, without the spec in the response', async () => {
-    const chart = { type: 'bar', x: 'name', series: ['qty'], title: 'Units per item' };
-    start(
-      sqlReply('SELECT name, qty FROM items ORDER BY id'),
-      jsonResponse({ ...INSIGHTS, chart }),
-    );
+    const chart = { type: 'bar', x: 'name', series: ['qty', 'id'], title: 'Units per item' };
+    // A repeated x value stays a separate point: nothing is grouped.
+    const sql = "SELECT name, qty, id FROM items UNION ALL SELECT 'pen', 1, 9";
+    start(sqlReply(sql), jsonResponse({ ...INSIGHTS, chart }));
 
     const body = (await chat({ question: 'Units per item?' })).json();
 
@@ -154,8 +153,11 @@ describe('POST /api/chat', () => {
       type: 'chart',
       chartType: 'bar',
       title: 'Units per item',
-      labels: ['pen', 'ink'],
-      datasets: [{ label: 'qty', data: [3, 5] }],
+      labels: ['pen', 'ink', 'pen'],
+      datasets: [
+        { label: 'qty', data: [3, 5, 1] },
+        { label: 'id', data: [1, 2, 9] },
+      ],
     });
     expect(Object.keys(body)).toEqual(['conversationId', 'turnId', 'blocks', 'suggestions']);
   });

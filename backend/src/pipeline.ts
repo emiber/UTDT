@@ -57,8 +57,9 @@ export interface PipelineInput {
 /**
  * Answers a question: SQL (with its retries), then insights, then the blocks: text, table
  * (with rows) and chart (when the LLM's spec fits the result; a spec that doesn't is dropped
- * with a warning). When every SQL attempt fails, returns why, without calling the insights. Anything thrown (OpenAI
- * failures, unexpected errors) comes out as a PipelineError whose `cause` is the original.
+ * with a warning). When every SQL attempt fails, returns why, without calling the insights.
+ * Anything thrown (OpenAI failures, unexpected errors) comes out as a PipelineError whose
+ * `cause` is the original.
  */
 export async function answerQuestion({
   question,

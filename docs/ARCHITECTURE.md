@@ -195,8 +195,9 @@ keep their values; `NULL` is `null`. The chart block comes last, after the table
   app-wide, so future querystring or params schemas must use `type: 'string'` and parse by
   hand. An unknown `conversationId` is a `404`. Neither calls OpenAI or saves anything.
 - Without a `conversationId` it starts a new conversation (the backend makes the id).
-- `200`: `blocks` = `[text, table]` (`[text]` with 0 rows) and 3 `suggestions`. When every
-  SQL attempt fails: `200` with one fixed English `text` block and no suggestions.
+- `200`: `blocks` = `[text, table]` (`[text]` with 0 rows), plus a `chart` block last when
+  the LLM's spec fits the result, and 3 `suggestions`. When every SQL attempt fails: `200`
+  with one fixed English `text` block and no suggestions.
 - `502` when an OpenAI call fails (API, network, refusal, incomplete output) and `500` on
   an unexpected error, both with a generic message in Fastify's error format; the detail
   goes to the log and the saved turn. A new conversation is created with that turn, but its
