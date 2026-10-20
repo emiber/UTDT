@@ -118,10 +118,11 @@ Each step is its own issue. The design:
 3. **Generate SQL** (Responses API, Structured Outputs) from the question, the schema
    context and the last turns of the conversation (`generateSql` in
    `backend/src/generate-sql.ts`; see *Multi-turn*). The output is a strict `{ sql }`
-   object, passed to step 4 as is. It runs a generate → execute → retry loop: on a returned error, the next request
-   carries every failed attempt of the question (its SQL and message), up to **3 attempts
-   in total**; after that the last error is returned. OpenAI failures, refusals and
-   incomplete responses are thrown, not retried (the SDK already retries transient ones).
+   object, passed to step 4 as is. It runs a generate → execute → retry loop: on a
+   returned error, the next request carries every failed attempt of the question (its SQL
+   and message), up to **3 attempts in total**; after that the last error is returned.
+   OpenAI failures, refusals and incomplete responses are thrown, not retried (the SDK
+   already retries transient ones).
    Each attempt logs one line per step with its duration and result.
 4. **Guard and execute** (`executeSql` in `backend/src/execute-sql.ts`). Safety is layered:
    - the query runs on a **read-only** connection — SQLite itself rejects any write;
@@ -144,7 +145,8 @@ Each step is its own issue. The design:
    returned error the LLM retries with the message as feedback (step 3).
 5. **Build the insights** (Responses API, Structured Outputs; `buildInsights` in
    `backend/src/insights.ts`). The LLM receives the question, the SQL, the column list,
-   the first 50 rows and the total row count, and returns **only** the narrative
+   the first 50 rows, the total row count and the earlier turns of the conversation (see
+   *Multi-turn*), and returns **only** the narrative
    (markdown), exactly 3 follow-up suggestions, in the language of the question, and a
    chart spec or `null` (`type`: bar/line/pie/doughnut, `x` column, `series` columns,
    title). The prompt asks for `null` when the result can't be charted or a chart adds
@@ -242,9 +244,10 @@ classification step gets the same history.)*
   receive the client as a parameter. **Tests never hit the network**: they pass the fake
   client in `backend/src/testing/fake-llm.ts`.
 - Prompts are LiquidJS templates in `backend/src/prompts/*.liquid`, apart from the code,
-  rendered by `renderPrompt` (`backend/src/prompts.ts`). Questions, SQL and errors go in as
-  template variables, and HTML escaping stays off (LiquidJS's default), so they reach the
-  LLM literally.
+  rendered by `renderPrompt` (`backend/src/prompts.ts`). Questions, earlier turns, SQL
+  and errors go in as template variables, and HTML escaping stays off (LiquidJS's default),
+  so they reach the LLM literally. The history is one partial, `history.liquid`, that both
+  user prompts include with `{% render %}`.
 - Model ids come from `.env` (`OPENAI_MODEL`), not from code.
 
 ### Evaluation (LLM-as-a-judge, offline) *(later issue)*

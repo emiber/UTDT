@@ -218,7 +218,11 @@ describe('POST /api/chat', () => {
       dataDb.exec("INSERT INTO items (name, qty) VALUES ('zz-sentinel', 42)");
       start(
         sqlReply('SELECT name, qty FROM items ORDER BY id'),
-        jsonResponse(INSIGHTS),
+        // A chart too, so the sentinel is in the first turn's saved table and chart blocks.
+        jsonResponse({
+          ...INSIGHTS,
+          chart: { type: 'bar', x: 'name', series: ['qty'], title: 't' },
+        }),
         // The second turn's own rows leave the sentinel out: only the first turn has it.
         sqlReply('SELECT name FROM items WHERE qty < 10'),
         jsonResponse(INSIGHTS),
