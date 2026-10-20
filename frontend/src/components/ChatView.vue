@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue';
+import { computed, nextTick, reactive, ref, useTemplateRef } from 'vue';
 import { ApiError, postChat, type Block } from '../api.ts';
 import ResponseBlocks from './ResponseBlocks.vue';
 
@@ -19,6 +19,7 @@ interface Turn {
 const thread = ref<Turn[]>([]);
 let conversationId: string | null = null;
 const draft = ref('');
+const input = useTemplateRef<HTMLInputElement>('input');
 const busy = computed(() => thread.value.some((turn) => turn.status === 'pending'));
 const canSend = computed(() => !busy.value && draft.value.trim() !== '');
 
@@ -51,6 +52,9 @@ async function ask(text: string) {
     }
     turn.status = 'error';
   }
+  // The input was disabled while waiting, which dropped the focus: give it back.
+  await nextTick();
+  input.value?.focus();
 }
 
 function send() {
@@ -66,7 +70,7 @@ function send() {
     <ol class="chat__thread">
       <li v-for="(turn, i) in thread" :key="i" class="chat__turn">
         <p class="chat__question">{{ turn.question }}</p>
-        <p v-if="turn.status === 'pending'" class="chat__pending">Thinking…</p>
+        <p v-if="turn.status === 'pending'" class="chat__pending" role="status">Thinking…</p>
         <p v-else-if="turn.status === 'error'" class="chat__error" role="alert">
           {{ turn.error }}
         </p>
@@ -88,7 +92,7 @@ function send() {
     </ol>
     <form class="chat__form" @submit.prevent="send">
       <label for="chat-question" class="chat__label">Ask a question about the data</label>
-      <input id="chat-question" v-model="draft" type="text" :disabled="busy" />
+      <input id="chat-question" ref="input" v-model="draft" type="text" :disabled="busy" />
       <button type="submit" :disabled="!canSend">Send</button>
     </form>
   </section>

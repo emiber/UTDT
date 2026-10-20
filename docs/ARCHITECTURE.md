@@ -236,9 +236,10 @@ issue.
   - Each question shows a waiting indicator; input, button and suggestions are disabled
     until the answer arrives (one question at a time, no streaming).
   - `ResponseBlocks.vue` renders the blocks in order: `text` as markdown with `micromark`
-    (raw HTML is escaped and dangerous link protocols dropped, so the LLM's text can't
-    inject markup) and `table` as a plain HTML table, cells placed by position. *(Later
-    issue: the `chart` block.)*
+    and `table` as a plain HTML table, cells placed by position. *(Later issue: the
+    `chart` block.)* Raw HTML is escaped, `javascript:` links are dropped, and markdown
+    images are turned off (they render as plain links), so the LLM's text can't inject
+    markup or make the browser load a remote URL by itself.
   - Suggestions are buttons under each answer: a click sends that question right away, in
     the same conversation.
   - Errors show in the thread in place of the answer. A `404` (the backend no longer knows
@@ -273,7 +274,7 @@ persisted turns in `app.db` are the query log. Nothing else for a POC.
 | Frontend | Vue 3 + Vite | User's choice; Vite is the standard Vue toolchain |
 | Styles | SCSS (`sass`, pure JS) | User's preference. Vite supports it natively; the pure-JS package avoids native binaries |
 | Prompt templates | LiquidJS (`liquidjs`) | The user asked for something like Jinja2 for prompts: LiquidJS has the same base syntax (`{{ }}`, `{% if %}`, `{% for %}`), is pure JS, and doesn't escape HTML by default |
-| Markdown | `micromark` | Renders the narrative's markdown. Safe by default (escapes raw HTML, drops `javascript:` links), ships its own types, and needs no sanitizer next to it |
+| Markdown | `micromark` | Renders the narrative's markdown. Safe by default (escapes raw HTML, drops `javascript:` links; images are turned off by config), ships its own types, and needs no sanitizer next to it |
 | Charts | Chart.js + vue-chartjs | Proven, light, and covers bar/line/pie/doughnut. Its config is easy to build from data |
 | Env config | Node's built-in `--env-file-if-exists` | Reads the root `.env` without `dotenv` |
 | Dev runner | `concurrently` (root dev dependency) | Starts backend and frontend with one cross-platform `npm run dev` |

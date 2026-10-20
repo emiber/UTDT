@@ -111,6 +111,15 @@ describe('ChatView', () => {
     expect(wrapper.find('input').attributes('disabled')).toBeUndefined();
   });
 
+  it('gives the focus back to the input once the answer arrives', async () => {
+    stubChat(answer());
+    const wrapper = mount(ChatView, { attachTo: document.body });
+
+    await ask(wrapper, 'First?');
+
+    expect(document.activeElement).toBe(wrapper.find('input').element);
+  });
+
   it.each([[''], ['   ']])('cannot send a blank question (%j)', async (text) => {
     const fetchMock = stubChat();
     const wrapper = mount(ChatView);

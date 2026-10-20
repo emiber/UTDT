@@ -4,9 +4,11 @@ import type { Block } from '../api.ts';
 
 defineProps<{ blocks: Block[] }>();
 
-// micromark escapes raw HTML and drops dangerous link protocols by default, so the LLM's
-// markdown (which may echo user text) can't inject markup.
-const toHtml = (markdown: string) => micromark(markdown);
+// micromark escapes raw HTML and drops dangerous link protocols (`javascript:`) by default,
+// so the LLM's markdown, which may echo user or dataset text, can't inject markup. Images
+// are turned off too: `![x](url)` renders as a plain link, so no remote URL loads by itself.
+const OPTIONS = { extensions: [{ disable: { null: ['labelStartImage'] } }] };
+const toHtml = (markdown: string) => micromark(markdown, OPTIONS);
 </script>
 
 <template>

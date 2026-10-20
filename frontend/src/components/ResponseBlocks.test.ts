@@ -57,6 +57,15 @@ describe('ResponseBlocks', () => {
     expect(wrapper.find('a').attributes('href')).toBe('');
   });
 
+  it('renders a markdown image as a plain link, so no remote URL loads', () => {
+    const wrapper = mount(ResponseBlocks, {
+      props: { blocks: [{ type: 'text', markdown: '![x](https://evil.example/p.png?d=1)' }] },
+    });
+
+    expect(wrapper.find('img').exists()).toBe(false);
+    expect(wrapper.find('a').attributes('href')).toBe('https://evil.example/p.png?d=1');
+  });
+
   it('shows no table for a text-only answer', () => {
     const wrapper = mount(ResponseBlocks, {
       props: { blocks: [{ type: 'text', markdown: 'No results.' }] },
