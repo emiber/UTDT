@@ -1,11 +1,19 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 
-/** Reads the shared access key; the backend must not start without one. */
+/** The example value in `.env.example`: public, so never a valid key. */
+export const ACCESS_KEY_PLACEHOLDER = 'change-me-to-a-long-random-string';
+
+/** Reads the shared access key; the backend must not start without a real one. */
 export function readAccessKey(env: NodeJS.ProcessEnv = process.env): string {
   const key = env.APP_ACCESS_KEY;
   if (!key) {
     throw new Error(
       'APP_ACCESS_KEY is not set. Copy .env.example to .env in the repo root and set it.',
+    );
+  }
+  if (key.trim() === ACCESS_KEY_PLACEHOLDER) {
+    throw new Error(
+      "APP_ACCESS_KEY still has the placeholder from .env.example. Replace it with a long random value, e.g. from: node -e \"console.log(require('node:crypto').randomBytes(32).toString('hex'))\"",
     );
   }
   return key;

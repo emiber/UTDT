@@ -36,7 +36,8 @@ npm run dev
 `APP_ACCESS_KEY` is the shared key that protects the API: every route except
 `/api/health` requires `Authorization: Bearer <key>`. It's **required**: without it (no
 `.env`, or the variable empty) the backend refuses to start and says which variable is
-missing. Replace the placeholder with a random value, for example:
+missing. Replace the placeholder with a random value: the backend also refuses to start if
+it still has the one from `.env.example`. For example:
 
 ```bash
 node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
