@@ -75,14 +75,22 @@ export async function generateSql({
     );
 
     started = performance.now();
-    const result = executeSql(db, sql);
+    let result: ReturnType<typeof executeSql>;
+    try {
+      result = executeSql(db, sql);
+    } catch (error) {
+      log.info(
+        { step: 'execute_sql', attempt, durationMs: elapsed(started), result: 'error' },
+        'SQL execution failed',
+      );
+      throw error;
+    }
     log.info(
       {
         step: 'execute_sql',
         attempt,
         durationMs: elapsed(started),
         result: result.ok ? 'ok' : result.kind,
-        sql,
       },
       'SQL executed',
     );

@@ -117,7 +117,8 @@ Each step is its own issue. The design:
    relationships in load order, without indexes or rows.
 3. **Generate SQL** (Responses API, Structured Outputs) from the question, the schema
    context and the last turns of the conversation (`generateSql` in
-   `backend/src/generate-sql.ts`). The output is a strict `{ sql }` object, passed to step 4
+   `backend/src/generate-sql.ts`; the conversation history comes in a later issue). The
+   output is a strict `{ sql }` object, passed to step 4
    as is. It runs a generate → execute → retry loop: on a returned error, the next request
    carries every failed attempt of the question (its SQL and message), up to **3 attempts
    in total**; after that the last error is returned. OpenAI failures, refusals and
@@ -171,9 +172,9 @@ so follow-ups like "and for last year?" work.
   touches one file. `createLlmClient` builds the client from `OPENAI_API_KEY` and
   `OPENAI_MODEL` and throws naming a missing variable; `requestStructured` makes one
   Structured Outputs request and returns the parsed object, or throws on a refusal, an
-  incomplete response or output that isn't a JSON object. Requests use `store: false`: each
-  one carries its whole context, so OpenAI keeps no copy. Pipeline functions receive the
-  client as a parameter. **Tests never
+  incomplete response or output that isn't a JSON object. Each request carries its whole
+  context, so the response doesn't need to be stored (`store: false`). Pipeline functions
+  receive the client as a parameter. **Tests never
   hit the network**: they pass the fake client in `backend/src/testing/fake-llm.ts`.
 - Prompts are LiquidJS templates in `backend/src/prompts/*.liquid`, apart from the code,
   rendered by `renderPrompt` (`backend/src/prompts.ts`). Questions, SQL and errors go in as
@@ -207,9 +208,9 @@ issue.
 ### Observability
 
 Fastify's built-in logger (pino), with one log line per pipeline step and its duration.
-SQL generation logs each attempt's generation (`ok` or `error`) and execution (`ok` or the
-error `kind`), and the execution line includes the SQL, so it can carry literals from the
-question. The persisted turns in `app.db` are the query log. Nothing else for a POC.
+SQL generation logs each attempt's generation (`ok` or `error`) and execution (`ok`, the
+error `kind`, or `error` when it throws), without the SQL or the question. The persisted
+turns in `app.db` are the query log. Nothing else for a POC.
 
 ## Tech stack
 

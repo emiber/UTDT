@@ -181,6 +181,12 @@ describe('generateSql', () => {
 
     await expect(ask(llm)).rejects.toThrow(/not open/);
     expect(llm.requests).toHaveLength(1);
+    expect(logs.at(-1)).toEqual({
+      step: 'execute_sql',
+      attempt: 1,
+      durationMs: expect.any(Number),
+      result: 'error',
+    });
   });
 
   it('throws without calling the LLM when the metadata tables are missing', async () => {
@@ -238,15 +244,9 @@ describe('generateSql', () => {
     const duration = expect.any(Number);
     expect(logs).toEqual([
       { step: 'generate_sql', attempt: 1, durationMs: duration, result: 'ok' },
-      {
-        step: 'execute_sql',
-        attempt: 1,
-        durationMs: duration,
-        result: 'sql',
-        sql: 'SELECT nope FROM items',
-      },
+      { step: 'execute_sql', attempt: 1, durationMs: duration, result: 'sql' },
       { step: 'generate_sql', attempt: 2, durationMs: duration, result: 'ok' },
-      { step: 'execute_sql', attempt: 2, durationMs: duration, result: 'ok', sql: OK_SQL },
+      { step: 'execute_sql', attempt: 2, durationMs: duration, result: 'ok' },
     ]);
   });
 });
