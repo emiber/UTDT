@@ -2,7 +2,7 @@
 id: 12
 title: Evaluar respuestas offline con LLM-as-a-judge (npm run eval)
 type: feat
-status: refined
+status: closed
 parent: 1
 created: 2026-10-19
 ---
@@ -144,3 +144,73 @@ Medir la calidad de las respuestas del chatbot de forma repetible. `npm run eval
 - Criterios extra, como "responde en el idioma de la pregunta", "la narrativa responde directamente la pregunta" o "las sugerencias son relevantes". Sumar un criterio después es una entrada más.
 - Veredicto PASS/FAIL por pregunta, umbrales y una salida distinta de 0 si algo falla. Hoy nadie los pidió y obligarían a fijar umbrales arbitrarios. Se pueden sumar sin cambiar el reporte.
 - Evaluar la clasificación de #10 con una etiqueta esperada por caso, y probar preguntas fuera de alcance. Se suma cuando #10 tenga sus etiquetas definidas.
+
+## Pull request
+Branch: `feat/12-evaluacion-llm-as-a-judge` → `epic/1-poc-chatbot-text-to-sql`
+
+### What it does
+- **Decisions API en el módulo LLM** (`backend/src/llm.ts`):
+  - `createDecisionClient` arma el cliente con `OPENAI_API_KEY` y una variable nueva, `OPENAI_DECISIONS_MODEL`. Según los tipos del SDK, la beta solo soporta `gpt-6-luna`, distinto de `OPENAI_MODEL`.
+  - `requestDecision` devuelve las respuestas en el orden de las preguntas, tal como vienen. Sus fallas son `LlmError`.
+  - El fake para los tests es `fakeDecisions`.
+- **`npm run eval`** (raíz → `backend`) ejecuta `src/eval-cli.ts`, la entrada fuera de la cobertura, que solo llama a `runEvalCommand` (`src/eval-command.ts`).
+  - **Antes de llamar a OpenAI** chequea las 3 variables, el archivo golden, `data/data.db` y sus metadatos. Si algo falla, imprime el motivo y sale con 1, sin reporte.
+  - **Por pregunta, en orden,** corre `answerQuestion` sin historial y sin `app.db`, y juzga la respuesta con `evaluateCase` (`src/evaluate.ts`), en una sola llamada a la Decisions API:
+    - `score` del SQL en 3 niveles (0 a 2);
+    - `score` de la narrativa en 3 niveles;
+    - `predicate` del gráfico, solo si hay spec. Si no, el criterio no aplica.
+  - **El input del juez** (`prompts/judge-input.liquid`) lleva la pregunta, el esquema, el SQL, todas las filas, la narrativa y la spec, marcados como contenido a juzgar. La rúbrica va aparte, en las `instructions` de cada pregunta.
+  - **Casos especiales:**
+    - con los intentos agotados, la pregunta queda "sin respuesta", con el motivo;
+    - un `refusal` deja el criterio "rechazado";
+    - una falla del pipeline o del juez, o una respuesta con una forma inesperada (otro tipo, sin valor), queda como error de esa pregunta, y la corrida sigue.
+  - **Salida:**
+    - una línea por pregunta y el resumen: el promedio por criterio solo sobre valores juzgados (scores sobre 2, el gráfico como probabilidad promedio) y los conteos. Sin veredicto ni umbrales;
+    - el reporte JSON en `data/eval/eval-<timestamp>.json` (gitignored), con los modelos, el resumen y, por pregunta, las respuestas de la Decisions API tal como vinieron;
+    - sale con 0 siempre que la corrida termine. Si el reporte no se puede escribir, lo dice y sale con 1.
+- **Archivo golden:** `backend/eval/golden.json` trae 7 preguntas respondibles sobre el dataset demo, 5 de ellas con gráfico. Una es en español.
+- **Configuración:**
+  - `.env.example` suma `OPENAI_DECISIONS_MODEL=gpt-6-luna`. No es un placeholder, sino el único id válido hoy.
+  - El mensaje de una variable de OpenAI faltante dice "Add it to the .env in the repo root (see .env.example)".
+- **Docs:**
+  - `README.md`: la sección *Evaluating answers* y la estructura;
+  - `docs/ARCHITECTURE.md`: *Evaluation* reescrita, sin *(later issue)*, y también *LLM layer* y *Configuration*;
+  - el diagrama: `npm run eval` pasa a sólido.
+
+### Verification
+- Lint: `npm run lint` — pass
+- Tests: `npm run test:coverage` — pass (26 archivos, 373 tests). El flake de arranque de los workers del frontend apareció en algunas corridas; al repetirlas pasaron.
+- Coverage: 100% en sentencias, funciones y líneas, y 99,67% en ramas (umbral 85%). La única rama sin cubrir es de #8 (`conversations.ts:78`). `eval-cli.ts` quedó excluido en `vitest.config.ts`. Archivos nuevos o cambiados bajo el umbral: ninguno.
+- Manual: pass, con la API real (`gpt-5.4-mini` para el pipeline y `gpt-6-luna` para el juez).
+  - Primero una llamada de prueba confirmó la forma de la respuesta: el `score` va de 0 a 2, con `confidence` y las probabilidades por nivel, y el `predicate` trae una `probability`.
+  - `npm run eval` con las 7 preguntas tardó 34 s e imprimió las líneas y el resumen:
+    - SQL 1.84/2;
+    - narrativa 1.99/2;
+    - gráfico 0.99, con 5 juzgados y 2 que no aplican.
+  - El reporte quedó en `data/eval/`, y `git check-ignore` confirma que está ignorado.
+  - La pregunta sobre 2023 sacó 0.92 en SQL, porque el dataset es de 2024 y 2025. Se reemplazó por una de 2024.
+- Self-review: 2 rondas con agente separado.
+  - Ronda 1, un blocker: una respuesta del juez con forma inesperada rompía toda la corrida al armar el resumen, sin reporte. Se arregló con tests, y ahora queda como error de la pregunta.
+  - Ronda 2, sin blockers.
+  - Sugerencias aplicadas:
+    - pregunta golden respondible;
+    - docs al día;
+    - un test que verifica que `data.db` no cambia;
+    - el error al escribir el reporte;
+    - el mensaje de variable faltante.
+
+  (separate agent)
+- Plan: aprobado de antemano por el usuario para el trabajo desatendido del 2026-10-19.
+- Security: pass.
+  - Lo que se juzga va en el `input` de la Decisions API, nunca en las instrucciones.
+  - El SQL pasa por las guardas de #6.
+  - El reporte no tiene secretos ni filas.
+  - Las claves salen de `.env`, y los tests usan claves falsas.
+- Docs: updated `README.md`, `docs/ARCHITECTURE.md`, `docs/ARCHITECTURE_DIAGRAM.md`, `.env.example`
+
+### Out of scope / follow-ups
+- Para #10, sin issue nuevo:
+  - reutilizar `OPENAI_DECISIONS_MODEL` y `requestDecision` para la clasificación;
+  - cuando el pipeline sume el clasificador, agregar su dependencia a `EvalDeps`;
+  - que un rechazo de la clasificación mantenga la forma `{ ok: false, kind, message }`, para que el eval lo cuente como "sin respuesta".
+- Tu `.env` no tenía `OPENAI_DECISIONS_MODEL`: le agregué `OPENAI_DECISIONS_MODEL=gpt-6-luna` al final, sin tocar el resto.
