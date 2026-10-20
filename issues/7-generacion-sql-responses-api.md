@@ -2,7 +2,7 @@
 id: 7
 title: Generar SQL con la Responses API de OpenAI
 type: feat
-status: refined
+status: closed
 parent: 1
 created: 2026-10-19
 ---
@@ -142,3 +142,56 @@ Las tres primeras son decisiones propuestas durante el refinamiento y confirmada
 - **Timeout y parámetros del modelo** (`max_output_tokens`, temperatura): se usan los valores por defecto del SDK y del modelo. El timeout por defecto del SDK es de 10 minutos por request. Revisarlos si una llamada se cuelga o sale cara.
 - **Caché del contexto de esquema:** se arma en cada pregunta, porque son tres consultas chicas a SQLite.
 - **Detectar en este paso las preguntas que no se pueden responder** (como el `not_related` del proyecto de referencia): lo hace la clasificación (#10).
+
+## Pull request
+Branch: `feat/7-generacion-sql-responses-api` → `epic/1-poc-chatbot-text-to-sql`
+
+### What it does
+- **`backend/src/llm.ts`**, el único módulo que llama a OpenAI:
+  - `createLlmClient(env)` arma el cliente con `OPENAI_API_KEY` y `OPENAI_MODEL`, y lanza un error que nombra la variable que falta (vacía también cuenta);
+  - `requestStructured(llm, { name, schema, instructions, input })` hace un request a la Responses API con un JSON schema estricto y `store: false`, y devuelve el objeto parseado. Lanza si el modelo se niega, si la respuesta no está completa (con el motivo o el error de OpenAI) o si la salida no es un objeto JSON.
+- **`backend/src/testing/fake-llm.ts`:** el cliente falso reutilizable (`fakeLlm`, `jsonResponse`, `refusalResponse`, `incompleteResponse`). Registra los requests y falla si recibe uno de más.
+- **`backend/src/schema-context.ts`:** `buildSchemaContext(db)` arma el texto con tablas, columnas y relaciones a partir del catálogo de #5, sin índices.
+- **Prompts:**
+  - `backend/src/prompts/sql-system.liquid` y `sql-user.liquid`, renderizados con LiquidJS por `renderPrompt` (`backend/src/prompts.ts`), sin escapar HTML;
+  - `.gitattributes` fuerza LF en los `.liquid`, así el prompt es el mismo en cualquier checkout.
+- **`backend/src/generate-sql.ts`:** `generateSql({ question, db, llm, log })` corre el bucle generar → ejecutar (#6) → reintentar.
+  - Hace como mucho `MAX_ATTEMPTS = 3` intentos. Cada reintento lleva todos los intentos fallidos con su SQL y su mensaje.
+  - Cuando se agota el tope, devuelve la falla del tercer intento.
+  - Lanza, sin reintentar, ante errores de OpenAI, del ejecutor o del catálogo.
+  - Por intento deja una línea de log por paso, con duración y resultado (`ok`, el `kind` o `error`), sin el SQL ni la pregunta.
+- **Dependencias:** `openai` 7.39.0 y `liquidjs` 10.30.0 en `backend`. `.env.example` suma `OPENAI_API_KEY` y `OPENAI_MODEL` con placeholders.
+- **Docs:**
+  - `docs/ARCHITECTURE.md`: pasos 2-4 del pipeline, *LLM layer*, LiquidJS en *Tech stack*, *Observability* y *Configuration*.
+  - `docs/ARCHITECTURE_DIAGRAM.md`: pasan a sólidos la guarda (#6) y la generación de SQL con OpenAI (#7).
+  - `README.md`: la estructura.
+
+### Verification
+- Lint: `npm run lint` — pass
+- Tests: `npm run test:coverage` — pass (16 archivos, 214 tests). Ninguna variable `OPENAI_*` en el entorno de los tests.
+- Coverage: 100% en sentencias, ramas, funciones y líneas (umbral 85%); archivos nuevos o cambiados bajo el umbral: ninguno
+- Manual: pass, con la `OPENAI_API_KEY` real de `.env`, `OPENAI_MODEL=gpt-5.4-mini` por variable de entorno y el `data.db` del seed. El script descartable no se commitea.
+  - Primera tanda: ventas por mes en 2025 (12 filas), revenue por país con join (5) y top 5 productos por unidades (5).
+  - Después de los ajustes de la review: ventas por mes en 2024 en español (12), revenue por segmento con join (2), top 3 categorías (3) y todas las órdenes con detalle (280).
+  - Todas salieron bien en el primer intento, con 1 a 2,5 s por generación, y el log mostró cada paso.
+  - Sin `OPENAI_MODEL` en `.env`, el backend arranca y `/api/health` da `200`. `server.ts` no cambió.
+- Self-review: 3 rondas con agente separado, sin blockers. Sugerencias aplicadas:
+  - log de la generación y de la ejecución cuando lanzan;
+  - mensajes claros para una respuesta fallida o sin objeto JSON (incluido un array);
+  - `store: false`;
+  - un test del cliente real que no depende de `OPENAI_BASE_URL`;
+  - el log sin el SQL, como pide el issue;
+  - los rótulos y redacciones de `ARCHITECTURE.md`.
+
+  El último cambio, rechazar arrays, es de una condición con su test, y se verificó inline. (separate agent)
+- Plan: aprobado de antemano por el usuario para el trabajo desatendido del 2026-10-19.
+- Security: pass.
+  - La key solo se lee de `.env`. No se loguea, y los tests usan una falsa.
+  - La pregunta y el SQL entran como variables de la plantilla, nunca como plantilla.
+  - El LLM solo recibe metadatos, la pregunta y los SQL fallidos con su error, nunca filas.
+  - El SQL pasa por las guardas de #6.
+- Docs: updated `README.md`, `docs/ARCHITECTURE.md`, `docs/ARCHITECTURE_DIAGRAM.md`, `.env.example`
+
+### Out of scope / follow-ups
+- Para #8, sin issue nuevo: cuando `POST /api/chat` convierta un error lanzado en una respuesta HTTP, tiene que devolver un mensaje genérico, no `error.message`. Un 401 de OpenAI trae un fragmento enmascarado de la key.
+- `OPENAI_MODEL` no está en tu `.env`. Desde #8 el backend no arranca sin esa variable (ver la nota de #8).

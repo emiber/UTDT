@@ -54,16 +54,19 @@ flowchart TB
   catalogRoute --> dataDb
   seed -->|"recreates from scratch"| dataDb
 
-  chatRoute -.-> classify -.-> genSql -.-> guard -.-> insights -.-> persist
-  guard -.->|"error → retry"| genSql
-  guard -.->|"generated SQL"| dataDb
+  chatRoute -.-> classify -.-> genSql
+  genSql --> guard
+  guard -.-> insights -.-> persist
+  guard -->|"error → retry"| genSql
+  guard -->|"generated SQL"| dataDb
+  genSql -->|"schema context"| dataDb
   persist -.-> appDb
   classify -.->|"Decisions"| openai
-  genSql -.->|"Responses"| openai
+  genSql -->|"Responses"| openai
   insights -.->|"Responses"| openai
   evalCmd -.->|"golden questions"| classify
   evalCmd -.->|"Decisions: scores"| openai
 
   classDef planned stroke-dasharray: 5 5
-  class chatUi,chatRoute,classify,genSql,guard,insights,persist,openai,evalCmd planned
+  class chatUi,chatRoute,classify,insights,persist,evalCmd planned
 ```

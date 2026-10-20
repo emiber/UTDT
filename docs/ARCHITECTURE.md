@@ -104,7 +104,7 @@ The backend listens on `127.0.0.1:3000`; the Vite dev server (port 5173) proxies
 
 Enough for a local demo, not for real users (see deferred decisions).
 
-### Text-to-SQL pipeline *(later issues)*
+### Text-to-SQL pipeline *(steps 2–4 built; the rest in later issues)*
 
 Each step is its own issue. The design:
 
@@ -112,9 +112,18 @@ Each step is its own issue. The design:
    turns: answerable from the data, needs clarification, or out of scope. Out-of-scope
    answers explain what data *is* available (from the catalog). Exact labels are defined
    in the issue.
-2. **Build the schema context** from the metadata tables.
+2. **Build the schema context** from the metadata tables (`buildSchemaContext` in
+   `backend/src/schema-context.ts`, on top of the catalog): tables, columns and
+   relationships in load order, without indexes or rows.
 3. **Generate SQL** (Responses API, Structured Outputs) from the question, the schema
-   context and the last turns of the conversation.
+   context and the last turns of the conversation (`generateSql` in
+   `backend/src/generate-sql.ts`; the conversation history comes in a later issue). The
+   output is a strict `{ sql }` object, passed to step 4
+   as is. It runs a generate → execute → retry loop: on a returned error, the next request
+   carries every failed attempt of the question (its SQL and message), up to **3 attempts
+   in total**; after that the last error is returned. OpenAI failures, refusals and
+   incomplete responses are thrown, not retried (the SDK already retries transient ones).
+   Each attempt logs one line per step with its duration and result.
 4. **Guard and execute** (`executeSql` in `backend/src/execute-sql.ts`). Safety is layered:
    - the query runs on a **read-only** connection — SQLite itself rejects any write;
    - a cheap check accepts exactly one statement starting with `SELECT` or `WITH`
@@ -133,8 +142,7 @@ Each step is its own issue. The design:
    values. Errors a rewritten query can fix are **returned** with a `kind` (`guard`,
    `sql`, `row_limit`) and a message for the LLM; anything else (a closed connection, a
    locked, corrupt or non-database file, a hot journal, I/O errors) is thrown. On a
-   returned error the LLM retries with the message as feedback, up to a fixed retry
-   budget.
+   returned error the LLM retries with the message as feedback (step 3).
 5. **Build the insights** (Responses API, Structured Outputs). The LLM receives the
    question, the SQL, the column list and a sample of the rows, and returns **only**
    the narrative, a chart spec (`type`: bar/line/pie/doughnut, `x` column, `series`
@@ -150,7 +158,7 @@ The response is a list of typed blocks the frontend renders in order:
 (question, SQL, narrative — not the data rows) go to the classify, SQL and insights steps,
 so follow-ups like "and for last year?" work.
 
-### LLM layer (OpenAI API) *(later issues)*
+### LLM layer (OpenAI API) *(Responses built; Decisions in a later issue)*
 
 - **Responses API** for everything that generates text: SQL and insights. Structured
   Outputs (JSON schema) guarantee parseable responses — no "strip the markdown fence and
@@ -160,9 +168,18 @@ so follow-ups like "and for last year?" work.
   and returns no rationale.
 - One SDK: the official `openai` package. If it lacks typed support for the Decisions beta,
   call the endpoint through the SDK's generic request method.
-- All OpenAI calls live in one small module, so a beta API change touches one file.
-  Pipeline functions receive the client as a parameter. **Tests never hit the network**:
-  they pass a fake client.
+- All OpenAI calls live in one small module (`backend/src/llm.ts`), so a beta API change
+  touches one file. `createLlmClient` builds the client from `OPENAI_API_KEY` and
+  `OPENAI_MODEL` and throws naming a missing variable; `requestStructured` makes one
+  Structured Outputs request and returns the parsed object, or throws on a refusal, an
+  incomplete response or output that isn't a JSON object. Each request carries its whole
+  context, so the response doesn't need to be stored (`store: false`). Pipeline functions
+  receive the client as a parameter. **Tests never hit the network**: they pass the fake
+  client in `backend/src/testing/fake-llm.ts`.
+- Prompts are LiquidJS templates in `backend/src/prompts/*.liquid`, apart from the code,
+  rendered by `renderPrompt` (`backend/src/prompts.ts`). Questions, SQL and errors go in as
+  template variables, and HTML escaping stays off (LiquidJS's default), so they reach the
+  LLM literally.
 - Model ids come from `.env` (`OPENAI_MODEL`), not from code.
 
 ### Evaluation (LLM-as-a-judge, offline) *(later issue)*
@@ -191,7 +208,9 @@ issue.
 ### Observability
 
 Fastify's built-in logger (pino), with one log line per pipeline step and its duration.
-The persisted turns in `app.db` are the query log. Nothing else for a POC.
+SQL generation logs each attempt's generation (`ok` or `error`) and execution (`ok`, the
+error `kind`, or `error` when it throws), without the SQL or the question. The persisted
+turns in `app.db` are the query log. Nothing else for a POC.
 
 ## Tech stack
 
@@ -205,6 +224,7 @@ The persisted turns in `app.db` are the query log. Nothing else for a POC.
 | LLM | OpenAI API: Responses + Decisions, via `openai` SDK | Responses for generation with Structured Outputs; Decisions for classification and judging. The Decisions API isn't on Azure, so everything goes to the OpenAI API with one key |
 | Frontend | Vue 3 + Vite | User's choice; Vite is the standard Vue toolchain |
 | Styles | SCSS (`sass`, pure JS) | User's preference. Vite supports it natively; the pure-JS package avoids native binaries |
+| Prompt templates | LiquidJS (`liquidjs`) | The user asked for something like Jinja2 for prompts: LiquidJS has the same base syntax (`{{ }}`, `{% if %}`, `{% for %}`), is pure JS, and doesn't escape HTML by default |
 | Charts | Chart.js + vue-chartjs | Proven, light, and covers bar/line/pie/doughnut. Its config is easy to build from data |
 | Env config | Node's built-in `--env-file-if-exists` | Reads the root `.env` without `dotenv` |
 | Dev runner | `concurrently` (root dev dependency) | Starts backend and frontend with one cross-platform `npm run dev` |
@@ -214,8 +234,8 @@ The persisted turns in `app.db` are the query log. Nothing else for a POC.
 | Type check | `tsc --noEmit` (backend), `vue-tsc --noEmit` (frontend) | Node strips types without checking them, so type checking is part of the lint gate |
 
 Each dependency is added by the first piece of work that uses it: the scaffold installs
-only what the scaffold's code uses, and `openai`, `chart.js`/`vue-chartjs` and the
-markdown renderer come with their issues.
+only what the scaffold's code uses. `openai` and `liquidjs` came with SQL generation;
+`chart.js`/`vue-chartjs` and the markdown renderer come with their issues.
 
 ## Quality gate
 
@@ -235,8 +255,9 @@ markdown renderer come with their issues.
 
 Root `.env` (gitignored; placeholders in `.env.example`), loaded by Node's
 `--env-file-if-exists`. `APP_ACCESS_KEY` (auth) is **required**: without it the backend
-refuses to start. Each issue adds the variables it uses; still to come:
-`OPENAI_API_KEY` / `OPENAI_MODEL` (LLM). Fixed for now, and
+refuses to start. Each issue adds the variables it uses. `OPENAI_API_KEY` and
+`OPENAI_MODEL` (LLM) are listed too, but nothing checks them at startup until the chat
+endpoint, which will make them required. Fixed for now, and
 not configurable: the database paths (`data/app.db`, `data/data.db`, relative to the repo
 root), the backend port (3000), and tuning values (retry budget, row cap, context turns).
 They become config only when there's a reason.

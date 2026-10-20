@@ -75,7 +75,9 @@ npm run test:coverage   # Vitest for both packages; fails under 85% coverage
 backend/src/    Fastify app (app.ts), entry points (server.ts, seed-cli.ts), access-key check
                 (auth.ts), SQLite helpers (db.ts), metadata tables and seeding (metadata.ts,
                 seed.ts), demo data (demo-dataset.ts), data catalog (catalog.ts), guarded
-                SQL execution (execute-sql.ts)
+                SQL execution (execute-sql.ts), OpenAI client (llm.ts), prompt templates
+                (prompts/, prompts.ts), schema context (schema-context.ts), SQL generation
+                with retries (generate-sql.ts), test helpers (testing/)
 frontend/src/   Vue app (App.vue), API client (api.ts), access-key state (auth.ts),
                 components (components/), styles (styles/)
 data/           SQLite files, generated and gitignored
