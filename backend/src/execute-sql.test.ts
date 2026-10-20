@@ -155,6 +155,8 @@ describe('executeSql: SQL errors', () => {
     ['an unknown column', 'SELECT nope FROM t', /no such column/],
     ['an unknown table', 'SELECT * FROM nope', /no such table/],
     ['an unterminated string', "SELECT id FROM t WHERE name = 'a;", /unrecognized token/],
+    ['a non-integer LIMIT', 'SELECT id FROM t LIMIT 10.5', /datatype mismatch/],
+    ['a NULL LIMIT', 'SELECT id FROM t LIMIT NULL', /datatype mismatch/],
     ['a loaded extension', "SELECT load_extension('x')", /not authorized/],
   ])('returns SQLite’s message for %s', (_case, sql, message) => {
     expect(executeSql(db, sql)).toMatchObject({ ok: false, kind: 'sql', message });

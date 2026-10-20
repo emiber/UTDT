@@ -115,8 +115,7 @@ Each step is its own issue. The design:
 2. **Build the schema context** from the metadata tables.
 3. **Generate SQL** (Responses API, Structured Outputs) from the question, the schema
    context and the last turns of the conversation.
-4. **Guard and execute** (`executeSql` in `backend/src/execute-sql.ts`, built). Safety is
-   layered:
+4. **Guard and execute** (`executeSql` in `backend/src/execute-sql.ts`). Safety is layered:
    - the query runs on a **read-only** connection — SQLite itself rejects any write;
    - a cheap check accepts exactly one statement starting with `SELECT` or `WITH`
      (also blocks `ATTACH`/`PRAGMA`, `CREATE TEMP TABLE`, and the extra statements
@@ -251,7 +250,7 @@ They become config only when there's a reason.
 | Online judge (scoring every answer live) | The offline eval measures quality without adding latency or cost to each chat |
 | Judge rationale via the Responses API | Decisions gives scores without a "why". Add explanations for low scores only if the scores alone aren't enough |
 | Real authentication / users | Local POC: a shared key is enough |
-| Query timeout / worker thread | `node:sqlite` is synchronous, so a slow query blocks the server. That's fine for one user on a small dataset; move execution to a worker if it bites |
+| Query timeout / worker thread | `node:sqlite` is synchronous, so a slow query blocks the server, and a query that returns a value of hundreds of MB can crash the process. That's fine for one user on a small dataset; move execution to a worker (which also contains a crash) if it bites |
 | Standard prompts with pre-validated SQL, feedback buttons, CSV download | Features from the reference project. Not needed to prove the concept |
 | Streaming responses | Adds complexity on both ends. Fine to wait for the full answer in a POC |
 | UI kit (e.g. PrimeVue DataTable) | Plain HTML tables are enough. Revisit if tables need sorting, paging or export |

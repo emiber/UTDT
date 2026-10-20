@@ -76,6 +76,7 @@ function isQueryError(error: unknown): error is Error {
   return (
     (errcode & 0xff) === 1 || // SQLITE_ERROR: syntax, unknown table or column, overflow…
     errcode === 8 || // plain SQLITE_READONLY: a write on the read-only connection
-    (errcode & 0xff) === 18 // SQLITE_TOOBIG: a string or blob over SQLite's size limit
+    (errcode & 0xff) === 18 || // SQLITE_TOOBIG: a string or blob over SQLite's size limit
+    (errcode & 0xff) === 20 // SQLITE_MISMATCH: e.g. a non-integer LIMIT or OFFSET
   );
 }
