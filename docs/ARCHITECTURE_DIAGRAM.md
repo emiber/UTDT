@@ -62,6 +62,7 @@ flowchart TB
   guard -->|"generated SQL"| dataDb
   genSql -->|"schema context"| dataDb
   persist --> appDb
+  chatRoute -->|"history: last 5 turns"| appDb
   classify -.->|"Decisions"| openai
   genSql -->|"Responses"| openai
   insights -->|"Responses"| openai

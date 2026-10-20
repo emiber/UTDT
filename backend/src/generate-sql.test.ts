@@ -223,6 +223,46 @@ describe('generateSql', () => {
     expect(retry).not.toContain('&quot;');
   });
 
+  it('sends the conversation history in every attempt, with only the fields each turn has', async () => {
+    const llm = fakeLlm(
+      sqlReply('SELECT a FROM items'),
+      sqlReply('SELECT b FROM items'),
+      sqlReply('SELECT c FROM items'),
+    );
+    const history = [
+      { question: 'Units in 2024?', sql: 'SELECT 2024', narrative: 'Ink led.' },
+      { question: 'And colors?' },
+    ];
+
+    await generateSql({ question: 'And for 2023?', db, llm, log, history });
+
+    const expected = [
+      'Turn 1:',
+      'Question: Units in 2024?',
+      'SQL: SELECT 2024',
+      'Answer: Ink led.',
+      '',
+      'Turn 2:',
+      'Question: And colors?',
+      '',
+      'Question:',
+      'And for 2023?',
+    ].join('\n');
+    expect(llm.requests).toHaveLength(3);
+    for (const request of llm.requests) {
+      expect(String(request.input)).toContain(expected);
+      expect(String(request.input)).not.toMatch(/null|undefined/);
+    }
+  });
+
+  it('sends no history section without earlier turns', async () => {
+    const llm = fakeLlm(sqlReply(OK_SQL));
+
+    await ask(llm);
+
+    expect(String(llm.requests[0].input)).not.toContain('Conversation so far');
+  });
+
   it('tells the LLM the rules in the system prompt', async () => {
     const llm = fakeLlm(sqlReply(OK_SQL));
 

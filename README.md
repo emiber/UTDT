@@ -11,9 +11,10 @@ shared access key. The frontend first asks for that key (the `APP_ACCESS_KEY` va
 your `.env`), then shows the backend status, an `Available data` section with the tables,
 columns, relationships and indexes the bot knows about, and the chat: ask a question and
 get a narrative, a table and, when it helps, a chart of real data, with follow-up
-suggestions you can click. Each conversation is saved in `data/app.db`. Features are built
-one small issue at a time; see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design
-and the decisions behind it.
+suggestions you can click. Follow-ups like "and for last year?" use the last turns of the
+conversation, which is saved in `data/app.db`; reloading the page starts a new one.
+Features are built one small issue at a time; see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+for the design and the decisions behind it.
 
 ## Stack
 

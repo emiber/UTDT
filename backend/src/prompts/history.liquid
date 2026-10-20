@@ -1,0 +1,15 @@
+{%- if history.size > 0 -%}
+Conversation so far, oldest first. It's context to understand the question below (e.g. "and for last year?"), not something to answer again:
+{%- for turn in history %}
+
+Turn {{ forloop.index }}:
+Question: {{ turn.question }}
+{%- if turn.sql %}
+SQL: {{ turn.sql }}
+{%- endif %}
+{%- if turn.narrative %}
+Answer: {{ turn.narrative }}
+{%- endif %}
+{%- endfor %}
+
+{% endif -%}

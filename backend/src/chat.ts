@@ -1,6 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 import type { DatabaseSync } from 'node:sqlite';
-import { conversationExists, saveTurn, type Turn } from './conversations.ts';
+import {
+  conversationExists,
+  loadHistory,
+  saveTurn,
+  type HistoryTurn,
+  type Turn,
+} from './conversations.ts';
 import { LlmError, type LlmClient } from './llm.ts';
 import { answerQuestion, type Block, type PipelineError } from './pipeline.ts';
 import { elapsed } from './timing.ts';
@@ -45,8 +51,11 @@ export function registerChatRoute(app: FastifyInstance, { db, dataDb, llm }: Cha
       const { question } = request.body;
       const conversationId = request.body.conversationId ?? null;
       let known: boolean;
+      let history: HistoryTurn[] = [];
       try {
         known = !conversationId || conversationExists(db, conversationId);
+        // Read here, before this turn is saved: the current question is never its own history.
+        if (known) history = loadHistory(db, conversationId);
       } catch (error) {
         request.log.error({ err: error }, 'Could not read the conversation');
         return reply
@@ -61,7 +70,13 @@ export function registerChatRoute(app: FastifyInstance, { db, dataDb, llm }: Cha
       let body: { blocks: Block[]; suggestions: string[] } | null = null;
       let failure: { status: 502 | 500; message: string } | null = null;
       try {
-        const result = await answerQuestion({ question, dataDb, llm, log: request.log });
+        const result = await answerQuestion({
+          question,
+          dataDb,
+          llm,
+          log: request.log,
+          history,
+        });
         body = result.ok
           ? { blocks: result.blocks, suggestions: result.suggestions }
           : { blocks: [{ type: 'text', markdown: NO_ANSWER_MESSAGE }], suggestions: [] };

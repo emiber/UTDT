@@ -1,4 +1,5 @@
 import { CHART_TYPES, type ChartSpec } from './chart.ts';
+import type { HistoryTurn } from './conversations.ts';
 import { LlmError, requestStructured, type LlmClient } from './llm.ts';
 import { renderPrompt } from './prompts.ts';
 
@@ -59,6 +60,8 @@ export interface InsightsInput {
   columns: string[];
   rows: unknown[][];
   llm: LlmClient;
+  /** Earlier turns of the conversation, oldest first. */
+  history?: HistoryTurn[];
 }
 
 /**
@@ -71,12 +74,14 @@ export async function buildInsights({
   columns,
   rows,
   llm,
+  history = [],
 }: InsightsInput): Promise<Insights> {
   const output = await requestStructured<Partial<Insights>>(llm, {
     name: 'insights',
     schema: INSIGHTS_SCHEMA,
     instructions: renderPrompt('insights-system', {}),
     input: renderPrompt('insights-user', {
+      history,
       question,
       sql,
       columns: JSON.stringify(columns),

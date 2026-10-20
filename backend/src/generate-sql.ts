@@ -1,4 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
+import type { HistoryTurn } from './conversations.ts';
 import { executeSql, MAX_ROWS } from './execute-sql.ts';
 import { LlmError, requestStructured, type LlmClient } from './llm.ts';
 import { renderPrompt } from './prompts.ts';
@@ -32,6 +33,8 @@ export interface GenerateSqlInput {
   db: DatabaseSync;
   llm: LlmClient;
   log: StepLogger;
+  /** Earlier turns of the conversation, oldest first; every attempt gets them. */
+  history?: HistoryTurn[];
   /** Called with each generated SQL, so a caller still knows the last one if a later step throws. */
   onSql?: (sql: string) => void;
 }
@@ -47,6 +50,7 @@ export async function generateSql({
   db,
   llm,
   log,
+  history = [],
   onSql,
 }: GenerateSqlInput): Promise<GenerateSqlResult> {
   const schemaContext = buildSchemaContext(db);
@@ -61,7 +65,7 @@ export async function generateSql({
         name: 'sql_query',
         schema: SQL_SCHEMA,
         instructions,
-        input: renderPrompt('sql-user', { schemaContext, question, failures }),
+        input: renderPrompt('sql-user', { schemaContext, history, question, failures }),
       });
       if (typeof output.sql !== 'string') throw new LlmError('The model returned no SQL string.');
       sql = output.sql;
