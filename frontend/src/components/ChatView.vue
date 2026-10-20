@@ -19,7 +19,7 @@ interface Turn {
 const thread = ref<Turn[]>([]);
 let conversationId: string | null = null;
 const draft = ref('');
-const input = useTemplateRef<HTMLInputElement>('input');
+const input = useTemplateRef('input');
 const busy = computed(() => thread.value.some((turn) => turn.status === 'pending'));
 const canSend = computed(() => !busy.value && draft.value.trim() !== '');
 
