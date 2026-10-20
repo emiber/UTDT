@@ -54,7 +54,7 @@ async function ask(text: string) {
   }
   // The input was disabled while waiting, which dropped the focus: give it back.
   await nextTick();
-  input.value?.focus();
+  input.value?.focus({ preventScroll: true });
 }
 
 function send() {

@@ -66,6 +66,23 @@ describe('ResponseBlocks', () => {
     expect(wrapper.find('a').attributes('href')).toBe('https://evil.example/p.png?d=1');
   });
 
+  it('opens links in a new tab, so the in-memory thread stays', () => {
+    const wrapper = mount(ResponseBlocks, {
+      props: {
+        blocks: [{ type: 'text', markdown: 'See [docs](https://a.example) or `<a href=x>`' }],
+      },
+    });
+
+    const links = wrapper.findAll('a');
+    expect(links).toHaveLength(1);
+    expect(links[0].attributes()).toMatchObject({
+      href: 'https://a.example',
+      target: '_blank',
+      rel: 'noopener noreferrer',
+    });
+    expect(wrapper.find('code').text()).toBe('<a href=x>');
+  });
+
   it('shows no table for a text-only answer', () => {
     const wrapper = mount(ResponseBlocks, {
       props: { blocks: [{ type: 'text', markdown: 'No results.' }] },

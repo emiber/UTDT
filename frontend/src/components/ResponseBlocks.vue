@@ -8,7 +8,13 @@ defineProps<{ blocks: Block[] }>();
 // so the LLM's markdown, which may echo user or dataset text, can't inject markup. Images
 // are turned off too: `![x](url)` renders as a plain link, so no remote URL loads by itself.
 const OPTIONS = { extensions: [{ disable: { null: ['labelStartImage'] } }] };
-const toHtml = (markdown: string) => micromark(markdown, OPTIONS);
+// Links open in a new tab: the thread lives only in memory, so leaving the page loses it.
+// Safe as a text replace: a literal "<a href=" in the content is already escaped.
+const toHtml = (markdown: string) =>
+  micromark(markdown, OPTIONS).replaceAll(
+    '<a href=',
+    '<a target="_blank" rel="noopener noreferrer" href=',
+  );
 </script>
 
 <template>

@@ -239,7 +239,8 @@ issue.
     and `table` as a plain HTML table, cells placed by position. *(Later issue: the
     `chart` block.)* Raw HTML is escaped, `javascript:` links are dropped, and markdown
     images are turned off (they render as plain links), so the LLM's text can't inject
-    markup or make the browser load a remote URL by itself.
+    markup or make the browser load a remote URL by itself. Links open in a new tab
+    (`noopener noreferrer`), so clicking one doesn't lose the in-memory thread.
   - Suggestions are buttons under each answer: a click sends that question right away, in
     the same conversation.
   - Errors show in the thread in place of the answer. A `404` (the backend no longer knows
