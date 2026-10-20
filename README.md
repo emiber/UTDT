@@ -66,6 +66,30 @@ The app database is created on first start at `data/app.db` (gitignored). Config
 lives in the root `.env` (gitignored); [.env.example](.env.example) lists every variable
 with a placeholder. When a feature adds one, copy it over to your `.env`.
 
+## Evaluating answers (LLM-as-a-judge)
+
+```bash
+npm run eval
+```
+
+It runs the golden questions in [backend/eval/golden.json](backend/eval/golden.json) through
+the real pipeline and has OpenAI's Decisions API judge each answer. No server or access key
+needed.
+
+- **Requirements:** `npm run seed`, and a `.env` with a real `OPENAI_API_KEY`, `OPENAI_MODEL`
+  and `OPENAI_DECISIONS_MODEL` (today the Decisions API only supports `gpt-6-luna`). If
+  something is missing it says what and exits without calling OpenAI.
+- **It costs money:** each question is a full pipeline run plus one judge call. That's why it
+  runs by hand and isn't part of the quality gate.
+- **Output:** one line per question, a summary, and a JSON report in `data/eval/`
+  (gitignored) with every answer and score.
+- **Reading the summary:** it shows values, not a verdict. *The SQL answers the question*
+  and *the narrative is faithful to the data* are averages from 0 to 2 (2 is best); *the
+  chart fits* is an average probability, only over answers with a chart. The counts say how
+  many questions had no answer, errored, or had a criterion refused or not applicable, and
+  those stay out of the averages. Scores vary between runs: read them as a trend, for example
+  before and after changing a prompt.
+
 ## Quality gate
 
 There's no CI: these two commands are the whole gate. Run them before opening a PR.
@@ -87,7 +111,9 @@ backend/src/    Fastify app (app.ts), entry points (server.ts, seed-cli.ts), acc
                 (prompts/, prompts.ts), schema context (schema-context.ts), SQL generation
                 with retries (generate-sql.ts), insights (insights.ts), charts (chart.ts),
                 the pipeline (pipeline.ts), the chat route (chat.ts), conversations and
-                turns (conversations.ts), test helpers (testing/)
+                turns (conversations.ts), offline evaluation (evaluate.ts, eval-command.ts,
+                eval-cli.ts), test helpers (testing/)
+backend/eval/   golden questions for `npm run eval`
 frontend/src/   Vue app (App.vue), API client (api.ts), access-key state (auth.ts),
                 components (components/: key screen, backend status, data catalog, chat
                 view, its block renderer and the chart), styles (styles/)
