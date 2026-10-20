@@ -161,11 +161,33 @@ describe('executeSql: SQL errors', () => {
   });
 
   it('returns an error for an integer beyond 2^53 instead of throwing', () => {
-    expect(executeSql(db, 'SELECT 9007199254740993 AS big')).toMatchObject({
+    expect(executeSql(db, 'SELECT 9007199254740993 AS big FROM t')).toMatchObject({
       ok: false,
       kind: 'sql',
       message: expect.stringMatching(/too large/),
     });
+  });
+
+  it('returns an error for a value over SQLite’s size limit', () => {
+    expect(executeSql(db, 'SELECT zeroblob(2000000000)')).toMatchObject({
+      ok: false,
+      kind: 'sql',
+      message: expect.stringMatching(/too big/),
+    });
+  });
+
+  it.each([
+    ['a value that cannot be read', 'SELECT 9007199254740993 AS big FROM t', 'sql'],
+    ['a result over the row cap', 'SELECT n FROM numbers', 'row_limit'],
+  ])('releases its read lock after %s', (_case, sql, kind) => {
+    expect(executeSql(db, sql)).toMatchObject({ ok: false, kind });
+
+    const writer = openDatabase(file);
+    try {
+      expect(() => writer.exec('BEGIN EXCLUSIVE; ROLLBACK;')).not.toThrow();
+    } finally {
+      writer.close();
+    }
   });
 
   it('throws when the connection is closed: rewriting the SQL cannot fix it', () => {

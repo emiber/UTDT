@@ -13,12 +13,6 @@ export type SqlResult =
   | { ok: false; kind: 'guard' | 'sql' | 'row_limit'; message: string };
 
 /**
- * SQLite primary result codes that no rewritten query can fix: busy or locked, out of
- * memory, I/O error, corrupt, disk full, can't open, not a database.
- */
-const ENVIRONMENT_ERROR_CODES = new Set([5, 6, 7, 10, 11, 13, 14, 26]);
-
-/**
  * Runs one read query on `db`, which must be a read-only connection. Rows are lists aligned
  * with `columns`, so columns with the same name keep both values.
  */
@@ -41,16 +35,23 @@ export function executeSql(db: DatabaseSync, sql: string): SqlResult {
     statement.setReturnArrays(true);
     const columns = statement.columns().map((c) => c.name);
     const rows: unknown[][] = [];
-    // Stops reading at MAX_ROWS + 1, so a huge result is never read in full.
-    for (const row of statement.iterate()) {
-      if (rows.length === MAX_ROWS) {
-        return {
-          ok: false,
-          kind: 'row_limit',
-          message: `The result has more than ${MAX_ROWS} rows. Write a more selective query: aggregate or filter so it returns at most ${MAX_ROWS} rows.`,
-        };
+    const iterator = statement.iterate();
+    try {
+      // Stops reading at MAX_ROWS + 1, so a huge result is never read in full.
+      for (const row of iterator) {
+        if (rows.length === MAX_ROWS) {
+          return {
+            ok: false,
+            kind: 'row_limit',
+            message: `The result has more than ${MAX_ROWS} rows. Write a more selective query: aggregate or filter so it returns at most ${MAX_ROWS} rows.`,
+          };
+        }
+        rows.push(row as unknown as unknown[]);
       }
-      rows.push(row as unknown as unknown[]);
+    } finally {
+      // for…of skips this when reading a row throws (e.g. an integer beyond 2^53), and an
+      // unreset statement keeps a read lock on the file for as long as the connection lives.
+      iterator.return?.();
     }
     return { ok: true, columns, rows };
   } catch (error) {
@@ -64,12 +65,17 @@ function guard(message: string): SqlResult {
 }
 
 /**
- * Whether the query itself caused the error (syntax, unknown table or column, a write on
- * the read-only connection, an integer beyond 2^53), so the LLM can fix it.
+ * Whether the query itself caused the error, so the LLM can fix it. Anything else (busy or
+ * locked, I/O, corrupt or non-database file, a hot journal) is an environment fault.
  */
 function isQueryError(error: unknown): error is Error {
-  const { code, errcode } = error as { code?: string; errcode?: number };
-  if (code === 'ERR_OUT_OF_RANGE') return true;
+  const { code, errcode = 0 } = error as { code?: string; errcode?: number };
+  if (code === 'ERR_OUT_OF_RANGE') return true; // an integer beyond 2^53 in the result
+  if (code !== 'ERR_SQLITE_ERROR') return false;
   // Extended result codes keep the primary code in the low byte.
-  return code === 'ERR_SQLITE_ERROR' && !ENVIRONMENT_ERROR_CODES.has((errcode ?? 0) & 0xff);
+  return (
+    (errcode & 0xff) === 1 || // SQLITE_ERROR: syntax, unknown table or column, overflow…
+    errcode === 8 || // plain SQLITE_READONLY: a write on the read-only connection
+    (errcode & 0xff) === 18 // SQLITE_TOOBIG: a string or blob over SQLite's size limit
+  );
 }
