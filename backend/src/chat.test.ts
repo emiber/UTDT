@@ -177,6 +177,42 @@ describe('POST /api/chat', () => {
     expect(llm.requests).toHaveLength(2);
   });
 
+  it('logs a dropped chart as a warning with its reason, not the rows', async () => {
+    const lines: string[] = [];
+    const chart = { type: 'bar', x: 'day', series: ['qty'], title: 't' };
+    llm = fakeLlm(sqlReply('SELECT name, qty FROM items'), jsonResponse({ ...INSIGHTS, chart }));
+    app = buildApp({
+      db,
+      dataDb,
+      llm,
+      accessKey: ACCESS_KEY,
+      logger: { level: 'info', stream: { write: (line: string) => lines.push(line) } },
+    });
+
+    await chat({ question: 'Units?' });
+
+    const warnings = lines.map((line) => JSON.parse(line)).filter((entry) => entry.level === 40);
+    expect(warnings).toEqual([
+      expect.objectContaining({
+        msg: 'Chart dropped',
+        reason: 'column "day" is not in the result',
+      }),
+    ]);
+    expect(JSON.stringify(warnings)).not.toContain('ink');
+  });
+
+  it('answers an empty result with the text block only, even with a chart spec', async () => {
+    const chart = { type: 'bar', x: 'name', series: ['qty'], title: 't' };
+    start(
+      sqlReply('SELECT name, qty FROM items WHERE qty > 99'),
+      jsonResponse({ ...INSIGHTS, chart }),
+    );
+
+    const body = (await chat({ question: 'Big items?' })).json();
+
+    expect(body.blocks.map((b: { type: string }) => b.type)).toEqual(['text']);
+  });
+
   it.each([
     ['no question', {}],
     ['a question that is not a string', { question: 42 }],

@@ -96,7 +96,8 @@ export async function answerQuestion({
         blocks.push(built.block);
         chart = insights.chart;
       } else {
-        log.warn({ step: 'chart', reason: built.reason }, 'Chart dropped');
+        // Not a step line (no duration): the reason only, never the rows.
+        log.warn({ reason: built.reason }, 'Chart dropped');
       }
     }
     const { narrative, suggestions } = insights;

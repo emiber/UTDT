@@ -42,6 +42,7 @@ describe('ChartBlock', () => {
     expect(chart.props('options')).toMatchObject({
       plugins: { title: { display: true, text: 'Sales by month' } },
     });
+    expect(chart.attributes('aria-label')).toBe('Sales by month');
   });
 
   it("registers Chart.js's Colors plugin, which gives the default palette", () => {

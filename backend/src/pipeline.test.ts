@@ -189,14 +189,14 @@ describe('answerQuestion', () => {
 
       expect(result.ok && result.blocks.map((b) => b.type)).toEqual(['text', 'table']);
       expect(result.ok && result.chart).toBeNull();
-      expect(warnings).toEqual([{ step: 'chart', reason: 'column "nope" is not in the result' }]);
+      expect(warnings).toEqual([{ reason: 'column "nope" is not in the result' }]);
     });
 
     it('drops a spec for an empty result, keeping only the text block', async () => {
       const result = await ask(withChart(SPEC, 'SELECT name, qty FROM items WHERE qty > 99'));
 
       expect(result.ok && result.blocks.map((b) => b.type)).toEqual(['text']);
-      expect(warnings).toEqual([{ step: 'chart', reason: 'the result has no rows' }]);
+      expect(warnings).toEqual([{ reason: 'the result has no rows' }]);
     });
   });
 });

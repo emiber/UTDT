@@ -48,7 +48,12 @@ const round = computed(
 
 <template>
   <div class="chart" :class="{ 'chart--round': round }">
-    <component :is="COMPONENTS[block.chartType]" :data="data" :options="options" />
+    <component
+      :is="COMPONENTS[block.chartType]"
+      :data="data"
+      :options="options"
+      :aria-label="block.title"
+    />
   </div>
 </template>
 
