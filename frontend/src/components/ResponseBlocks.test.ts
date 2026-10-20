@@ -1,6 +1,13 @@
 import { mount } from '@vue/test-utils';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import ResponseBlocks from './ResponseBlocks.vue';
+
+// jsdom has no canvas: the charts render as plain stubs.
+vi.mock('vue-chartjs', async () => {
+  const { defineComponent, h } = await import('vue');
+  const stub = defineComponent({ setup: () => () => h('canvas') });
+  return { Bar: stub, Line: stub, Pie: stub, Doughnut: stub };
+});
 
 describe('ResponseBlocks', () => {
   it('renders text as markdown and tables with headers and rows, in order', () => {
@@ -81,6 +88,28 @@ describe('ResponseBlocks', () => {
       rel: 'noopener noreferrer',
     });
     expect(wrapper.find('code').text()).toBe('<a href=x>');
+  });
+
+  it('draws a chart block in its place, after the table', () => {
+    const wrapper = mount(ResponseBlocks, {
+      props: {
+        blocks: [
+          { type: 'text', markdown: 'Sales grew.' },
+          { type: 'table', columns: ['m', 'v'], rows: [['2024-01', 1]] },
+          {
+            type: 'chart',
+            chartType: 'line',
+            title: 'Sales',
+            labels: ['2024-01'],
+            datasets: [{ label: 'v', data: [1] }],
+          },
+        ],
+      },
+    });
+
+    const children = wrapper.findAll('.blocks > div').map((div) => div.classes()[0]);
+    expect(children).toEqual(['blocks__text', 'blocks__table', 'chart']);
+    expect(wrapper.find('.chart canvas').exists()).toBe(true);
   });
 
   it('shows no table for a text-only answer', () => {

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { micromark } from 'micromark';
 import type { Block } from '../api.ts';
+import ChartBlock from './ChartBlock.vue';
 
 defineProps<{ blocks: Block[] }>();
 
@@ -37,6 +38,7 @@ const toHtml = (markdown: string) =>
           </tbody>
         </table>
       </div>
+      <ChartBlock v-else-if="block.type === 'chart'" :block="block" />
     </template>
   </div>
 </template>

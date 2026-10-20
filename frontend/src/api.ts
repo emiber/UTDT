@@ -68,10 +68,20 @@ export async function getCatalog(): Promise<Catalog> {
   return (await res.json()) as Catalog;
 }
 
+/** A chart built by the backend from the real rows, ready for Chart.js. */
+export interface ChartBlock {
+  type: 'chart';
+  chartType: 'bar' | 'line' | 'pie' | 'doughnut';
+  title: string;
+  labels: string[];
+  datasets: { label: string; data: (number | null)[] }[];
+}
+
 /** A response block of the chat, rendered in order. */
 export type Block =
   | { type: 'text'; markdown: string }
-  | { type: 'table'; columns: string[]; rows: (string | number | null)[][] };
+  | { type: 'table'; columns: string[]; rows: (string | number | null)[][] }
+  | ChartBlock;
 
 export interface ChatResponse {
   conversationId: string;
