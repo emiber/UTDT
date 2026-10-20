@@ -4,6 +4,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import { buildApp } from './app.ts';
 import { openDatabase, sqliteVersion } from './db.ts';
 import { createMetadataTables, insertMetadata } from './metadata.ts';
+import { fakeLlm } from './testing/fake-llm.ts';
 
 const ACCESS_KEY = 'test-access-key';
 const AUTH = { authorization: `Bearer ${ACCESS_KEY}` };
@@ -16,7 +17,7 @@ beforeEach(() => {
   db = openDatabase(':memory:');
   dataDb = openDatabase(':memory:');
   createMetadataTables(dataDb);
-  app = buildApp({ db, dataDb, accessKey: ACCESS_KEY });
+  app = buildApp({ db, dataDb, llm: fakeLlm(), accessKey: ACCESS_KEY });
   // Stand-ins for the protected routes later issues add.
   app.get('/api/protected', async () => ({ ok: true }));
   app.post(
@@ -114,7 +115,6 @@ describe('access key', () => {
   });
 
   it('checks the key before validating the body', async () => {
-    // Missing the required field (Ajv would coerce a wrong type instead of rejecting it).
     const invalidBody = { method: 'POST' as const, url: '/api/echo', payload: {} };
 
     const withoutKey = await app.inject(invalidBody);
@@ -122,6 +122,17 @@ describe('access key', () => {
 
     expect(withoutKey.statusCode).toBe(401);
     expect(withKey.statusCode).toBe(400);
+  });
+
+  it('rejects a body field of the wrong type instead of coercing it', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/echo',
+      headers: AUTH,
+      payload: { text: 42 },
+    });
+
+    expect(res.statusCode).toBe(400);
   });
 });
 
