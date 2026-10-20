@@ -12,26 +12,36 @@ export type SqlResult =
   | { ok: true; columns: string[]; rows: unknown[][] }
   | { ok: false; kind: 'guard' | 'sql' | 'row_limit'; message: string };
 
-/** Error codes of failures caused by the query itself, so the LLM can fix them. */
-const QUERY_ERROR_CODES = new Set([
-  'ERR_SQLITE_ERROR', // syntax errors, unknown tables or columns, writes on read-only
-  'ERR_OUT_OF_RANGE', // an integer beyond 2^53 in the result
-]);
+/**
+ * SQLite primary result codes that no rewritten query can fix: busy or locked, out of
+ * memory, I/O error, corrupt, disk full, can't open, not a database.
+ */
+const ENVIRONMENT_ERROR_CODES = new Set([5, 6, 7, 10, 11, 13, 14, 26]);
 
 /**
  * Runs one read query on `db`, which must be a read-only connection. Rows are lists aligned
  * with `columns`, so columns with the same name keep both values.
  */
 export function executeSql(db: DatabaseSync, sql: string): SqlResult {
-  const guardMessage = checkStatement(sql);
-  if (guardMessage) return { ok: false, kind: 'guard', message: guardMessage };
+  const text = sql.trim();
+  if (!text) return guard('The query is empty. Write a single SELECT statement.');
+  if (!/^(select|with)\b/i.test(text)) {
+    return guard(
+      'The query must start with SELECT or WITH, with nothing before it (no comments or markdown).',
+    );
+  }
 
   try {
-    const statement = db.prepare(sql);
+    const statement = db.prepare(text);
+    // SQLite prepares only the first statement and node:sqlite drops the rest silently, so
+    // anything after it (even a comment after the ';') would never run: reject it instead.
+    if (text.slice(statement.sourceSQL.length).trim()) {
+      return guard("Only one statement is allowed: remove everything after the first ';'.");
+    }
     statement.setReturnArrays(true);
     const columns = statement.columns().map((c) => c.name);
     const rows: unknown[][] = [];
-    // Stops reading at MAX_ROWS + 1, so even an endless recursive CTE ends here.
+    // Stops reading at MAX_ROWS + 1, so a huge result is never read in full.
     for (const row of statement.iterate()) {
       if (rows.length === MAX_ROWS) {
         return {
@@ -44,50 +54,22 @@ export function executeSql(db: DatabaseSync, sql: string): SqlResult {
     }
     return { ok: true, columns, rows };
   } catch (error) {
-    const { code, message } = error as { code?: string; message: string };
-    if (code && QUERY_ERROR_CODES.has(code)) return { ok: false, kind: 'sql', message };
+    if (isQueryError(error)) return { ok: false, kind: 'sql', message: error.message };
     throw error;
   }
 }
 
-/** Returns why the SQL isn't exactly one SELECT/WITH statement, or null if it is. */
-function checkStatement(sql: string): string | null {
-  const text = sql.trim();
-  if (!text) return 'The query is empty. Write a single SELECT statement.';
-  if (!/^(select|with)\b/i.test(text)) {
-    return 'The query must start with SELECT or WITH, with nothing before it (no comments or markdown).';
-  }
-  const end = firstStatementEnd(text);
-  if (end !== -1 && text.slice(end + 1).trim()) {
-    return "Only one statement is allowed: remove everything after the first ';'.";
-  }
-  return null;
+function guard(message: string): SqlResult {
+  return { ok: false, kind: 'guard', message };
 }
 
 /**
- * Index of the first ';' that ends a statement, or -1. A ';' inside a string literal, a
- * quoted identifier or a comment doesn't count. Not a SQL parser: an unterminated quote
- * just runs to the end, and SQLite reports the syntax error.
+ * Whether the query itself caused the error (syntax, unknown table or column, a write on
+ * the read-only connection, an integer beyond 2^53), so the LLM can fix it.
  */
-function firstStatementEnd(text: string): number {
-  const closers: Record<string, string> = { "'": "'", '"': '"', '`': '`', '[': ']' };
-  let i = 0;
-  while (i < text.length) {
-    const ch = text[i];
-    if (ch === ';') return i;
-    if (ch in closers) {
-      // A doubled quote ('it''s') closes and reopens, which skips the same characters.
-      const close = text.indexOf(closers[ch], i + 1);
-      i = close === -1 ? text.length : close + 1;
-    } else if (text.startsWith('--', i)) {
-      const close = text.indexOf('\n', i + 2);
-      i = close === -1 ? text.length : close + 1;
-    } else if (text.startsWith('/*', i)) {
-      const close = text.indexOf('*/', i + 2);
-      i = close === -1 ? text.length : close + 2;
-    } else {
-      i++;
-    }
-  }
-  return -1;
+function isQueryError(error: unknown): error is Error {
+  const { code, errcode } = error as { code?: string; errcode?: number };
+  if (code === 'ERR_OUT_OF_RANGE') return true;
+  // Extended result codes keep the primary code in the low byte.
+  return code === 'ERR_SQLITE_ERROR' && !ENVIRONMENT_ERROR_CODES.has((errcode ?? 0) & 0xff);
 }

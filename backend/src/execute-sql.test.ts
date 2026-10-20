@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
@@ -7,11 +7,12 @@ import { openDatabase, openReadOnlyDatabase } from './db.ts';
 import { executeSql, MAX_ROWS } from './execute-sql.ts';
 
 let tempDir: string;
+let file: string;
 let db: DatabaseSync;
 
 beforeEach(() => {
   tempDir = mkdtempSync(path.join(tmpdir(), 'utdt-sql-'));
-  const file = path.join(tempDir, 'data.db');
+  file = path.join(tempDir, 'data.db');
   const writer = openDatabase(file);
   writer.exec(`
     CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT);
@@ -117,6 +118,8 @@ describe('executeSql: guard', () => {
     ['a second statement', 'SELECT 1; DROP TABLE t'],
     ['a comment after the semicolon', 'SELECT 1; -- end'],
     ['two semicolons', 'SELECT 1;;'],
+    // SQLite reads `$a(...)` as one token, so a hand-rolled scanner would miss this ';'.
+    ['a second statement after a variable token', 'SELECT $a([) ;CREATE TEMP TABLE z (x)'],
   ])('rejects %s without touching the database', (_case, sql) => {
     const result = executeSql(db, sql);
 
@@ -169,6 +172,28 @@ describe('executeSql: SQL errors', () => {
     db.close();
 
     expect(() => executeSql(db, 'SELECT 1')).toThrow(/not open/);
+  });
+
+  it('throws when another connection locks the database', () => {
+    const writer = openDatabase(file);
+    writer.exec('BEGIN EXCLUSIVE');
+    try {
+      expect(() => executeSql(db, 'SELECT id FROM t')).toThrow(/locked/);
+    } finally {
+      writer.exec('ROLLBACK');
+      writer.close();
+    }
+  });
+
+  it('throws when the file is not a database', () => {
+    const garbage = path.join(tempDir, 'garbage.db');
+    writeFileSync(garbage, 'not a database '.repeat(100));
+    const notADatabase = openReadOnlyDatabase(garbage);
+    try {
+      expect(() => executeSql(notADatabase, 'SELECT 1 FROM t')).toThrow(/not a database/);
+    } finally {
+      notADatabase.close();
+    }
   });
 });
 

@@ -120,15 +120,18 @@ Each step is its own issue. The design:
    - the query runs on a **read-only** connection — SQLite itself rejects any write;
    - a cheap check accepts exactly one statement starting with `SELECT` or `WITH`
      (also blocks `ATTACH`/`PRAGMA`, `CREATE TEMP TABLE`, and the extra statements
-     `node:sqlite` would silently drop), so the LLM gets a clear error to fix. A `;`
-     inside a string, a quoted identifier or a comment doesn't count;
+     `node:sqlite` would silently drop), so the LLM gets a clear error to fix. SQLite's
+     own parser decides where the first statement ends (`sourceSQL`), so a `;` inside a
+     string, a quoted identifier or a comment doesn't count;
    - a row cap of 500: a bigger result is rejected, not truncated, and reading stops at
-     row 501, so even an endless recursive CTE ends.
+     row 501. That bounds rows, not work: a query that must read everything before its
+     first row (`ORDER BY`, `GROUP BY`, aggregates) still runs in full, and a single huge
+     value isn't capped (see *Query timeout* in the deferred decisions).
 
    Rows come back as lists aligned with the column names, so duplicate names keep both
    values. Errors a rewritten query can fix are **returned** with a `kind` (`guard`,
-   `sql`, `row_limit`) and a message for the LLM; anything else (e.g. a closed
-   connection) is thrown. On a returned error the LLM retries with the message as
+   `sql`, `row_limit`) and a message for the LLM; anything else (a closed connection, a
+   locked, corrupt or non-database file, I/O errors) is thrown. On a returned error the LLM retries with the message as
    feedback, up to a fixed retry budget.
 5. **Build the insights** (Responses API, Structured Outputs). The LLM receives the
    question, the SQL, the column list and a sample of the rows, and returns **only**
