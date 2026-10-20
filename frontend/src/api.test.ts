@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, apiFetch, getCatalog, getHealth } from './api.ts';
+import { ApiError, apiFetch, getCatalog, getHealth, postChat } from './api.ts';
 import { auth, loadStoredKey, saveKey } from './auth.ts';
 
 function stubFetch(...responses: (Response | Error)[]) {
@@ -151,5 +151,29 @@ describe('getCatalog', () => {
 
     await expect(getCatalog()).rejects.toThrow('HTTP 500');
     await expect(getCatalog()).rejects.toThrow('Failed to fetch');
+  });
+});
+
+describe('postChat', () => {
+  const answer = { conversationId: 'c1', turnId: 1, blocks: [], suggestions: [] };
+
+  it('posts the question as JSON with the access key and returns the answer', async () => {
+    const fetchMock = stubFetch(Response.json(answer));
+
+    await expect(postChat({ question: 'Hi?', conversationId: 'c1' })).resolves.toEqual(answer);
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('/api/chat');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(String(init.body))).toEqual({ question: 'Hi?', conversationId: 'c1' });
+    expect(sentHeaders(fetchMock).get('Content-Type')).toBe('application/json');
+    expect(sentHeaders(fetchMock).get('Authorization')).toBe('Bearer the-key');
+  });
+
+  it('rejects with the status on an error, or with the network error', async () => {
+    stubFetch(new Response(null, { status: 404 }), new TypeError('Failed to fetch'));
+
+    await expect(postChat({ question: 'Hi?' })).rejects.toMatchObject({ status: 404 });
+    await expect(postChat({ question: 'Hi?' })).rejects.toThrow('Failed to fetch');
   });
 });
