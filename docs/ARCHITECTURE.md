@@ -223,7 +223,7 @@ classification step gets the same history.)*
 - The window of 5 is a constant: no summarizing or truncation. A reload starts a new
   conversation, because the frontend keeps the id only in memory.
 
-### LLM layer (OpenAI API) *(Responses built; Decisions in a later issue)*
+### LLM layer (OpenAI API) *(Responses and the Decisions client built; classification in a later issue)*
 
 - **Responses API** for everything that generates text: SQL and insights. Structured
   Outputs (JSON schema) guarantee parseable responses — no "strip the markdown fence and
@@ -252,7 +252,7 @@ classification step gets the same history.)*
   and errors go in as template variables, and HTML escaping stays off (LiquidJS's default),
   so they reach the LLM literally. The history is one partial, `history.liquid`, that both
   user prompts include with `{% render %}`.
-- Model ids come from `.env` (`OPENAI_MODEL`), not from code.
+- Model ids come from `.env` (`OPENAI_MODEL`, `OPENAI_DECISIONS_MODEL`), not from code.
 
 ### Evaluation (LLM-as-a-judge, offline)
 

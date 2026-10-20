@@ -145,13 +145,32 @@ describe('runEvalCommand', () => {
     ]);
   });
 
-  it('never writes an app database', async () => {
+  it('keeps going when the judge returns an answer of an unexpected shape', async () => {
+    llm = fakeLlm(
+      jsonResponse({ sql: 'SELECT name FROM items' }),
+      jsonResponse({ narrative: 'Two.', suggestions: ['A?', 'B?', 'C?'], chart: null }),
+      jsonResponse({ sql: 'SELECT qty FROM items' }),
+      jsonResponse({ narrative: 'Eight.', suggestions: ['A?', 'B?', 'C?'], chart: null }),
+    );
+    const choice = { type: 'choice', name: null, choice: 'x', confidence: 1, probabilities: [] };
+    judge = fakeDecisions([choice as DecisionAnswer, score(2)], [score(2), score(2)]);
+
+    expect(await run()).toBe(0);
+    expect(lines.slice(0, 2)).toEqual([
+      'units: error (The judge returned an unexpected answer for sql.)',
+      'colors: sql 2.00/2 | narrative 2.00/2 | chart n/a',
+    ]);
+  });
+
+  it('only reads data.db and writes nothing but the report', async () => {
     llm = fakeLlm(new Error('x'), new Error('y'));
     judge = fakeDecisions();
+    const before = readFileSync(path.join(dir, 'data.db'));
 
     // Without `now`, the report is named after the current time.
     await run({ now: undefined });
 
+    expect(readFileSync(path.join(dir, 'data.db')).equals(before)).toBe(true);
     expect(readdirSync(dir).sort()).toEqual(['data.db', 'golden.json', 'reports']);
     expect(readdirSync(path.join(dir, 'reports'))).toEqual([
       expect.stringMatching(/^eval-\d{4}-.*\.json$/),

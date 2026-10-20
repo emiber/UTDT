@@ -1,6 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import type { ChartSpec } from './chart.ts';
 import {
+  LlmError,
   requestDecision,
   type DecisionAnswer,
   type DecisionClient,
@@ -193,8 +194,17 @@ export async function evaluateCase(golden: GoldenCase, deps: EvalDeps): Promise<
     };
     asked.forEach((criterion, index) => {
       const answer = answers[index];
-      criteria[criterion] =
-        answer.type === 'refusal' ? { status: 'refused' } : { status: 'judged', answer };
+      if (answer?.type === 'refusal') {
+        criteria[criterion] = { status: 'refused' };
+        return;
+      }
+      // The Decisions API is a beta: an answer of another shape is this question's error,
+      // never a crash later in the summary.
+      const value = answer?.type === QUESTIONS[criterion].type ? valueOf(answer) : NaN;
+      if (!Number.isFinite(value)) {
+        throw new LlmError(`The judge returned an unexpected answer for ${criterion}.`);
+      }
+      criteria[criterion] = { status: 'judged', answer };
     });
     return { ...answered, status: 'answered', criteria };
   } catch (error) {

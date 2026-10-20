@@ -223,6 +223,28 @@ describe('evaluateCase', () => {
       criteria: null,
     });
   });
+
+  it.each([
+    [
+      'a choice answer',
+      { type: 'choice', name: null, choice: 'a', confidence: 1, probabilities: [] },
+    ],
+    ['a score without a score', { type: 'score', name: null, confidence: 1, probabilities: [] }],
+    ['a predicate for a score question', predicate(0.5)],
+  ])('records %s from the judge as the case error', async (_case, odd) => {
+    const judge = fakeDecisions([odd as DecisionAnswer, score(2)]);
+
+    const result = await evaluateCase(
+      GOLDEN,
+      deps(fakeLlm(jsonResponse({ sql: SQL }), insights()), judge),
+    );
+
+    expect(result).toMatchObject({
+      status: 'error',
+      error: 'The judge returned an unexpected answer for sql.',
+      criteria: null,
+    });
+  });
 });
 
 describe('summarize and format', () => {
