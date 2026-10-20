@@ -120,6 +120,36 @@ describe('ChatView', () => {
     expect(document.activeElement).toBe(wrapper.find('input').element);
   });
 
+  it('scrolls down to a new question, then up to the start of its answer', async () => {
+    let respond: (res: Response) => void = () => {};
+    stubChat(new Promise<Response>((resolve) => (respond = resolve)));
+    const wrapper = mount(ChatView);
+    // jsdom has no layout: fake the sizes and record where the thread scrolls to.
+    const scroller = wrapper.find('.chat__scroll').element;
+    const tops: number[] = [];
+    Object.defineProperty(scroller, 'scrollHeight', { value: 900 });
+    Object.defineProperty(scroller, 'scrollTop', { get: () => 0, set: (top) => tops.push(top) });
+    const offsetTop = vi.spyOn(HTMLElement.prototype, 'offsetTop', 'get').mockReturnValue(400);
+
+    await ask(wrapper, 'First?');
+    expect(tops).toEqual([900]);
+
+    respond(answer());
+    await flushPromises();
+    expect(tops).toEqual([900, 384]);
+    offsetTop.mockRestore();
+  });
+
+  it('shows a welcome message until the first question', async () => {
+    stubChat(answer());
+    const wrapper = mount(ChatView);
+    expect(wrapper.find('.chat__empty').exists()).toBe(true);
+
+    await ask(wrapper, 'First?');
+
+    expect(wrapper.find('.chat__empty').exists()).toBe(false);
+  });
+
   it.each([[''], ['   ']])('cannot send a blank question (%j)', async (text) => {
     const fetchMock = stubChat();
     const wrapper = mount(ChatView);

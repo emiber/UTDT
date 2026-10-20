@@ -33,7 +33,9 @@ const toHtml = (markdown: string) =>
           </thead>
           <tbody>
             <tr v-for="(row, r) in block.rows" :key="r">
-              <td v-for="(value, c) in row" :key="c">{{ value }}</td>
+              <td v-for="(value, c) in row" :key="c" :class="{ num: typeof value === 'number' }">
+                {{ value }}
+              </td>
             </tr>
           </tbody>
         </table>
@@ -47,22 +49,83 @@ const toHtml = (markdown: string) =>
 @use '../styles/tokens' as *;
 
 .blocks {
-  &__text :deep(p) {
-    margin: 0.5rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+
+  &__text {
+    line-height: 1.65;
+
+    :deep(p),
+    :deep(ul),
+    :deep(ol) {
+      margin: 0.35rem 0;
+    }
+
+    :deep(ul),
+    :deep(ol) {
+      padding-left: 1.25rem;
+    }
+
+    :deep(strong) {
+      color: $color-primary-dark;
+      font-weight: 650;
+    }
+
+    :deep(a) {
+      color: $color-primary;
+    }
   }
 
+  // A rounded table as wide as its content; wide results scroll sideways, long ones down.
   &__table {
-    overflow-x: auto;
+    align-self: flex-start;
+    max-width: 100%;
+    max-height: 33rem;
+    overflow: auto;
+    border: 1px solid $color-border;
+    border-radius: $radius-md;
 
     table {
+      min-width: 16rem;
       border-collapse: collapse;
+      font-size: 0.875rem;
     }
 
     th,
     td {
-      padding: 0.25rem 0.75rem;
-      border-bottom: 1px solid $color-border;
+      padding: 0.5rem 1.25rem 0.5rem 0.85rem;
       text-align: left;
+      white-space: nowrap;
+    }
+
+    th {
+      position: sticky;
+      top: 0;
+      background: $color-surface-alt;
+      border-bottom: 1px solid $color-border;
+      color: $color-muted;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+
+    td {
+      border-bottom: 1px solid $color-surface-alt;
+    }
+
+    tbody tr:last-child td {
+      border-bottom: 0;
+    }
+
+    tbody tr:hover td {
+      background: $color-primary-soft;
+    }
+
+    .num {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
     }
   }
 }
