@@ -7,6 +7,7 @@ import type { ResponseCreateParamsNonStreaming } from 'openai/resources/response
 /** The part of a Responses API response this module reads. */
 export interface LlmResponse {
   status?: string | null;
+  error?: { message?: string | null } | null;
   incomplete_details?: { reason?: string | null } | null;
   output: { type: string; content?: { type: string; text?: string; refusal?: string }[] }[];
 }
@@ -55,15 +56,17 @@ export async function requestStructured<T>(llm: LlmClient, request: StructuredRe
     model: llm.model,
     instructions: request.instructions,
     input: request.input,
+    // Every request carries its whole context, so OpenAI doesn't need to keep a copy.
+    store: false,
     text: {
       format: { type: 'json_schema', name: request.name, schema: request.schema, strict: true },
     },
   });
 
   if (response.status !== 'completed') {
-    const reason = response.incomplete_details?.reason;
+    const detail = response.incomplete_details?.reason ?? response.error?.message;
     throw new Error(
-      `OpenAI response not completed: ${response.status}${reason ? ` (${reason})` : ''}`,
+      `OpenAI response not completed: ${response.status}${detail ? ` (${detail})` : ''}`,
     );
   }
   const content = response.output.flatMap((item) =>
@@ -75,5 +78,15 @@ export async function requestStructured<T>(llm: LlmClient, request: StructuredRe
     .filter((c) => c.type === 'output_text')
     .map((c) => c.text)
     .join('');
-  return JSON.parse(text) as T;
+  return parseObject(text) as T;
+}
+
+function parseObject(text: string): object {
+  try {
+    const value: unknown = JSON.parse(text);
+    if (typeof value === 'object' && value !== null) return value;
+  } catch {
+    // Not JSON: same error as JSON that isn't an object.
+  }
+  throw new Error('The model returned no valid JSON object.');
 }

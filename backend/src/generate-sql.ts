@@ -51,13 +51,24 @@ export async function generateSql({
 
   for (let attempt = 1; ; attempt++) {
     let started = performance.now();
-    const { sql } = await requestStructured<{ sql: unknown }>(llm, {
-      name: 'sql_query',
-      schema: SQL_SCHEMA,
-      instructions,
-      input: renderPrompt('sql-user', { schemaContext, question, failures }),
-    });
-    if (typeof sql !== 'string') throw new Error('The model returned no SQL string.');
+    let sql: string;
+    try {
+      const output = await requestStructured<{ sql: unknown }>(llm, {
+        name: 'sql_query',
+        schema: SQL_SCHEMA,
+        instructions,
+        input: renderPrompt('sql-user', { schemaContext, question, failures }),
+      });
+      if (typeof output.sql !== 'string') throw new Error('The model returned no SQL string.');
+      sql = output.sql;
+    } catch (error) {
+      // A failed or hung call still shows up in the log, with how long it took.
+      log.info(
+        { step: 'generate_sql', attempt, durationMs: elapsed(started), result: 'error' },
+        'SQL generation failed',
+      );
+      throw error;
+    }
     log.info(
       { step: 'generate_sql', attempt, durationMs: elapsed(started), result: 'ok' },
       'SQL generated',

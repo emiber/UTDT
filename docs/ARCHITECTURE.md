@@ -104,7 +104,7 @@ The backend listens on `127.0.0.1:3000`; the Vite dev server (port 5173) proxies
 
 Enough for a local demo, not for real users (see deferred decisions).
 
-### Text-to-SQL pipeline *(later issues)*
+### Text-to-SQL pipeline *(steps 2–4 built; the rest in later issues)*
 
 Each step is its own issue. The design:
 
@@ -157,7 +157,7 @@ The response is a list of typed blocks the frontend renders in order:
 (question, SQL, narrative — not the data rows) go to the classify, SQL and insights steps,
 so follow-ups like "and for last year?" work.
 
-### LLM layer (OpenAI API) *(later issues)*
+### LLM layer (OpenAI API) *(Responses built; Decisions in a later issue)*
 
 - **Responses API** for everything that generates text: SQL and insights. Structured
   Outputs (JSON schema) guarantee parseable responses — no "strip the markdown fence and
@@ -170,8 +170,10 @@ so follow-ups like "and for last year?" work.
 - All OpenAI calls live in one small module (`backend/src/llm.ts`), so a beta API change
   touches one file. `createLlmClient` builds the client from `OPENAI_API_KEY` and
   `OPENAI_MODEL` and throws naming a missing variable; `requestStructured` makes one
-  Structured Outputs request and returns the parsed object, or throws on a refusal or an
-  incomplete response. Pipeline functions receive the client as a parameter. **Tests never
+  Structured Outputs request and returns the parsed object, or throws on a refusal, an
+  incomplete response or output that isn't a JSON object. Requests use `store: false`: each
+  one carries its whole context, so OpenAI keeps no copy. Pipeline functions receive the
+  client as a parameter. **Tests never
   hit the network**: they pass the fake client in `backend/src/testing/fake-llm.ts`.
 - Prompts are LiquidJS templates in `backend/src/prompts/*.liquid`, apart from the code,
   rendered by `renderPrompt` (`backend/src/prompts.ts`). Questions, SQL and errors go in as
@@ -205,7 +207,9 @@ issue.
 ### Observability
 
 Fastify's built-in logger (pino), with one log line per pipeline step and its duration.
-The persisted turns in `app.db` are the query log. Nothing else for a POC.
+SQL generation logs each attempt's generation (`ok` or `error`) and execution (`ok` or the
+error `kind`), and the execution line includes the SQL, so it can carry literals from the
+question. The persisted turns in `app.db` are the query log. Nothing else for a POC.
 
 ## Tech stack
 
@@ -229,8 +233,8 @@ The persisted turns in `app.db` are the query log. Nothing else for a POC.
 | Type check | `tsc --noEmit` (backend), `vue-tsc --noEmit` (frontend) | Node strips types without checking them, so type checking is part of the lint gate |
 
 Each dependency is added by the first piece of work that uses it: the scaffold installs
-only what the scaffold's code uses, and `openai`, `chart.js`/`vue-chartjs` and the
-markdown renderer come with their issues.
+only what the scaffold's code uses. `openai` and `liquidjs` came with SQL generation;
+`chart.js`/`vue-chartjs` and the markdown renderer come with their issues.
 
 ## Quality gate
 

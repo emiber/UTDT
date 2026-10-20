@@ -166,7 +166,9 @@ describe('generateSql', () => {
 
     await expect(ask(llm)).rejects.toThrow(message);
     expect(llm.requests).toHaveLength(1);
-    expect(logs.filter((l) => l.step === 'execute_sql')).toHaveLength(0);
+    expect(logs).toEqual([
+      { step: 'generate_sql', attempt: 1, durationMs: expect.any(Number), result: 'error' },
+    ]);
   });
 
   it('propagates an error the executor throws, without asking again', async () => {

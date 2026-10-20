@@ -18,6 +18,7 @@ const REQUEST: StructuredRequest = {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
 });
 
 describe('createLlmClient', () => {
@@ -38,6 +39,8 @@ describe('createLlmClient', () => {
       Response.json({ id: 'resp_1', object: 'response', ...jsonResponse({ answer: 'yes' }) }),
     );
     vi.stubGlobal('fetch', fetchMock);
+    // The SDK reads OPENAI_BASE_URL from the process; a proxy set on this machine mustn't count.
+    vi.stubEnv('OPENAI_BASE_URL', 'https://api.openai.com/v1');
 
     const result = await requestStructured(createLlmClient(ENV), REQUEST);
 
@@ -60,6 +63,7 @@ describe('requestStructured', () => {
         model: 'fake-model',
         instructions: 'System prompt.',
         input: 'User prompt.',
+        store: false,
         text: {
           format: { type: 'json_schema', name: 'answer', schema: REQUEST.schema, strict: true },
         },
@@ -77,18 +81,25 @@ describe('requestStructured', () => {
 
   it.each([
     ['incomplete', incompleteResponse('max_output_tokens'), 'incomplete (max_output_tokens)'],
-    ['failed', { status: 'failed', output: [] }, 'not completed: failed'],
+    [
+      'failed',
+      { status: 'failed', error: { message: 'The server had an error.' }, output: [] },
+      'not completed: failed (The server had an error.)',
+    ],
+    ['failed without details', { status: 'failed', output: [] }, 'not completed: failed'],
   ])('throws when the response is %s', async (_case, response, message) => {
     await expect(requestStructured(fakeLlm(response), REQUEST)).rejects.toThrow(message);
   });
 
-  it('throws when the output is not JSON', async () => {
+  it.each([['not json'], ['null'], ['']])('throws when the output is %j', async (text) => {
     const llm = fakeLlm({
       status: 'completed',
-      output: [{ type: 'message', content: [{ type: 'output_text', text: 'not json' }] }],
+      output: [{ type: 'message', content: [{ type: 'output_text', text }] }],
     });
 
-    await expect(requestStructured(llm, REQUEST)).rejects.toThrow(SyntaxError);
+    await expect(requestStructured(llm, REQUEST)).rejects.toThrow(
+      'The model returned no valid JSON object.',
+    );
   });
 
   it('skips output items without message content, like reasoning', async () => {
