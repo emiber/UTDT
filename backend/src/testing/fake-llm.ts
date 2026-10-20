@@ -1,5 +1,6 @@
 import type { ResponseCreateParamsNonStreaming } from 'openai/resources/responses/responses';
-import type { LlmClient, LlmResponse } from '../llm.ts';
+import type { DecisionCreateParams } from 'openai/resources/decisions';
+import type { DecisionAnswer, DecisionClient, LlmClient, LlmResponse } from '../llm.ts';
 
 // Test helpers: a fake LlmClient and the responses it can return. Tests never hit the
 // network.
@@ -42,6 +43,27 @@ export function fakeLlm(...replies: (LlmResponse | Error)[]): FakeLlm {
       if (!reply) throw new Error(`Unexpected LLM request #${requests.length}`);
       if (reply instanceof Error) throw reply;
       return reply;
+    },
+  };
+}
+
+export interface FakeDecisions extends DecisionClient {
+  /** Every request body received, in order. */
+  requests: DecisionCreateParams[];
+}
+
+/** A DecisionClient that answers each request with the next list of answers; an Error is thrown. */
+export function fakeDecisions(...replies: (DecisionAnswer[] | Error)[]): FakeDecisions {
+  const requests: DecisionCreateParams[] = [];
+  return {
+    model: 'fake-decisions-model',
+    requests,
+    async createDecision(body) {
+      requests.push(body);
+      const reply = replies.shift();
+      if (!reply) throw new Error(`Unexpected decision request #${requests.length}`);
+      if (reply instanceof Error) throw reply;
+      return { answers: reply };
     },
   };
 }
