@@ -356,7 +356,10 @@ only what the scaffold's code uses. `openai` and `liquidjs` came with SQL genera
   that just call tested functions) and type-only files.
 - **Measured by:** Vitest with `@vitest/coverage-v8`. A root Vitest config runs both
   workspaces as projects and reports one combined coverage. The run fails if any metric
-  is under the threshold.
+  is under the threshold. It runs with `maxWorkers: 4`: by default Vitest starts one worker
+  per CPU, and forking dozens at once (jsdom + coverage) on Windows overran its fixed 60 s
+  worker start timeout ("Timeout waiting for worker to respond"). Four was also the
+  fastest setting measured (about 50 s for the whole gate).
 - **Lint command:** `npm run lint` (ESLint + `prettier --check` + type check of both packages)
 - **Test-with-coverage command:** `npm run test:coverage`
 - These two commands are the whole gate: the project is local-only, so there's no CI. `/work-issue` runs them before every PR, and anyone checking a branch runs the same ones.
