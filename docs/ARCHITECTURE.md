@@ -174,8 +174,8 @@ so follow-ups like "and for last year?" work.
   Structured Outputs request and returns the parsed object, or throws on a refusal, an
   incomplete response or output that isn't a JSON object. Each request carries its whole
   context, so the response doesn't need to be stored (`store: false`). Pipeline functions
-  receive the client as a parameter. **Tests never
-  hit the network**: they pass the fake client in `backend/src/testing/fake-llm.ts`.
+  receive the client as a parameter. **Tests never hit the network**: they pass the fake
+  client in `backend/src/testing/fake-llm.ts`.
 - Prompts are LiquidJS templates in `backend/src/prompts/*.liquid`, apart from the code,
   rendered by `renderPrompt` (`backend/src/prompts.ts`). Questions, SQL and errors go in as
   template variables, and HTML escaping stays off (LiquidJS's default), so they reach the
