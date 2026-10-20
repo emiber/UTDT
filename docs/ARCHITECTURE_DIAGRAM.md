@@ -13,7 +13,7 @@ flowchart TB
     keyForm["AccessKeyForm<br/>keeps the key in sessionStorage"]
     backendStatus["BackendStatus"]
     dataCatalog["DataCatalog<br/>Available data"]
-    chatUi["Chat view<br/>narrative · table · suggestions"]
+    chatUi["Chat view<br/>narrative · table · chart · suggestions"]
     apiFetch["apiFetch<br/>Authorization: Bearer key<br/>401 → back to the key screen"]
   end
 
@@ -26,7 +26,7 @@ flowchart TB
       classify["1 · Classify the question"]
       genSql["2-3 · Schema context + generate SQL"]
       guard["4 · Guard and execute<br/>SELECT/WITH only · row cap"]
-      insights["5 · Build the insights<br/>narrative · suggestions"]
+      insights["5 · Build the insights<br/>narrative · suggestions · chart spec"]
       persist["6 · Persist the turn"]
     end
   end

@@ -2,7 +2,7 @@
 id: 9
 title: Mostrar gráficos en las respuestas del chat
 type: feat
-status: refined
+status: closed
 parent: 1
 created: 2026-10-19
 ---
@@ -146,3 +146,65 @@ Que las respuestas del chat que traen datos muestren un gráfico, además de la 
 - **Reintentar la llamada de insights cuando la spec es inválida**, con el motivo como feedback. No se hace porque suma latencia y costo, y el gráfico es un complemento: los datos ya están en la tabla. Se revisa si los warnings del log muestran que pasa seguido.
 - **Tope de categorías o series, con agregación** (p. ej., "Otros", o el `MAX_CHART_SERIES` del proyecto de referencia). Para un POC alcanza con el tope de 500 filas de #6.
 - **Nombres legibles para las series y formato de ejes** (moneda, %, fechas). Las leyendas usan el nombre de la columna, igual que la tabla.
+
+## Pull request
+Branch: `feat/9-graficos-en-respuestas` → `epic/1-poc-chatbot-text-to-sql`
+
+### What it does
+- **Insights** (`backend/src/insights.ts`, `prompts/insights-system.liquid`):
+  - el schema suma `chart`: `{ type, x, series, title }` o `null`, con `anyOf` en modo estricto y `type` limitado a `bar`, `line`, `pie` y `doughnut`;
+  - el prompt dice cuándo devolver `null` (sin filas, un único valor, sin columnas numéricas, o 1 o 2 filas), qué tipo conviene a cada forma de datos, que `pie` y `doughnut` llevan una sola serie y que la narrativa no menciona el gráfico;
+  - la regla de idioma ahora cubre también el título del gráfico, y se reforzó: en una prueba real, una pregunta en inglés salió en español.
+- **`buildChart`** (`backend/src/chart.ts`) valida la spec contra el resultado real:
+  - **Rechaza** una spec mal formada, un resultado sin filas, una serie vacía, `pie` o `doughnut` con más de una serie, `x` o una serie que no están o están repetidos en `columns`, una serie igual a `x` y valores que no son número ni `null`. Un texto que parece número también se rechaza.
+  - **Si la spec sirve,** arma el bloque con `labels` (los valores de `x` como texto, en el orden de las filas) y un dataset por serie, con los números de las filas.
+- **Pipeline** (`backend/src/pipeline.ts`):
+  - el bloque `chart` va al final;
+  - una spec que no encaja se descarta con `log.warn({ reason }, 'Chart dropped')`, sin las filas y sin reintentar;
+  - el resultado trae la spec validada, o `null`, para #12. La respuesta HTTP no la incluye.
+- **Frontend:**
+  - `ChartBlock.vue` dibuja los cuatro tipos con vue-chartjs, con el título, la paleta del plugin `Colors` y `aria-label`;
+  - `ResponseBlocks.vue` lo usa para los bloques `chart`;
+  - `api.ts` suma el tipo `ChartBlock`.
+- **Dependencias:** `chart.js` 4.5.1 y `vue-chartjs` 5.3.4 en `frontend`. El bundle pasa de 126 kB a 316 kB (109 kB gzip). El backend no suma nada.
+- **Docs:**
+  - `docs/ARCHITECTURE.md`: el paso 5 con las reglas de validación, el tipo `Block` con `chartType`, `title`, `labels` y `datasets`, *Chat endpoint*, *Frontend* y la nota de dependencias;
+  - `README.md`: *Status* y estructura;
+  - el diagrama: las etiquetas.
+
+### Verification
+- Lint: `npm run lint` — pass
+- Tests: `npm run test:coverage` — pass (24 archivos, 317 tests). El flake de arranque de los workers del frontend apareció en algunas corridas; al repetirlas pasaron.
+- Coverage: 100% en sentencias, funciones y líneas, y 99,55% en ramas (umbral 85%). La única rama sin cubrir es de #8 (`conversations.ts:78`). Archivos nuevos o cambiados bajo el umbral: ninguno.
+- Build: `npm run build -w frontend` — pass
+- Manual: pass, con el `.env` real (`gpt-5.4-mini`) y el seed demo.
+  - **Por el pipeline:**
+    - "Total sales per month in 2025" dio un `line` de 12 puntos;
+    - "¿Qué porcentaje de las ventas representa cada categoría?" dio un `pie` de 4 porciones, con el título en español;
+    - "How many customers are there?" dio `chart: null`.
+  - **En un navegador real** (Edge headless manejado por DevTools, con `npm run dev`):
+    - el gráfico de líneas (640x320) y el doughnut (384x384, más angosto) se dibujaron en canvas, después de la tabla y con la paleta por defecto;
+    - el valor único no trajo gráfico;
+    - la captura de pantalla se revisó.
+  - **Idioma:** después de reforzar la regla, 5 corridas reales (3 iguales en inglés, 1 en inglés y 1 en español) respondieron en el idioma de la pregunta, títulos incluidos.
+- Self-review: 2 rondas con agente separado.
+  - Ronda 1: un blocker, la descripción del `200` en `ARCHITECTURE.md`, que no mencionaba el bloque `chart`. Se arregló.
+  - Ronda 2: sin blockers.
+  - Sugerencias aplicadas:
+    - test del plugin `Colors`;
+    - test de la ruta con dos series y un `x` repetido;
+    - warning sin `step`, verificado por HTTP con el log real de pino;
+    - caso de resultado vacío por HTTP;
+    - `aria-label`;
+    - comentario y README reacomodados.
+
+  Los últimos cambios son chicos, cada uno con su test, y se verificaron con el gate. (separate agent)
+- Plan: aprobado de antemano por el usuario para el trabajo desatendido del 2026-10-19.
+- Security: pass.
+  - La spec del LLM se valida en forma y contra las columnas reales, y los números salen solo de las filas.
+  - El título y las etiquetas se dibujan en canvas, así que no hay inyección de markup.
+  - El warning loguea el motivo, nunca las filas, y un test lo chequea.
+- Docs: updated `README.md`, `docs/ARCHITECTURE.md`, `docs/ARCHITECTURE_DIAGRAM.md`
+
+### Out of scope / follow-ups
+None

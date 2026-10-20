@@ -10,9 +10,10 @@ what the data means from metadata tables.
 shared access key. The frontend first asks for that key (the `APP_ACCESS_KEY` value from
 your `.env`), then shows the backend status, an `Available data` section with the tables,
 columns, relationships and indexes the bot knows about, and the chat: ask a question and
-get a narrative and a table of real data, with follow-up suggestions you can click. Each
-conversation is saved in `data/app.db`. Features are built one small issue at a time; see
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design and the decisions behind it.
+get a narrative, a table and, when it helps, a chart of real data, with follow-up
+suggestions you can click. Each conversation is saved in `data/app.db`. Features are built
+one small issue at a time; see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design
+and the decisions behind it.
 
 ## Stack
 
@@ -83,12 +84,12 @@ backend/src/    Fastify app (app.ts), entry points (server.ts, seed-cli.ts), acc
                 seed.ts), demo data (demo-dataset.ts), data catalog (catalog.ts), guarded
                 SQL execution (execute-sql.ts), OpenAI client (llm.ts), prompt templates
                 (prompts/, prompts.ts), schema context (schema-context.ts), SQL generation
-                with retries (generate-sql.ts), insights (insights.ts), the pipeline
-                (pipeline.ts), the chat route (chat.ts), conversations and turns
-                (conversations.ts), test helpers (testing/)
+                with retries (generate-sql.ts), insights (insights.ts), charts (chart.ts),
+                the pipeline (pipeline.ts), the chat route (chat.ts), conversations and
+                turns (conversations.ts), test helpers (testing/)
 frontend/src/   Vue app (App.vue), API client (api.ts), access-key state (auth.ts),
                 components (components/: key screen, backend status, data catalog, chat
-                view and its block renderer), styles (styles/)
+                view, its block renderer and the chart), styles (styles/)
 data/           SQLite files, generated and gitignored
 docs/           ARCHITECTURE.md: design, stack, quality gate, deferred decisions
 issues/         local issue tracker (Markdown files)

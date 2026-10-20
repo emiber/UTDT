@@ -1,4 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
+import { buildChart, type ChartBlock, type ChartSpec } from './chart.ts';
 import { generateSql, type StepLogger } from './generate-sql.ts';
 import { buildInsights } from './insights.ts';
 import type { LlmClient } from './llm.ts';
@@ -9,7 +10,9 @@ import { elapsed } from './timing.ts';
 
 /** A response block; the frontend renders them in order. */
 export type Block =
-  { type: 'text'; markdown: string } | { type: 'table'; columns: string[]; rows: unknown[][] };
+  | { type: 'text'; markdown: string }
+  | { type: 'table'; columns: string[]; rows: unknown[][] }
+  | ChartBlock;
 
 export type PipelineResult =
   | {
@@ -20,6 +23,8 @@ export type PipelineResult =
       narrative: string;
       suggestions: string[];
       blocks: Block[];
+      /** The chart spec behind the chart block, or null when there's no chart. */
+      chart: ChartSpec | null;
     }
   /** Every SQL attempt failed: the last attempt's SQL and error. */
   | { ok: false; sql: string; kind: 'guard' | 'sql' | 'row_limit'; message: string };
@@ -36,18 +41,25 @@ export class PipelineError extends Error {
   }
 }
 
+/** The pipeline also warns when it drops a chart; Fastify's `request.log` fits it. */
+export interface PipelineLogger extends StepLogger {
+  warn(fields: Record<string, unknown>, message: string): void;
+}
+
 export interface PipelineInput {
   question: string;
   /** Read-only connection to `data.db`. */
   dataDb: DatabaseSync;
   llm: LlmClient;
-  log: StepLogger;
+  log: PipelineLogger;
 }
 
 /**
- * Answers a question: SQL (with its retries), then insights, then the blocks. When every SQL
- * attempt fails, returns why, without calling the insights. Anything thrown (OpenAI
- * failures, unexpected errors) comes out as a PipelineError whose `cause` is the original.
+ * Answers a question: SQL (with its retries), then insights, then the blocks: text, table
+ * (with rows) and chart (when the LLM's spec fits the result; a spec that doesn't is dropped
+ * with a warning). When every SQL attempt fails, returns why, without calling the insights.
+ * Anything thrown (OpenAI failures, unexpected errors) comes out as a PipelineError whose
+ * `cause` is the original.
  */
 export async function answerQuestion({
   question,
@@ -72,14 +84,24 @@ export async function answerQuestion({
     step = 'insights';
     started = performance.now();
     const { sql, columns, rows } = result;
-    const { narrative, suggestions } = await buildInsights({ question, sql, columns, rows, llm });
+    const insights = await buildInsights({ question, sql, columns, rows, llm });
     log.info({ step, durationMs: elapsed(started), result: 'ok' }, 'Pipeline step done');
 
-    const blocks: Block[] = [{ type: 'text', markdown: narrative }];
-    if (result.rows.length) {
-      blocks.push({ type: 'table', columns: result.columns, rows: result.rows });
+    const blocks: Block[] = [{ type: 'text', markdown: insights.narrative }];
+    if (rows.length) blocks.push({ type: 'table', columns, rows });
+    let chart: ChartSpec | null = null;
+    if (insights.chart) {
+      const built = buildChart(insights.chart, columns, rows);
+      if (built.ok) {
+        blocks.push(built.block);
+        chart = insights.chart;
+      } else {
+        // Not a step line (no duration): the reason only, never the rows.
+        log.warn({ reason: built.reason }, 'Chart dropped');
+      }
     }
-    return { ...result, narrative, suggestions, blocks };
+    const { narrative, suggestions } = insights;
+    return { ...result, narrative, suggestions, blocks, chart };
   } catch (error) {
     log.info({ step, durationMs: elapsed(started), result: 'error' }, 'Pipeline step failed');
     throw new PipelineError(lastSql, error);

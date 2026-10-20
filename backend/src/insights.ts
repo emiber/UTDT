@@ -1,3 +1,4 @@
+import { CHART_TYPES, type ChartSpec } from './chart.ts';
 import { LlmError, requestStructured, type LlmClient } from './llm.ts';
 import { renderPrompt } from './prompts.ts';
 
@@ -9,10 +10,12 @@ export interface Insights {
   narrative: string;
   /** 3 follow-up questions, in the language of the question. */
   suggestions: string[];
+  /** How to chart the result, or null when a chart adds nothing. Not yet checked. */
+  chart: ChartSpec | null;
 }
 
-// Only narrative and suggestions: there's no field for data, so the LLM can't re-type
-// (or invent) numbers. The backend builds the table from the real rows.
+// No field for data: the LLM only writes text and names columns, so it can't re-type (or
+// invent) numbers. The backend builds the table and the chart from the real rows.
 const INSIGHTS_SCHEMA = {
   type: 'object',
   properties: {
@@ -24,8 +27,29 @@ const INSIGHTS_SCHEMA = {
       maxItems: 3,
       description: 'Three follow-up questions this data can answer.',
     },
+    chart: {
+      description: 'How to chart the result, or null when a chart adds nothing to the table.',
+      anyOf: [
+        {
+          type: 'object',
+          properties: {
+            type: { type: 'string', enum: CHART_TYPES },
+            x: { type: 'string', description: 'The result column for the labels.' },
+            series: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Result columns with the numbers to plot.',
+            },
+            title: { type: 'string', description: 'Chart title, in the language of the question.' },
+          },
+          required: ['type', 'x', 'series', 'title'],
+          additionalProperties: false,
+        },
+        { type: 'null' },
+      ],
+    },
   },
-  required: ['narrative', 'suggestions'],
+  required: ['narrative', 'suggestions', 'chart'],
   additionalProperties: false,
 };
 
@@ -64,7 +88,8 @@ export async function buildInsights({
   if (typeof narrative !== 'string' || !isStringList(suggestions)) {
     throw new LlmError('The model returned no valid insights.');
   }
-  return { narrative, suggestions };
+  // buildChart checks the spec against the result; a bad one only drops the chart.
+  return { narrative, suggestions, chart: output.chart ?? null };
 }
 
 function isStringList(value: unknown): value is string[] {
