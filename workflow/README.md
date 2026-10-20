@@ -126,7 +126,8 @@ A few rules the agents enforce (full detail in `workflow/principles.md` and `wor
 ├── .workflow-config                # Issue tracker selection (issue_tracker=local)
 ├── .githooks/
 │   └── pre-commit                  # main guard: on main, only issues/ commits (and merges) pass
-├── issues/                         # The issues, one Markdown file each (created by /create-issue)
+├── issues/                         # The pending issues, one Markdown file each (created by /create-issue)
+│   └── completed/                  # Closed issues, moved here when they're closed
 ├── .github/
 │   ├── copilot-instructions.md     # Pointer for Copilot
 │   └── scripts/

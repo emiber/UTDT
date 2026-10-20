@@ -6,6 +6,8 @@ This project keeps its issues as Markdown files in the repo, under `issues/`. Th
 
 One file per issue: `issues/<n>-<slug>.md`, where `<n>` is the issue number (no zero-padding) and `<slug>` a short kebab-case summary of the title — e.g. `issues/12-contacts-pagination.md`. Create the `issues/` folder if it doesn't exist yet.
 
+**Closed issues move to `issues/completed/`** (same file name), so `issues/` itself only lists what's still pending. The move is part of closing an issue (see *Close* below), so it travels with the branch like the `status` does. Every operation below looks in both folders.
+
 ```markdown
 ---
 id: 12
@@ -39,14 +41,14 @@ Commands are shell-neutral (they run the same from PowerShell and Bash); the age
 
 | Operation | How |
 |---|---|
-| Find issue `<n>` | The file matching `issues/<n>-*.md`. None → the issue doesn't exist on this branch. |
-| Read it on another branch | `git show <branch>:issues/<n>-<slug>.md` |
-| List open issues | Files in `issues/` whose `status` isn't `closed`. |
+| Find issue `<n>` | The file matching `issues/<n>-*.md`, or `issues/completed/<n>-*.md` once it's closed. None → the issue doesn't exist on this branch. |
+| Read it on another branch | `git show <branch>:issues/<n>-<slug>.md`, or `git show <branch>:issues/completed/<n>-<slug>.md` if it's closed there. `git ls-tree -r --name-only <branch> -- issues/` lists both folders. |
+| List open issues | The files directly in `issues/` (not in `completed/`); they're the ones whose `status` isn't `closed`. |
 | Search (duplicates) | Search key words in titles and bodies, e.g. `git grep -i -l "<word>" -- issues/`. |
-| Next number | The highest `<n>` among the files in `issues/` **and** the issue files on every local branch, plus one. `git log --all --name-only --format= -- issues/` lists every issue file ever committed on any branch; counting them avoids reusing a number that a follow-up took on an unmerged branch. Start at 1. |
+| Next number | The highest `<n>` among the files in `issues/` and `issues/completed/` **and** the issue files on every local branch, plus one. `git log --all --name-only --format= -- issues/` lists every issue file ever committed on any branch; counting them avoids reusing a number that a follow-up took on an unmerged branch. Start at 1. |
 | Add a note (comment) | Append a dated entry to `## Notes` (create the section if missing). |
 | Mark refined | Set `status: refined`. |
-| Close | Set `status: closed`. `/work-issue` does it on the working branch (see below). To drop an issue by hand, close it with a note saying why. |
+| Close | Set `status: closed` and move the file to `issues/completed/` with `git mv`. `/work-issue` does it on the working branch (see below). To drop an issue by hand, close it with a note saying why. |
 
 ### Committing issue changes
 

@@ -119,7 +119,8 @@ frontend/src/   Vue app (App.vue), API client (api.ts), access-key state (auth.t
                 view, its block renderer and the chart), styles (styles/)
 data/           SQLite files, generated and gitignored
 docs/           ARCHITECTURE.md: design, stack, quality gate, deferred decisions
-issues/         local issue tracker (Markdown files)
+issues/         local issue tracker (Markdown files): pending ones here, closed ones in
+                issues/completed/
 workflow/       AI-assisted workflow guides
 ```
 
