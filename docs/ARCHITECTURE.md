@@ -88,7 +88,8 @@ The backend listens on `127.0.0.1:3000`; the Vite dev server (port 5173) proxies
 
 **Auth**: a single shared access key (`APP_ACCESS_KEY` in `.env`).
 
-- **Required:** without it, the backend refuses to start, with an error naming the variable.
+- **Required:** without it, or with the placeholder from `.env.example` still in place, the
+  backend refuses to start, with an error naming the variable.
 - **Backend:** a deny-by-default `onRequest` hook protects every route (existing,
   future or unknown) except `/api/health`. It compares `Authorization: Bearer <key>` in
   constant time, before body validation. On failure it returns a generic `401` (Fastify's
