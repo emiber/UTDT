@@ -37,7 +37,7 @@ Two database files, kept apart on purpose:
 
 | File | Contents | Access from the app |
 |---|---|---|
-| `data/data.db` | The dataset being queried **plus** its metadata tables | **Read-only** connection for every LLM-generated query. Written only by the seed script. |
+| `data/data.db` | The dataset being queried **plus** its metadata tables | **Read-only** connection, opened at startup, for the catalog and every LLM-generated query. Written only by the seed script. |
 | `data/app.db` | App state: conversations and their turns | Read-write, by the backend only |
 
 Keeping them separate means a generated query can't read or touch app state.
@@ -52,6 +52,17 @@ The schema context sent to the LLM is built only from these tables. A table with
 a `meta_tables` row doesn't exist as far as the bot is concerned. All their columns are
 `TEXT NOT NULL`, with the natural keys as primary keys and no foreign keys between them.
 They are plain rowid tables, so readers return rows in load order.
+
+**Catalog:** `readCatalog` (`backend/src/catalog.ts`) turns the metadata into what the bot
+knows: the declared tables with their columns and indexes, and the relationships between
+declared tables. Columns and relationships of undeclared tables are dropped. Indexes are
+read from SQLite itself (`pragma_index_list` / `pragma_index_info`), automatic ones
+included, not from the metadata; an expression part of an index shows as `(expression)`.
+It's read on every request (no cache), so metadata edits show up without a restart, and it
+throws if the metadata tables are missing.
+
+The backend opens `data.db` read-only at startup: without the file it refuses to start
+(not even `/api/health` answers) and its error says to run `npm run seed` first.
 
 **Initial data:** `npm run seed` creates `data/data.db` with the metadata tables and a
 small, fictitious sales dataset (`customers`, `products`, `orders` for 2024–2025) whose
@@ -70,7 +81,7 @@ only purpose is to exercise the pipeline.
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
 | `GET` | `/api/health` | none | Liveness check; reports the SQLite version of `app.db` (scaffold) |
-| `GET` | `/api/catalog` | access key | Tables and descriptions from the metadata (what the bot can answer about) *(later issue)* |
+| `GET` | `/api/catalog` | access key | What the bot can answer about: declared tables with their columns and indexes, and their relationships (see *Catalog* above). A read error is a standard `500` |
 | `POST` | `/api/chat` | access key | `{ conversationId?, question }` → `{ conversationId, turnId, blocks, suggestions }` *(later issue)* |
 
 The backend listens on `127.0.0.1:3000`; the Vite dev server (port 5173) proxies `/api` there.
@@ -88,7 +99,8 @@ The backend listens on `127.0.0.1:3000`; the Vite dev server (port 5173) proxies
   A `401` on any call forgets the key and goes back to the key screen with a "rejected"
   message, so callers never handle it. Other HTTP errors reject with an `ApiError` carrying
   the `status`; network errors propagate unchanged.
-  `/api/health` is public, so a wrong key only shows up on the first protected call.
+  `/api/health` is public, so a wrong key shows up on the first protected call: the
+  catalog request the main screen makes on mount.
 
 Enough for a local demo, not for real users (see deferred decisions).
 
@@ -152,8 +164,9 @@ issue.
 ### Frontend (Vue 3)
 
 - Access-key screen first: it asks for the `APP_ACCESS_KEY` value from `.env` before
-  showing anything else. Then the main screen, which for now shows the backend health
-  status.
+  showing anything else. Then the main screen: the backend health status and an
+  `Available data` section (a native `<details>`, closed by default) that shows the
+  catalog. The catalog is requested on mount, even while the section is closed.
 - *(later issues)* The main screen gains the chat view: question input, conversation
   thread, and rendered blocks (markdown text, HTML table, chart).
 - Plain components and composables: no router (two screens, switched by auth state),

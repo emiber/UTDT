@@ -1,10 +1,14 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import type { DatabaseSync } from 'node:sqlite';
 import { hasValidAccessKey } from './auth.ts';
+import { readCatalog } from './catalog.ts';
 import { sqliteVersion } from './db.ts';
 
 export interface AppOptions {
+  /** App state (`app.db`). */
   db: DatabaseSync;
+  /** The queried dataset and its metadata (`data.db`), opened read-only. */
+  dataDb: DatabaseSync;
   accessKey: string;
   logger?: boolean;
 }
@@ -15,7 +19,7 @@ export interface AppOptions {
  */
 const PUBLIC_ROUTES = new Set(['GET /api/health']);
 
-export function buildApp({ db, accessKey, logger = false }: AppOptions): FastifyInstance {
+export function buildApp({ db, dataDb, accessKey, logger = false }: AppOptions): FastifyInstance {
   const app = Fastify({ logger });
 
   // onRequest runs before body parsing and validation, so a bad key never reaches a 400.
@@ -31,6 +35,9 @@ export function buildApp({ db, accessKey, logger = false }: AppOptions): Fastify
   });
 
   app.get('/api/health', async () => ({ status: 'ok', sqliteVersion: sqliteVersion(db) }));
+
+  // Read on every request, so metadata edits show up without a restart.
+  app.get('/api/catalog', async () => readCatalog(dataDb));
 
   return app;
 }

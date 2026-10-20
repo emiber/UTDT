@@ -45,3 +45,25 @@ export async function getHealth(): Promise<Health> {
   const res = await apiFetch('/api/health');
   return (await res.json()) as Health;
 }
+
+/** The data the bot knows about, as `GET /api/catalog` returns it. */
+export interface Catalog {
+  tables: {
+    name: string;
+    description: string;
+    columns: { name: string; dataType: string; description: string }[];
+    indexes: { name: string; unique: boolean; columns: string[] }[];
+  }[];
+  relationships: {
+    fromTable: string;
+    fromColumn: string;
+    toTable: string;
+    toColumn: string;
+    description: string;
+  }[];
+}
+
+export async function getCatalog(): Promise<Catalog> {
+  const res = await apiFetch('/api/catalog');
+  return (await res.json()) as Catalog;
+}

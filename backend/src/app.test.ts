@@ -3,16 +3,20 @@ import type { FastifyInstance } from 'fastify';
 import type { DatabaseSync } from 'node:sqlite';
 import { buildApp } from './app.ts';
 import { openDatabase, sqliteVersion } from './db.ts';
+import { createMetadataTables, insertMetadata } from './metadata.ts';
 
 const ACCESS_KEY = 'test-access-key';
 const AUTH = { authorization: `Bearer ${ACCESS_KEY}` };
 
 let db: DatabaseSync;
+let dataDb: DatabaseSync;
 let app: FastifyInstance;
 
 beforeEach(() => {
   db = openDatabase(':memory:');
-  app = buildApp({ db, accessKey: ACCESS_KEY });
+  dataDb = openDatabase(':memory:');
+  createMetadataTables(dataDb);
+  app = buildApp({ db, dataDb, accessKey: ACCESS_KEY });
   // Stand-ins for the protected routes later issues add.
   app.get('/api/protected', async () => ({ ok: true }));
   app.post(
@@ -33,6 +37,7 @@ beforeEach(() => {
 afterEach(async () => {
   await app.close();
   if (db.isOpen) db.close();
+  dataDb.close();
 });
 
 describe('GET /api/health', () => {
@@ -117,5 +122,112 @@ describe('access key', () => {
 
     expect(withoutKey.statusCode).toBe(401);
     expect(withKey.statusCode).toBe(400);
+  });
+});
+
+describe('GET /api/catalog', () => {
+  const get = () => app.inject({ method: 'GET', url: '/api/catalog', headers: AUTH });
+
+  it('returns the catalog: tables with columns and indexes, and relationships', async () => {
+    dataDb.exec(`
+      CREATE TABLE authors (author_id INTEGER PRIMARY KEY);
+      CREATE TABLE books (book_id INTEGER PRIMARY KEY, author_id INTEGER);
+      CREATE INDEX idx_books_author_id ON books (author_id);
+    `);
+    insertMetadata(dataDb, {
+      tables: [
+        { tableName: 'authors', description: 'Authors.' },
+        { tableName: 'books', description: 'Books.' },
+      ],
+      columns: [
+        {
+          tableName: 'books',
+          columnName: 'author_id',
+          dataType: 'INTEGER',
+          description: 'Author.',
+        },
+      ],
+      relationships: [
+        {
+          fromTable: 'books',
+          fromColumn: 'author_id',
+          toTable: 'authors',
+          toColumn: 'author_id',
+          description: 'Who wrote it.',
+        },
+      ],
+    });
+
+    const res = await get();
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      tables: [
+        { name: 'authors', description: 'Authors.', columns: [], indexes: [] },
+        {
+          name: 'books',
+          description: 'Books.',
+          columns: [{ name: 'author_id', dataType: 'INTEGER', description: 'Author.' }],
+          indexes: [{ name: 'idx_books_author_id', unique: false, columns: ['author_id'] }],
+        },
+      ],
+      relationships: [
+        {
+          fromTable: 'books',
+          fromColumn: 'author_id',
+          toTable: 'authors',
+          toColumn: 'author_id',
+          description: 'Who wrote it.',
+        },
+      ],
+    });
+  });
+
+  it('requires the access key', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/catalog' });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('returns an empty catalog for empty metadata', async () => {
+    const res = await get();
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ tables: [], relationships: [] });
+  });
+
+  it('answers 200 for a declared table missing from the database', async () => {
+    insertMetadata(dataDb, {
+      tables: [{ tableName: 'ghost', description: 'Never created.' }],
+      columns: [],
+      relationships: [],
+    });
+
+    const res = await get();
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().tables).toEqual([
+      { name: 'ghost', description: 'Never created.', columns: [], indexes: [] },
+    ]);
+  });
+
+  it('fails with 500 when the metadata tables are missing', async () => {
+    dataDb.exec('DROP TABLE meta_tables');
+
+    const res = await get();
+
+    expect(res.statusCode).toBe(500);
+  });
+
+  it('reads the metadata on every request', async () => {
+    const before = await get();
+    insertMetadata(dataDb, {
+      tables: [{ tableName: 'added', description: 'Added later.' }],
+      columns: [],
+      relationships: [],
+    });
+    const after = await get();
+
+    expect(before.json().tables).toEqual([]);
+    expect(after.json().tables.map((t: { name: string }) => t.name)).toEqual(['added']);
   });
 });
