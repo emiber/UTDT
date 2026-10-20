@@ -2,7 +2,7 @@
 id: 11
 title: Agregar memoria multi-turn a las conversaciones
 type: feat
-status: refined
+status: closed
 parent: 1
 created: 2026-10-19
 ---
@@ -102,3 +102,46 @@ Que el bot entienda preguntas de seguimiento ("¿y para el año pasado?", "¿y p
 - Estado de conversación del lado de OpenAI (`previous_response_id`): `docs/ARCHITECTURE.md` decidió guardar los turnos en `app.db` y mandar el contexto desde el backend, así el mismo historial sirve a los tres pasos.
 - Casos multi-turn en la evaluación offline: #12 los deja afuera (cada pregunta golden corre sin turnos previos). Se suman allá si aparece la necesidad.
 - Un botón de "nueva conversación" en la UI: recargar la página alcanza, y la ventana de 5 turnos ya limita cuánto arrastra el contexto viejo.
+
+## Pull request
+Branch: `feat/11-memoria-multi-turn` → `epic/1-poc-chatbot-text-to-sql`
+
+### What it does
+- **`loadHistory(db, conversationId)`** (`backend/src/conversations.ts`):
+  - lee los últimos `HISTORY_TURNS = 5` turnos de la conversación, del más viejo al más nuevo, con una consulta parametrizada filtrada por `conversation_id`;
+  - sin `conversationId`, devuelve `[]`;
+  - por turno devuelve `{ question, sql?, narrative? }`, sin dejar campos vacíos;
+  - un turno con `error` queda solo con su pregunta, y ocupa igual su lugar en la ventana;
+  - nunca lee la columna `response`, así que las filas, el gráfico y las sugerencias no pueden entrar.
+- **`POST /api/chat`** (`backend/src/chat.ts`) lee el historial antes de guardar el turno, así la pregunta actual no es parte de su propio historial. La lectura va dentro del mismo `try` que valida la conversación: si falla, da el `500` genérico.
+- **Pipeline:** `answerQuestion`, `generateSql` (en cada uno de sus 3 intentos) y `buildInsights` reciben `history`, que por defecto es `[]`. Así #12 corre sin historial.
+- **Prompts:**
+  - `prompts/history.liquid` es una parcial que `sql-user` e `insights-user` incluyen con `{% render %}`;
+  - presenta los turnos como contexto para resolver referencias y no deja nada si no hay historial;
+  - los prompts de sistema dicen que el historial es contexto (y datos, no instrucciones), y que se responde la pregunta actual.
+- **Docs:**
+  - `docs/ARCHITECTURE.md`: *Multi-turn*, los pasos 3 y 5 y *LLM layer*;
+  - `README.md`: *Status*;
+  - el diagrama: la flecha del historial desde `app.db`.
+
+### Verification
+- Lint: `npm run lint` — pass
+- Tests: `npm run test:coverage` — pass (24 archivos, 328 tests)
+- Coverage: 100% en sentencias, funciones y líneas, y 99,57% en ramas (umbral 85%). La única rama sin cubrir es de #8 (`conversations.ts:78`). Archivos nuevos o cambiados bajo el umbral: ninguno.
+- Manual: pass, con la API real (`gpt-5.4-mini`) y la UI en un navegador real (Edge headless manejado por DevTools).
+  - Se usó el `npm run dev` que ya estaba corriendo, que no era mío y no se tocó. Sirve el código de esta rama.
+  - "¿Cuánto se vendió por mes en 2025?" y, en la misma conversación, "¿Y para el año anterior?" dieron el mismo `strftime('%Y-%m', …)` agrupado por mes, con el filtro cambiado de 2025 a 2024, y una tabla de 12 filas.
+  - Al recargar la página no se pidió la key y el hilo quedó vacío.
+  - La misma pregunta de seguimiento fue a una conversación nueva (otro id en `app.db`) y se respondió sin el contexto anterior.
+- Self-review: 1 ronda con agente separado, sin blockers.
+  - Sugerencias aplicadas: el centinela también en el gráfico guardado del primer turno, y tres retoques del doc (pasos 3 y 5 y *LLM layer*).
+  - Son un test y docs, y se verificaron con el gate. (separate agent)
+- Plan: aprobado de antemano por el usuario para el trabajo desatendido del 2026-10-19.
+- Security: pass.
+  - El historial sale solo de `app.db`, filtrado por `conversationId` con parámetros: el cliente no puede inyectar turnos.
+  - No vuelve al cliente y no se loguea.
+  - Las filas de turnos anteriores nunca llegan al LLM, y hay tests con centinelas.
+- Docs: updated `README.md`, `docs/ARCHITECTURE.md`, `docs/ARCHITECTURE_DIAGRAM.md`
+
+### Out of scope / follow-ups
+- Pendiente de #10: conectar este historial a la clasificación, como prevé el issue.
