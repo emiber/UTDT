@@ -2,6 +2,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import { generateSql, type StepLogger } from './generate-sql.ts';
 import { buildInsights } from './insights.ts';
 import type { LlmClient } from './llm.ts';
+import { elapsed } from './timing.ts';
 
 // The Text-to-SQL pipeline for one question, without HTTP or app.db: the chat route and the
 // offline evaluation both call it.
@@ -83,8 +84,4 @@ export async function answerQuestion({
     log.info({ step, durationMs: elapsed(started), result: 'error' }, 'Pipeline step failed');
     throw new PipelineError(lastSql, error);
   }
-}
-
-function elapsed(started: number): number {
-  return Math.round(performance.now() - started);
 }

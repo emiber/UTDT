@@ -204,8 +204,10 @@ so follow-ups like "and for last year?" work.
 - All OpenAI calls live in one small module (`backend/src/llm.ts`), so a beta API change
   touches one file. `createLlmClient` builds the client from `OPENAI_API_KEY` and
   `OPENAI_MODEL` and throws naming a missing variable; `requestStructured` makes one
-  Structured Outputs request and returns the parsed object, or throws on a refusal, an
-  incomplete response or output that isn't a JSON object. Each request carries its whole
+  Structured Outputs request and returns the parsed object. Every failure (API or network
+  errors after the SDK's retries, a refusal, an incomplete response, output that isn't a
+  JSON object) is thrown as an `LlmError`, which the chat endpoint maps to a `502`; raw SDK
+  errors never escape. Each request carries its whole
   context, so the response doesn't need to be stored (`store: false`). Pipeline functions
   receive the client as a parameter. **Tests never hit the network**: they pass the fake
   client in `backend/src/testing/fake-llm.ts`.

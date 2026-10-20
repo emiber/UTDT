@@ -3,6 +3,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import { conversationExists, saveTurn, type Turn } from './conversations.ts';
 import { LlmError, type LlmClient } from './llm.ts';
 import { answerQuestion, type Block, type PipelineError } from './pipeline.ts';
+import { elapsed } from './timing.ts';
 
 /** What the bot says when no SQL attempt worked. English, like every hardcoded UI text. */
 export const NO_ANSWER_MESSAGE =
@@ -119,8 +120,4 @@ export function registerChatRoute(app: FastifyInstance, { db, dataDb, llm }: Cha
 /** Fastify's standard error shape. */
 function httpError(statusCode: number, error: string, message: string) {
   return { statusCode, error, message };
-}
-
-function elapsed(started: number): number {
-  return Math.round(performance.now() - started);
 }

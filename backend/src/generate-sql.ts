@@ -3,6 +3,7 @@ import { executeSql, MAX_ROWS } from './execute-sql.ts';
 import { LlmError, requestStructured, type LlmClient } from './llm.ts';
 import { renderPrompt } from './prompts.ts';
 import { buildSchemaContext } from './schema-context.ts';
+import { elapsed } from './timing.ts';
 
 /** Attempts per question, the first one included: at most two retries. */
 export const MAX_ATTEMPTS = 3;
@@ -105,8 +106,4 @@ export async function generateSql({
     }
     failures.push({ sql, message: result.message });
   }
-}
-
-function elapsed(started: number): number {
-  return Math.round(performance.now() - started);
 }
