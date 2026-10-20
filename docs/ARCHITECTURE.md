@@ -117,9 +117,8 @@ Each step is its own issue. The design:
    relationships in load order, without indexes or rows.
 3. **Generate SQL** (Responses API, Structured Outputs) from the question, the schema
    context and the last turns of the conversation (`generateSql` in
-   `backend/src/generate-sql.ts`; the conversation history comes in a later issue). The
-   output is a strict `{ sql }` object, passed to step 4
-   as is. It runs a generate → execute → retry loop: on a returned error, the next request
+   `backend/src/generate-sql.ts`; see *Multi-turn*). The output is a strict `{ sql }`
+   object, passed to step 4 as is. It runs a generate → execute → retry loop: on a returned error, the next request
    carries every failed attempt of the question (its SQL and message), up to **3 attempts
    in total**; after that the last error is returned. OpenAI failures, refusals and
    incomplete responses are thrown, not retried (the SDK already retries transient ones).
@@ -206,8 +205,21 @@ keep their values; `NULL` is `null`. The chart block comes last, after the table
   and saves nothing: those are the only failures after body validation that leave no turn.
 
 **Multi-turn:** each conversation keeps its turns in `app.db`; the last 5 turns
-(question, SQL, narrative — not the data rows) go to the classify, SQL and insights steps,
-so follow-ups like "and for last year?" work.
+(question, SQL, narrative — not the data rows, chart or suggestions) go to the SQL and
+insights steps, so follow-ups like "and for last year?" work. *(Later issue: the
+classification step gets the same history.)*
+
+- `loadHistory` (`backend/src/conversations.ts`) reads them oldest first, before the
+  current turn is saved, so a question is never its own history. A new conversation (no
+  `conversationId`) has none.
+- A failed turn goes with its question only: its last SQL is known to be broken, and its
+  saved text is an error or the fixed "couldn't answer" message. It still takes a place in
+  the window.
+- The prompts render the history from one partial, `prompts/history.liquid`, as context to
+  resolve references in the current question. Every SQL attempt gets it. Fields a turn
+  doesn't have are left out.
+- The window of 5 is a constant: no summarizing or truncation. A reload starts a new
+  conversation, because the frontend keeps the id only in memory.
 
 ### LLM layer (OpenAI API) *(Responses built; Decisions in a later issue)*
 
