@@ -1,0 +1,18 @@
+[
+  { "id": "sales-by-month-2025", "question": "What were the total sales per month in 2025?" },
+  {
+    "id": "revenue-by-country",
+    "question": "Which country had the highest revenue? Show the revenue per country."
+  },
+  { "id": "top-products-by-units", "question": "What are the top 5 products by units sold?" },
+  {
+    "id": "category-share",
+    "question": "¿Qué porcentaje de las ventas representa cada categoría?"
+  },
+  { "id": "customer-count", "question": "How many customers are there?" },
+  {
+    "id": "average-order-by-segment",
+    "question": "What is the average order amount per customer segment?"
+  },
+  { "id": "orders-2023", "question": "How many orders were placed in 2023?" }
+]
