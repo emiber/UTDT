@@ -174,8 +174,9 @@ keep their values; `NULL` is `null`.
 **Chat endpoint** (`POST /api/chat`, `backend/src/chat.ts`):
 
 - The body is validated (`question` with at least one non-space character; `conversationId`
-  a non-empty string), with no type coercion: anything else is a `400`. An unknown
-  `conversationId` is a `404`. Neither calls OpenAI or saves anything.
+  a non-empty string), with no type coercion: anything else is a `400`. Coercion is off
+  app-wide, so future querystring or params schemas must use `type: 'string'` and parse by
+  hand. An unknown `conversationId` is a `404`. Neither calls OpenAI or saves anything.
 - Without a `conversationId` it starts a new conversation (the backend makes the id).
 - `200`: `blocks` = `[text, table]` (`[text]` with 0 rows) and 3 `suggestions`. When every
   SQL attempt fails: `200` with one fixed English `text` block and no suggestions.
@@ -183,7 +184,8 @@ keep their values; `NULL` is `null`.
   an unexpected error, both with a generic message in Fastify's error format; the detail
   goes to the log and the saved turn. A new conversation is created with that turn, but its
   id doesn't come back.
-- A failure to save the turn is a `500`, and it's the only case that saves nothing.
+- A failure to read the conversation or to save the turn is a `500` with a generic message,
+  and saves nothing: those are the only failures after body validation that leave no turn.
 
 **Multi-turn:** each conversation keeps its turns in `app.db`; the last 5 turns
 (question, SQL, narrative — not the data rows) go to the classify, SQL and insights steps,

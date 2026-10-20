@@ -1,4 +1,4 @@
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
 import type { DatabaseSync } from 'node:sqlite';
 import { hasValidAccessKey } from './auth.ts';
 import { readCatalog } from './catalog.ts';
@@ -15,7 +15,8 @@ export interface AppOptions {
   /** The OpenAI client, or a fake one in tests. */
   llm: LlmClient;
   accessKey: string;
-  logger?: boolean;
+  /** Fastify's logger option: `true` in the server; tests may pass a stream to read lines. */
+  logger?: FastifyServerOptions['logger'];
 }
 
 /**
@@ -31,7 +32,9 @@ export function buildApp({
   accessKey,
   logger = false,
 }: AppOptions): FastifyInstance {
-  // No type coercion: a body field of the wrong type is a 400, not silently converted.
+  // No type coercion, app-wide: a body field of the wrong type is a 400, not silently
+  // converted. Querystring and params arrive as strings, so their schemas must say
+  // `type: 'string'` and parse by hand.
   const app = Fastify({ logger, ajv: { customOptions: { coerceTypes: false } } });
   createConversationTables(db);
 

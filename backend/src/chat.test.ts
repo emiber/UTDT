@@ -240,6 +240,31 @@ describe('POST /api/chat', () => {
     expect(turns()[0].error).toMatch(/no such table: meta_tables/);
   });
 
+  it('logs each pipeline step, persist included, with its duration', async () => {
+    const lines: string[] = [];
+    llm = fakeLlm(sqlReply('SELECT name FROM items'), jsonResponse(INSIGHTS));
+    app = buildApp({
+      db,
+      dataDb,
+      llm,
+      accessKey: ACCESS_KEY,
+      logger: { level: 'info', stream: { write: (line: string) => lines.push(line) } },
+    });
+
+    await chat({ question: 'Names?' });
+
+    const steps = lines.map((line) => JSON.parse(line)).filter((entry) => entry.step);
+    expect(steps.map((s) => s.step)).toEqual([
+      'generate_sql',
+      'execute_sql',
+      'sql',
+      'insights',
+      'persist',
+    ]);
+    expect(steps.at(-1)).toMatchObject({ durationMs: expect.any(Number), result: 'ok' });
+    expect(lines.join('\n')).not.toContain(ACCESS_KEY);
+  });
+
   it('answers a generic 500 when the conversation cannot be read', async () => {
     start();
     db.exec('DROP TABLE turns; DROP TABLE conversations');
