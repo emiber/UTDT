@@ -25,3 +25,4 @@ created: 2026-10-19
 16. #17 Agregar timeouts de punta a punta al chat
 17. #18 Estabilizar el arranque de los workers de Vitest
 18. #19 Rechazar al arrancar el placeholder de APP_ACCESS_KEY
+19. #20 Rediseñar la UI del chat con input fijo, mensajes diferenciados y un estilo más cuidado
