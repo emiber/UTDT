@@ -1,3 +1,5 @@
 # Shell scripts and git hooks must keep LF endings so they run from a Windows checkout too.
 *.sh text eol=lf
 .githooks/* text eol=lf
+# Prompt templates keep LF endings, so the rendered prompts are the same on every checkout.
+*.liquid text eol=lf
