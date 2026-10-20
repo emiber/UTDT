@@ -104,7 +104,7 @@ The backend listens on `127.0.0.1:3000`; the Vite dev server (port 5173) proxies
 
 Enough for a local demo, not for real users (see deferred decisions).
 
-### Text-to-SQL pipeline *(steps 2–6 built; classification and charts in later issues)*
+### Text-to-SQL pipeline *(steps 2–6 built; classification in a later issue)*
 
 Each step is its own issue. The design:
 
@@ -146,16 +146,26 @@ Each step is its own issue. The design:
 5. **Build the insights** (Responses API, Structured Outputs; `buildInsights` in
    `backend/src/insights.ts`). The LLM receives the question, the SQL, the column list,
    the first 50 rows and the total row count, and returns **only** the narrative
-   (markdown) and exactly 3 follow-up suggestions, in the language of the question. *(Later
-   issue: a chart spec — `type`: bar/line/pie/doughnut, `x` column, `series` columns,
-   title.)* The **backend** builds the table (and later the chart data) from the real
-   result rows — the LLM never re-types data, so it can't invent numbers, and it saves
-   tokens. With 0 rows there's no table.
+   (markdown), exactly 3 follow-up suggestions, in the language of the question, and a
+   chart spec or `null` (`type`: bar/line/pie/doughnut, `x` column, `series` columns,
+   title). The prompt asks for `null` when the result can't be charted or a chart adds
+   nothing (e.g. one or two rows). The **backend** builds the table and the chart data from
+   the real result rows — the LLM never re-types data, so it can't invent numbers, and it
+   saves tokens. With 0 rows there's no table and no chart.
+
+   `buildChart` (`backend/src/chart.ts`) checks the spec against the result: the result has
+   rows; `x` and each series name exactly one result column (a repeated name doesn't);
+   `series` isn't empty and doesn't include `x`; every series value is a number or `null`;
+   `pie`/`doughnut` take exactly one series. A spec that fails is dropped with a warning
+   in the log (its reason, not the rows): the answer comes out without a chart, and the
+   insights call isn't retried. Rows keep their SQL order: nothing is grouped, sorted or
+   cut.
 6. **Persist the turn** in `app.db` (question, SQL, narrative, response, error, timing;
    later the classification). Failed turns are saved too, so the turns are the query log.
 
 Steps 2–5 run in `answerQuestion` (`backend/src/pipeline.ts`), with no HTTP or `app.db`,
-so the offline evaluation can reuse it. When every SQL attempt fails it returns why
+so the offline evaluation can reuse it. Its result also carries the checked chart spec (or
+`null`), which the HTTP response leaves out. When every SQL attempt fails it returns why
 (without insights); anything it throws is a `PipelineError` whose `cause` is the original
 error (an `LlmError` for OpenAI failures) and which keeps the final SQL, if any.
 
@@ -165,11 +175,18 @@ The response is a list of typed blocks the frontend renders in order:
 type Block =
   | { type: 'text'; markdown: string }
   | { type: 'table'; columns: string[]; rows: (string | number | null)[][] }
-  | { type: 'chart'; ... }; // Chart.js-ready labels + datasets (later issue)
+  | {
+      type: 'chart';
+      chartType: 'bar' | 'line' | 'pie' | 'doughnut';
+      title: string;
+      labels: string[]; // the x column's values as text, in row order
+      datasets: { label: string; data: (number | null)[] }[]; // one per series column
+    };
 ```
 
 Table rows are lists aligned with `columns`, in `SELECT` order, so repeated column names
-keep their values; `NULL` is `null`.
+keep their values; `NULL` is `null`. The chart block comes last, after the table. Its
+`labels` and `datasets` are Chart.js's `data` shape; the frontend adds the colors.
 
 **Chat endpoint** (`POST /api/chat`, `backend/src/chat.ts`):
 
@@ -235,9 +252,9 @@ issue.
 - Below it, the chat view (`ChatView.vue`): a question input and the conversation thread.
   - Each question shows a waiting indicator; input, button and suggestions are disabled
     until the answer arrives (one question at a time, no streaming).
-  - `ResponseBlocks.vue` renders the blocks in order: `text` as markdown with `micromark`
-    and `table` as a plain HTML table, cells placed by position. *(Later issue: the
-    `chart` block.)* Raw HTML is escaped, `javascript:` links are dropped, and markdown
+  - `ResponseBlocks.vue` renders the blocks in order: `text` as markdown with `micromark`,
+    `table` as a plain HTML table, cells placed by position, and `chart` with
+    `ChartBlock.vue`. Raw HTML is escaped, `javascript:` links are dropped, and markdown
     images are turned off (they render as plain links), so the LLM's text can't inject
     markup or make the browser load a remote URL by itself. Links open in a new tab
     (`noopener noreferrer`), so clicking one doesn't lose the in-memory thread.
@@ -250,7 +267,9 @@ issue.
     conversation.
 - Plain components and composables: no router (two screens, switched by auth state),
   no state library, no UI kit. Styles in SCSS.
-- Charts with Chart.js through vue-chartjs. The backend already sends Chart.js-shaped data.
+- Charts with Chart.js through vue-chartjs (`ChartBlock.vue`): bar, line, pie and doughnut,
+  with the block's title and Chart.js's default palette (the `Colors` plugin). The block
+  is drawn as it comes: the backend already checked it against the rows.
 - UI texts in English and hardcoded, no i18n. The bot answers in the language of the
   question.
 
@@ -286,7 +305,7 @@ persisted turns in `app.db` are the query log. Nothing else for a POC.
 
 Each dependency is added by the first piece of work that uses it: the scaffold installs
 only what the scaffold's code uses. `openai` and `liquidjs` came with SQL generation;
-`micromark` came with the chat UI; `chart.js`/`vue-chartjs` come with their issue.
+`micromark` came with the chat UI, and `chart.js`/`vue-chartjs` with the charts.
 
 ## Quality gate
 
