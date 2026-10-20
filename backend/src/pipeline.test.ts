@@ -1,9 +1,8 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { StepLogger } from './generate-sql.ts';
 import { SAMPLE_ROWS } from './insights.ts';
 import { LlmError } from './llm.ts';
-import { answerQuestion, PipelineError } from './pipeline.ts';
+import { answerQuestion, PipelineError, type PipelineLogger } from './pipeline.ts';
 import { openTestDataDb } from './testing/dataset.ts';
 import { fakeLlm, jsonResponse, refusalResponse } from './testing/fake-llm.ts';
 
@@ -12,12 +11,14 @@ const sqlReply = (sql: string) => jsonResponse({ sql });
 
 let dataDb: DatabaseSync;
 let logs: Record<string, unknown>[];
-let log: StepLogger;
+let warnings: Record<string, unknown>[];
+let log: PipelineLogger;
 
 beforeEach(() => {
   dataDb = openTestDataDb();
   logs = [];
-  log = { info: (fields) => logs.push(fields) };
+  warnings = [];
+  log = { info: (fields) => logs.push(fields), warn: (fields) => warnings.push(fields) };
 });
 
 afterEach(() => {
@@ -50,6 +51,7 @@ describe('answerQuestion', () => {
       ],
       narrative: 'Ink sold the most.',
       suggestions: ['A?', 'B?', 'C?'],
+      chart: null,
       blocks: [
         { type: 'text', markdown: 'Ink sold the most.' },
         {
@@ -151,5 +153,50 @@ describe('answerQuestion', () => {
       { step: 'sql', durationMs: expect.any(Number), result: 'ok' },
       { step: 'insights', durationMs: expect.any(Number), result: 'ok' },
     ]);
+  });
+
+  describe('chart', () => {
+    const SQL = 'SELECT name, qty FROM items ORDER BY id';
+    const SPEC = { type: 'bar', x: 'name', series: ['qty'], title: 'Units' };
+    const withChart = (chart: unknown, sql = SQL) =>
+      fakeLlm(sqlReply(sql), jsonResponse({ ...INSIGHTS, chart }));
+
+    it('adds the chart block after the table and returns the spec', async () => {
+      const result = await ask(withChart(SPEC));
+
+      expect(result.ok && result.blocks.map((b) => b.type)).toEqual(['text', 'table', 'chart']);
+      expect(result.ok && result.blocks[2]).toEqual({
+        type: 'chart',
+        chartType: 'bar',
+        title: 'Units',
+        labels: ['pen', 'ink'],
+        datasets: [{ label: 'qty', data: [3, 5] }],
+      });
+      expect(result.ok && result.chart).toEqual(SPEC);
+      expect(warnings).toEqual([]);
+    });
+
+    it('adds no chart and warns nothing when the spec is null', async () => {
+      const result = await ask(withChart(null));
+
+      expect(result.ok && result.blocks.map((b) => b.type)).toEqual(['text', 'table']);
+      expect(result.ok && result.chart).toBeNull();
+      expect(warnings).toEqual([]);
+    });
+
+    it('drops a spec that does not fit the result, with a warning', async () => {
+      const result = await ask(withChart({ ...SPEC, series: ['nope'] }));
+
+      expect(result.ok && result.blocks.map((b) => b.type)).toEqual(['text', 'table']);
+      expect(result.ok && result.chart).toBeNull();
+      expect(warnings).toEqual([{ step: 'chart', reason: 'column "nope" is not in the result' }]);
+    });
+
+    it('drops a spec for an empty result, keeping only the text block', async () => {
+      const result = await ask(withChart(SPEC, 'SELECT name, qty FROM items WHERE qty > 99'));
+
+      expect(result.ok && result.blocks.map((b) => b.type)).toEqual(['text']);
+      expect(warnings).toEqual([{ step: 'chart', reason: 'the result has no rows' }]);
+    });
   });
 });

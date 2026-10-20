@@ -140,6 +140,41 @@ describe('POST /api/chat', () => {
     expect(body.suggestions).toHaveLength(3);
   });
 
+  it('adds the chart block after the table, without the spec in the response', async () => {
+    const chart = { type: 'bar', x: 'name', series: ['qty'], title: 'Units per item' };
+    start(
+      sqlReply('SELECT name, qty FROM items ORDER BY id'),
+      jsonResponse({ ...INSIGHTS, chart }),
+    );
+
+    const body = (await chat({ question: 'Units per item?' })).json();
+
+    expect(body.blocks.map((b: { type: string }) => b.type)).toEqual(['text', 'table', 'chart']);
+    expect(body.blocks[2]).toEqual({
+      type: 'chart',
+      chartType: 'bar',
+      title: 'Units per item',
+      labels: ['pen', 'ink'],
+      datasets: [{ label: 'qty', data: [3, 5] }],
+    });
+    expect(Object.keys(body)).toEqual(['conversationId', 'turnId', 'blocks', 'suggestions']);
+  });
+
+  it.each([
+    ['an unknown x', { type: 'bar', x: 'day', series: ['qty'], title: 't' }],
+    ['a text series', { type: 'bar', x: 'qty', series: ['name'], title: 't' }],
+    ['a pie with two series', { type: 'pie', x: 'name', series: ['qty', 'id'], title: 't' }],
+  ])('answers 200 without a chart for %s, with one insights call', async (_case, chart) => {
+    start(sqlReply('SELECT id, name, qty FROM items'), jsonResponse({ ...INSIGHTS, chart }));
+
+    const res = await chat({ question: 'Units?' });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().blocks.map((b: { type: string }) => b.type)).toEqual(['text', 'table']);
+    expect(res.json().suggestions).toHaveLength(3);
+    expect(llm.requests).toHaveLength(2);
+  });
+
   it.each([
     ['no question', {}],
     ['a question that is not a string', { question: 42 }],

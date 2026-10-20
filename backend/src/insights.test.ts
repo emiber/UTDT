@@ -15,10 +15,10 @@ const input = (rows: unknown[][], llm = fakeLlm(jsonResponse(INSIGHTS))) => ({
 
 describe('buildInsights', () => {
   it('returns the narrative and suggestions', async () => {
-    expect(await buildInsights(input([['ink', 5]]))).toEqual(INSIGHTS);
+    expect(await buildInsights(input([['ink', 5]]))).toEqual({ ...INSIGHTS, chart: null });
   });
 
-  it('asks for only a narrative and 3 suggestions, with no field for data', async () => {
+  it('asks for a narrative, 3 suggestions and a chart spec, with no field for data', async () => {
     const llm = fakeLlm(jsonResponse(INSIGHTS));
 
     await buildInsights(input([['ink', 5]], llm));
@@ -27,8 +27,47 @@ describe('buildInsights', () => {
     expect(format).toMatchObject({ type: 'json_schema', name: 'insights', strict: true });
     const schema = (format as unknown as { schema: { properties: Record<string, unknown> } })
       .schema;
-    expect(Object.keys(schema.properties)).toEqual(['narrative', 'suggestions']);
+    expect(Object.keys(schema.properties)).toEqual(['narrative', 'suggestions', 'chart']);
     expect(schema.properties.suggestions).toMatchObject({ minItems: 3, maxItems: 3 });
+    // The chart spec only names columns: there's no field for values.
+    const chart = schema.properties.chart as { anyOf: { properties?: object }[] };
+    expect(Object.keys(chart.anyOf[0].properties ?? {})).toEqual(['type', 'x', 'series', 'title']);
+  });
+
+  it('asks for a nullable chart spec with the four chart types', async () => {
+    const llm = fakeLlm(jsonResponse(INSIGHTS));
+
+    await buildInsights(input([['ink', 5]], llm));
+
+    const { schema } = llm.requests[0].text?.format as unknown as {
+      schema: { properties: { chart: { anyOf: Record<string, unknown>[] } }; required: string[] };
+    };
+    expect(schema.required).toContain('chart');
+    const [spec, none] = schema.properties.chart.anyOf;
+    expect(none).toEqual({ type: 'null' });
+    expect(spec).toMatchObject({
+      type: 'object',
+      required: ['type', 'x', 'series', 'title'],
+      properties: { type: { enum: ['bar', 'line', 'pie', 'doughnut'] } },
+    });
+    const instructions = String(llm.requests[0].instructions);
+    expect(instructions).toContain('set chart to null');
+    expect(instructions).toContain('one or two rows');
+    expect(instructions).toContain("Don't mention the chart in the narrative");
+  });
+
+  it('returns the chart spec, or null when there is none', async () => {
+    const chart = { type: 'bar', x: 'name', series: ['qty'], title: 'Units' };
+
+    const withChart = await buildInsights(
+      input([['ink', 5]], fakeLlm(jsonResponse({ ...INSIGHTS, chart }))),
+    );
+    const without = await buildInsights(
+      input([['ink', 5]], fakeLlm(jsonResponse({ ...INSIGHTS, chart: null }))),
+    );
+
+    expect(withChart.chart).toEqual(chart);
+    expect(without.chart).toBeNull();
   });
 
   it('sends the question, the SQL, the columns, the rows and the total', async () => {
@@ -51,7 +90,7 @@ describe('buildInsights', () => {
     expect(prompt).toContain('Total rows: 2');
     expect(prompt).toContain('Rows (JSON, one per line):\n["ink",5]\n["pen",null]');
     expect(String(llm.requests[0].instructions)).toContain(
-      'Answer in the language of the question',
+      'Write everything in the language of the question',
     );
   });
 
