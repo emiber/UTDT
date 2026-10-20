@@ -9,8 +9,10 @@ what the data means from metadata tables.
 **Status:** early POC. `npm run seed` loads a demo dataset, and the API is protected by a
 shared access key. The frontend first asks for that key (the `APP_ACCESS_KEY` value from
 your `.env`), then shows the backend status and an `Available data` section with the
-tables, columns, relationships and indexes the bot knows about. Features are built one
-small issue at a time; see
+tables, columns, relationships and indexes the bot knows about. The backend already
+answers questions at `POST /api/chat` with a narrative and a table of real data, inside a
+conversation saved in `data/app.db`; the chat UI comes next. Features are built one small
+issue at a time; see
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design and the decisions behind it.
 
 ## Stack
@@ -25,7 +27,7 @@ Prerequisites: **Node.js 24+** (it runs the backend's TypeScript natively and sh
 ```bash
 npm install
 git config core.hooksPath .githooks   # once per clone: activates the local main guard
-cp .env.example .env                  # in the repo root; then set APP_ACCESS_KEY in .env
+cp .env.example .env                  # in the repo root; then set the three variables in .env
 npm run seed                          # creates data/data.db with the demo dataset
 npm run dev
 ```
@@ -38,6 +40,11 @@ missing. Replace the placeholder with a random value, for example:
 ```bash
 node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
 ```
+
+`OPENAI_API_KEY` and `OPENAI_MODEL` are required too: the backend builds the OpenAI client
+at startup and refuses to start without either, naming the missing one. The key is used
+for every OpenAI call; the model must support Structured Outputs in the Responses API
+(e.g. `gpt-5.4-mini`).
 
 `npm run seed` loads a small, fictitious sales dataset and the metadata that describes it
 to the bot (see *Data* in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)). It's **required
@@ -77,7 +84,9 @@ backend/src/    Fastify app (app.ts), entry points (server.ts, seed-cli.ts), acc
                 seed.ts), demo data (demo-dataset.ts), data catalog (catalog.ts), guarded
                 SQL execution (execute-sql.ts), OpenAI client (llm.ts), prompt templates
                 (prompts/, prompts.ts), schema context (schema-context.ts), SQL generation
-                with retries (generate-sql.ts), test helpers (testing/)
+                with retries (generate-sql.ts), insights (insights.ts), the pipeline
+                (pipeline.ts), the chat route (chat.ts), conversations and turns
+                (conversations.ts), test helpers (testing/)
 frontend/src/   Vue app (App.vue), API client (api.ts), access-key state (auth.ts),
                 components (components/), styles (styles/)
 data/           SQLite files, generated and gitignored

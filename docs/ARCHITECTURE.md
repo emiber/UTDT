@@ -82,7 +82,7 @@ only purpose is to exercise the pipeline.
 |---|---|---|---|
 | `GET` | `/api/health` | none | Liveness check; reports the SQLite version of `app.db` (scaffold) |
 | `GET` | `/api/catalog` | access key | What the bot can answer about: declared tables with their columns and indexes, and their relationships (see *Catalog* above). A read error is a standard `500` |
-| `POST` | `/api/chat` | access key | `{ conversationId?, question }` → `{ conversationId, turnId, blocks, suggestions }` *(later issue)* |
+| `POST` | `/api/chat` | access key | `{ conversationId?, question }` → `{ conversationId, turnId, blocks, suggestions }`: runs the pipeline below and saves the turn (see *Chat endpoint*) |
 
 The backend listens on `127.0.0.1:3000`; the Vite dev server (port 5173) proxies `/api` there.
 
@@ -104,7 +104,7 @@ The backend listens on `127.0.0.1:3000`; the Vite dev server (port 5173) proxies
 
 Enough for a local demo, not for real users (see deferred decisions).
 
-### Text-to-SQL pipeline *(steps 2–4 built; the rest in later issues)*
+### Text-to-SQL pipeline *(steps 2–6 built; classification and charts in later issues)*
 
 Each step is its own issue. The design:
 
@@ -143,16 +143,47 @@ Each step is its own issue. The design:
    `sql`, `row_limit`) and a message for the LLM; anything else (a closed connection, a
    locked, corrupt or non-database file, a hot journal, I/O errors) is thrown. On a
    returned error the LLM retries with the message as feedback (step 3).
-5. **Build the insights** (Responses API, Structured Outputs). The LLM receives the
-   question, the SQL, the column list and a sample of the rows, and returns **only**
-   the narrative, a chart spec (`type`: bar/line/pie/doughnut, `x` column, `series`
-   columns, title) and 3 follow-up suggestions. The **backend** builds the table and the
-   chart data from the real result rows — the LLM never re-types data, so it can't
-   invent numbers, and it saves tokens.
-6. **Persist the turn** in `app.db` (question, classification, SQL, response, error, timing).
+5. **Build the insights** (Responses API, Structured Outputs; `buildInsights` in
+   `backend/src/insights.ts`). The LLM receives the question, the SQL, the column list,
+   the first 50 rows and the total row count, and returns **only** the narrative
+   (markdown) and exactly 3 follow-up suggestions, in the language of the question. *(Later
+   issue: a chart spec — `type`: bar/line/pie/doughnut, `x` column, `series` columns,
+   title.)* The **backend** builds the table (and later the chart data) from the real
+   result rows — the LLM never re-types data, so it can't invent numbers, and it saves
+   tokens. With 0 rows there's no table.
+6. **Persist the turn** in `app.db` (question, SQL, narrative, response, error, timing;
+   later the classification). Failed turns are saved too, so the turns are the query log.
+
+Steps 2–5 run in `answerQuestion` (`backend/src/pipeline.ts`), with no HTTP or `app.db`,
+so the offline evaluation can reuse it. When every SQL attempt fails it returns why
+(without insights); anything it throws is a `PipelineError` whose `cause` is the original
+error (an `LlmError` for OpenAI failures) and which keeps the final SQL, if any.
 
 The response is a list of typed blocks the frontend renders in order:
-`text` (markdown), `table` (columns + rows), `chart` (Chart.js-ready labels + datasets).
+
+```ts
+type Block =
+  | { type: 'text'; markdown: string }
+  | { type: 'table'; columns: string[]; rows: (string | number | null)[][] }
+  | { type: 'chart'; ... }; // Chart.js-ready labels + datasets (later issue)
+```
+
+Table rows are lists aligned with `columns`, in `SELECT` order, so repeated column names
+keep their values; `NULL` is `null`.
+
+**Chat endpoint** (`POST /api/chat`, `backend/src/chat.ts`):
+
+- The body is validated (`question` with at least one non-space character; `conversationId`
+  a non-empty string), with no type coercion: anything else is a `400`. An unknown
+  `conversationId` is a `404`. Neither calls OpenAI or saves anything.
+- Without a `conversationId` it starts a new conversation (the backend makes the id).
+- `200`: `blocks` = `[text, table]` (`[text]` with 0 rows) and 3 `suggestions`. When every
+  SQL attempt fails: `200` with one fixed English `text` block and no suggestions.
+- `502` when an OpenAI call fails (API, network, refusal, incomplete output) and `500` on
+  an unexpected error, both with a generic message in Fastify's error format; the detail
+  goes to the log and the saved turn. A new conversation is created with that turn, but its
+  id doesn't come back.
+- A failure to save the turn is a `500`, and it's the only case that saves nothing.
 
 **Multi-turn:** each conversation keeps its turns in `app.db`; the last 5 turns
 (question, SQL, narrative — not the data rows) go to the classify, SQL and insights steps,
@@ -207,8 +238,8 @@ issue.
 
 ### Observability
 
-Fastify's built-in logger (pino), with one log line per pipeline step and its duration.
-SQL generation logs each attempt's generation (`ok` or `error`) and execution (`ok`, the
+Fastify's built-in logger (pino), with one log line per pipeline step and its duration:
+`sql`, `insights` and `persist` for each chat request, plus SQL generation, which logs each attempt's generation (`ok` or `error`) and execution (`ok`, the
 error `kind`, or `error` when it throws), without the SQL or the question. The persisted
 turns in `app.db` are the query log. Nothing else for a POC.
 
@@ -254,10 +285,10 @@ only what the scaffold's code uses. `openai` and `liquidjs` came with SQL genera
 ## Configuration
 
 Root `.env` (gitignored; placeholders in `.env.example`), loaded by Node's
-`--env-file-if-exists`. `APP_ACCESS_KEY` (auth) is **required**: without it the backend
-refuses to start. Each issue adds the variables it uses. `OPENAI_API_KEY` and
-`OPENAI_MODEL` (LLM) are listed too, but nothing checks them at startup until the chat
-endpoint, which will make them required. Fixed for now, and
+`--env-file-if-exists`. All three variables are **required**: without any of them the
+backend refuses to start, with an error naming it. `APP_ACCESS_KEY` is the app's shared
+key (auth); `OPENAI_API_KEY` and `OPENAI_MODEL` (a model with Structured Outputs in the
+Responses API) are for the LLM. Each issue adds the variables it uses. Fixed for now, and
 not configurable: the database paths (`data/app.db`, `data/data.db`, relative to the repo
 root), the backend port (3000), and tuning values (retry budget, row cap, context turns).
 They become config only when there's a reason.
