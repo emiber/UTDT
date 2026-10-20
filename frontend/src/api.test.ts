@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, apiFetch, getHealth } from './api.ts';
+import { ApiError, apiFetch, getCatalog, getHealth } from './api.ts';
 import { auth, loadStoredKey, saveKey } from './auth.ts';
 
 function stubFetch(...responses: (Response | Error)[]) {
@@ -133,5 +133,23 @@ describe('getHealth', () => {
     stubFetch(new Response(null, { status: 503 }));
 
     await expect(getHealth()).rejects.toThrow('HTTP 503');
+  });
+});
+
+describe('getCatalog', () => {
+  it('returns the catalog, sending the access key', async () => {
+    const payload = { tables: [], relationships: [] };
+    const fetchMock = stubFetch(Response.json(payload));
+
+    await expect(getCatalog()).resolves.toEqual(payload);
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/catalog');
+    expect(sentHeaders(fetchMock).get('Authorization')).toBe('Bearer the-key');
+  });
+
+  it('rejects on an error status or a network error', async () => {
+    stubFetch(new Response(null, { status: 500 }), new TypeError('Failed to fetch'));
+
+    await expect(getCatalog()).rejects.toThrow('HTTP 500');
+    await expect(getCatalog()).rejects.toThrow('Failed to fetch');
   });
 });
