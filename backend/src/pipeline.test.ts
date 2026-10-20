@@ -1,6 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { StepLogger } from './generate-sql.ts';
+import { SAMPLE_ROWS } from './insights.ts';
 import { LlmError } from './llm.ts';
 import { answerQuestion, PipelineError } from './pipeline.ts';
 import { openTestDataDb } from './testing/dataset.ts';
@@ -101,6 +102,34 @@ describe('answerQuestion', () => {
 
     expect(error.cause).toBeInstanceOf(LlmError);
     expect(error.sql).toBe('SELECT name FROM items');
+    expect(logs.at(-1)).toEqual({
+      step: 'insights',
+      durationMs: expect.any(Number),
+      result: 'error',
+    });
+  });
+
+  it('keeps the last SQL tried when a retry request fails', async () => {
+    const llm = fakeLlm(sqlReply('SELECT nope FROM items'), new Error('429 Rate limit reached'));
+
+    const error = await rejection(ask(llm));
+
+    expect(error.sql).toBe('SELECT nope FROM items');
+    expect(logs.at(-1)).toMatchObject({ step: 'sql', result: 'error' });
+  });
+
+  it(`gives the table every row while the insights see only ${SAMPLE_ROWS}`, async () => {
+    const total = SAMPLE_ROWS + 10;
+    const sql = `WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ${total}) SELECT i FROM n`;
+    const llm = fakeLlm(sqlReply(sql), jsonResponse(INSIGHTS));
+
+    const result = await ask(llm);
+
+    expect(result.ok && result.blocks[1]).toMatchObject({ type: 'table', columns: ['i'] });
+    expect(result.ok && (result.blocks[1] as { rows: unknown[] }).rows).toHaveLength(total);
+    const prompt = String(llm.requests[1].input);
+    expect(prompt).toContain(`Total rows: ${total}`);
+    expect(prompt).toContain(`First ${SAMPLE_ROWS} rows`);
   });
 
   it('throws on an unexpected error, keeping it as the cause', async () => {

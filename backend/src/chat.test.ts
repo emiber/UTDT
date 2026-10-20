@@ -200,6 +200,11 @@ describe('POST /api/chat', () => {
     ['the SQL request throws', [new Error('429 Rate limit reached')], null],
     ['the SQL request is refused', [refusalResponse('No.')], null],
     [
+      'a retry request throws',
+      [sqlReply('SELECT nope FROM items'), new Error('429 Rate limit reached')],
+      'SELECT nope FROM items',
+    ],
+    [
       'the insights request fails',
       [sqlReply('SELECT name FROM items'), new Error('500 Internal Server Error')],
       'SELECT name FROM items',
@@ -233,6 +238,21 @@ describe('POST /api/chat', () => {
       message: 'Something went wrong while answering the question.',
     });
     expect(turns()[0].error).toMatch(/no such table: meta_tables/);
+  });
+
+  it('answers a generic 500 when the conversation cannot be read', async () => {
+    start();
+    db.exec('DROP TABLE turns; DROP TABLE conversations');
+
+    const res = await chat({ question: 'Names?', conversationId: 'some-id' });
+
+    expect(res.statusCode).toBe(500);
+    expect(res.json()).toEqual({
+      statusCode: 500,
+      error: 'Internal Server Error',
+      message: 'Could not read the conversation.',
+    });
+    expect(llm.requests).toHaveLength(0);
   });
 
   it('answers 500 when the turn cannot be saved', async () => {

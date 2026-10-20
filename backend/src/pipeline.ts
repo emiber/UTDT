@@ -23,9 +23,9 @@ export type PipelineResult =
   /** Every SQL attempt failed: the last attempt's SQL and error. */
   | { ok: false; sql: string; kind: 'guard' | 'sql' | 'row_limit'; message: string };
 
-/** A thrown pipeline failure, with the SQL it had reached, so the turn can keep it. */
+/** A thrown pipeline failure, with the last SQL it generated, so the turn can keep it. */
 export class PipelineError extends Error {
-  /** The final SQL when a later step failed, or null. */
+  /** The last generated SQL (final or still being retried), or null if there was none. */
   readonly sql: string | null;
 
   constructor(sql: string | null, cause: unknown) {
@@ -54,24 +54,25 @@ export async function answerQuestion({
   llm,
   log,
 }: PipelineInput): Promise<PipelineResult> {
-  let finalSql: string | null = null;
+  let lastSql: string | null = null;
+  let step = 'sql';
+  let started = performance.now();
   try {
-    let started = performance.now();
-    const result = await generateSql({ question, db: dataDb, llm, log });
+    const onSql = (sql: string) => {
+      lastSql = sql;
+    };
+    const result = await generateSql({ question, db: dataDb, llm, log, onSql });
     log.info(
-      { step: 'sql', durationMs: elapsed(started), result: result.ok ? 'ok' : result.kind },
+      { step, durationMs: elapsed(started), result: result.ok ? 'ok' : result.kind },
       'Pipeline step done',
     );
     if (!result.ok) return result;
-    finalSql = result.sql;
 
+    step = 'insights';
     started = performance.now();
     const { sql, columns, rows } = result;
     const { narrative, suggestions } = await buildInsights({ question, sql, columns, rows, llm });
-    log.info(
-      { step: 'insights', durationMs: elapsed(started), result: 'ok' },
-      'Pipeline step done',
-    );
+    log.info({ step, durationMs: elapsed(started), result: 'ok' }, 'Pipeline step done');
 
     const blocks: Block[] = [{ type: 'text', markdown: narrative }];
     if (result.rows.length) {
@@ -79,7 +80,8 @@ export async function answerQuestion({
     }
     return { ...result, narrative, suggestions, blocks };
   } catch (error) {
-    throw new PipelineError(finalSql, error);
+    log.info({ step, durationMs: elapsed(started), result: 'error' }, 'Pipeline step failed');
+    throw new PipelineError(lastSql, error);
   }
 }
 

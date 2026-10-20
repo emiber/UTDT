@@ -31,6 +31,8 @@ export interface GenerateSqlInput {
   db: DatabaseSync;
   llm: LlmClient;
   log: StepLogger;
+  /** Called with each generated SQL, so a caller still knows the last one if a later step throws. */
+  onSql?: (sql: string) => void;
 }
 
 /**
@@ -44,6 +46,7 @@ export async function generateSql({
   db,
   llm,
   log,
+  onSql,
 }: GenerateSqlInput): Promise<GenerateSqlResult> {
   const schemaContext = buildSchemaContext(db);
   const instructions = renderPrompt('sql-system', { maxRows: MAX_ROWS });
@@ -61,6 +64,7 @@ export async function generateSql({
       });
       if (typeof output.sql !== 'string') throw new LlmError('The model returned no SQL string.');
       sql = output.sql;
+      onSql?.(sql);
     } catch (error) {
       // A failed or hung call still shows up in the log, with how long it took.
       log.info(

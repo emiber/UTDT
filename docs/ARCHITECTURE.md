@@ -238,10 +238,11 @@ issue.
 
 ### Observability
 
-Fastify's built-in logger (pino), with one log line per pipeline step and its duration:
-`sql`, `insights` and `persist` for each chat request, plus SQL generation, which logs each attempt's generation (`ok` or `error`) and execution (`ok`, the
-error `kind`, or `error` when it throws), without the SQL or the question. The persisted
-turns in `app.db` are the query log. Nothing else for a POC.
+Fastify's built-in logger (pino), with one log line per pipeline step and its duration,
+failed steps included: `sql`, `insights` and `persist` for each chat request, plus SQL
+generation, which logs each attempt's generation (`ok` or `error`) and execution (`ok`,
+the error `kind`, or `error` when it throws), without the SQL or the question. The
+persisted turns in `app.db` are the query log. Nothing else for a POC.
 
 ## Tech stack
 
@@ -290,7 +291,8 @@ backend refuses to start, with an error naming it. `APP_ACCESS_KEY` is the app's
 key (auth); `OPENAI_API_KEY` and `OPENAI_MODEL` (a model with Structured Outputs in the
 Responses API) are for the LLM. Each issue adds the variables it uses. Fixed for now, and
 not configurable: the database paths (`data/app.db`, `data/data.db`, relative to the repo
-root), the backend port (3000), and tuning values (retry budget, row cap, context turns).
+root), the backend port (3000), and tuning values (retry budget, row cap, insights row
+sample, context turns).
 They become config only when there's a reason.
 
 ## Deferred decisions

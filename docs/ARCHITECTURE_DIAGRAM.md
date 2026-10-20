@@ -26,7 +26,7 @@ flowchart TB
       classify["1 · Classify the question"]
       genSql["2-3 · Schema context + generate SQL"]
       guard["4 · Guard and execute<br/>SELECT/WITH only · row cap"]
-      insights["5 · Build the insights<br/>narrative · chart spec · suggestions"]
+      insights["5 · Build the insights<br/>narrative · suggestions"]
       persist["6 · Persist the turn"]
     end
   end

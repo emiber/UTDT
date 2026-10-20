@@ -43,7 +43,16 @@ export function registerChatRoute(app: FastifyInstance, { db, dataDb, llm }: Cha
       const started = performance.now();
       const { question } = request.body;
       const conversationId = request.body.conversationId ?? null;
-      if (conversationId && !conversationExists(db, conversationId)) {
+      let known: boolean;
+      try {
+        known = !conversationId || conversationExists(db, conversationId);
+      } catch (error) {
+        request.log.error({ err: error }, 'Could not read the conversation');
+        return reply
+          .code(500)
+          .send(httpError(500, 'Internal Server Error', 'Could not read the conversation.'));
+      }
+      if (!known) {
         return reply.code(404).send(httpError(404, 'Not Found', 'Conversation not found.'));
       }
 
@@ -84,6 +93,10 @@ export function registerChatRoute(app: FastifyInstance, { db, dataDb, llm }: Cha
       try {
         saved = saveTurn(db, conversationId, { ...turn, durationMs: elapsed(started) });
       } catch (error) {
+        request.log.info(
+          { step: 'persist', durationMs: elapsed(persistStarted), result: 'error' },
+          'Pipeline step failed',
+        );
         request.log.error({ err: error }, 'Could not save the turn');
         return reply
           .code(500)
