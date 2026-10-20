@@ -115,13 +115,26 @@ Each step is its own issue. The design:
 2. **Build the schema context** from the metadata tables.
 3. **Generate SQL** (Responses API, Structured Outputs) from the question, the schema
    context and the last turns of the conversation.
-4. **Guard and execute.** Safety is layered:
+4. **Guard and execute** (`executeSql` in `backend/src/execute-sql.ts`). Safety is layered:
    - the query runs on a **read-only** connection — SQLite itself rejects any write;
    - a cheap check accepts exactly one statement starting with `SELECT` or `WITH`
-     (also blocks `ATTACH`/`PRAGMA`), so the LLM gets a clear error to fix;
-   - a row cap: an oversized result is sent back for a more selective query.
-   On a guard or SQL error the LLM retries with the error as feedback, up to a fixed
-   retry budget.
+     (also blocks `ATTACH`/`PRAGMA`, `CREATE TEMP TABLE`, and the extra statements
+     `node:sqlite` would silently drop), so the LLM gets a clear error to fix. SQLite's
+     own parser decides where the first statement ends (`sourceSQL`), so a `;` inside a
+     string, a quoted identifier or a comment doesn't count;
+   - a row cap of 500: a bigger result is rejected, not truncated, and reading stops at
+     row 501. That bounds rows, not work: a query that must read everything before its
+     first row (`ORDER BY`, `GROUP BY`, aggregates) still runs in full (see *Query
+     timeout* in the deferred decisions). Value size isn't capped either: a value of
+     hundreds of MB (e.g. `hex(zeroblob(300000000))`) can crash the Node process. Only
+     values over SQLite's own 1 GB limit come back as an error.
+
+   Rows come back as lists aligned with the column names, so duplicate names keep both
+   values. Errors a rewritten query can fix are **returned** with a `kind` (`guard`,
+   `sql`, `row_limit`) and a message for the LLM; anything else (a closed connection, a
+   locked, corrupt or non-database file, a hot journal, I/O errors) is thrown. On a
+   returned error the LLM retries with the message as feedback, up to a fixed retry
+   budget.
 5. **Build the insights** (Responses API, Structured Outputs). The LLM receives the
    question, the SQL, the column list and a sample of the rows, and returns **only**
    the narrative, a chart spec (`type`: bar/line/pie/doughnut, `x` column, `series`
@@ -237,7 +250,7 @@ They become config only when there's a reason.
 | Online judge (scoring every answer live) | The offline eval measures quality without adding latency or cost to each chat |
 | Judge rationale via the Responses API | Decisions gives scores without a "why". Add explanations for low scores only if the scores alone aren't enough |
 | Real authentication / users | Local POC: a shared key is enough |
-| Query timeout / worker thread | `node:sqlite` is synchronous, so a slow query blocks the server. That's fine for one user on a small dataset; move execution to a worker if it bites |
+| Query timeout / worker thread | `node:sqlite` is synchronous, so a slow query blocks the server, and a query that returns a value of hundreds of MB can crash the process. That's fine for one user on a small dataset; move execution to a worker (which also contains a crash) if it bites |
 | Standard prompts with pre-validated SQL, feedback buttons, CSV download | Features from the reference project. Not needed to prove the concept |
 | Streaming responses | Adds complexity on both ends. Fine to wait for the full answer in a POC |
 | UI kit (e.g. PrimeVue DataTable) | Plain HTML tables are enough. Revisit if tables need sorting, paging or export |
