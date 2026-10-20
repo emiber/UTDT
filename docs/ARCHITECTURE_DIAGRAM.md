@@ -13,7 +13,7 @@ flowchart TB
     keyForm["AccessKeyForm<br/>keeps the key in sessionStorage"]
     backendStatus["BackendStatus"]
     dataCatalog["DataCatalog<br/>Available data"]
-    chatUi["Chat view<br/>narrative · table · chart"]
+    chatUi["Chat view<br/>narrative · table · suggestions"]
     apiFetch["apiFetch<br/>Authorization: Bearer key<br/>401 → back to the key screen"]
   end
 
@@ -42,9 +42,9 @@ flowchart TB
 
   user --> keyForm
   user --> dataCatalog
-  user -.-> chatUi
+  user --> chatUi
   backendStatus & dataCatalog --> apiFetch
-  chatUi -.-> apiFetch
+  chatUi --> apiFetch
   apiFetch -->|"/api via the Vite proxy"| authHook
   apiFetch -->|"401"| keyForm
   authHook -->|"public, no key"| health
@@ -69,5 +69,5 @@ flowchart TB
   evalCmd -.->|"Decisions: scores"| openai
 
   classDef planned stroke-dasharray: 5 5
-  class chatUi,classify,evalCmd planned
+  class classify,evalCmd planned
 ```

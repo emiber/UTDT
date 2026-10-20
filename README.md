@@ -8,11 +8,10 @@ what the data means from metadata tables.
 
 **Status:** early POC. `npm run seed` loads a demo dataset, and the API is protected by a
 shared access key. The frontend first asks for that key (the `APP_ACCESS_KEY` value from
-your `.env`), then shows the backend status and an `Available data` section with the
-tables, columns, relationships and indexes the bot knows about. The backend already
-answers questions at `POST /api/chat` with a narrative and a table of real data, inside a
-conversation saved in `data/app.db`; the chat UI comes next. Features are built one small
-issue at a time; see
+your `.env`), then shows the backend status, an `Available data` section with the tables,
+columns, relationships and indexes the bot knows about, and the chat: ask a question and
+get a narrative and a table of real data, with follow-up suggestions you can click. Each
+conversation is saved in `data/app.db`. Features are built one small issue at a time; see
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design and the decisions behind it.
 
 ## Stack
@@ -88,7 +87,8 @@ backend/src/    Fastify app (app.ts), entry points (server.ts, seed-cli.ts), acc
                 (pipeline.ts), the chat route (chat.ts), conversations and turns
                 (conversations.ts), test helpers (testing/)
 frontend/src/   Vue app (App.vue), API client (api.ts), access-key state (auth.ts),
-                components (components/), styles (styles/)
+                components (components/: key screen, backend status, data catalog, chat
+                view and its block renderer), styles (styles/)
 data/           SQLite files, generated and gitignored
 docs/           ARCHITECTURE.md: design, stack, quality gate, deferred decisions
 issues/         local issue tracker (Markdown files)
