@@ -57,7 +57,7 @@ They are plain rowid tables, so readers return rows in load order.
 knows: the declared tables with their columns and indexes, and the relationships between
 declared tables. Columns and relationships of undeclared tables are dropped. Indexes are
 read from SQLite itself (`pragma_index_list` / `pragma_index_info`), automatic ones
-included, not from the metadata. It's read on every request (no cache), so metadata edits
+included, not from the metadata; an expression part of an index shows as `(expression)`. It's read on every request (no cache), so metadata edits
 show up without a restart, and it throws if the metadata tables are missing.
 
 The backend opens `data.db` read-only at startup: without the file it refuses to start

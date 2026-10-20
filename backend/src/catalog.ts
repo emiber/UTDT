@@ -12,7 +12,7 @@ export interface CatalogColumn {
 export interface CatalogIndex {
   name: string;
   unique: boolean;
-  /** Column names in index order. */
+  /** Column names in index order; an expression part shows as `(expression)`. */
   columns: string[];
 }
 
