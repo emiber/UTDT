@@ -94,6 +94,24 @@ describe('buildInsights', () => {
     );
   });
 
+  it('sends the conversation history before the question', async () => {
+    const llm = fakeLlm(jsonResponse(INSIGHTS));
+    const history = [{ question: 'Units in 2024?', sql: 'SELECT 2024', narrative: 'Ink led.' }];
+
+    await buildInsights({ ...input([['ink', 5]], llm), history });
+
+    const expected = [
+      'Turn 1:',
+      'Question: Units in 2024?',
+      'SQL: SELECT 2024',
+      'Answer: Ink led.',
+      '',
+      'Question:',
+      '¿Qué artículo vendió más?',
+    ].join('\n');
+    expect(String(llm.requests[0].input)).toContain(expected);
+  });
+
   it(`sends only the first ${SAMPLE_ROWS} rows of a bigger result`, async () => {
     const llm = fakeLlm(jsonResponse(INSIGHTS));
     const rows = Array.from({ length: SAMPLE_ROWS + 10 }, (_, i) => [`item ${i}`, i]);

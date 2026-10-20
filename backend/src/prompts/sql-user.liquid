@@ -1,7 +1,7 @@
 Schema:
 {{ schemaContext }}
 
-Question:
+{% render 'history', history: history %}Question:
 {{ question }}
 {%- if failures.size > 0 %}
 

@@ -79,3 +79,41 @@ export function saveTurn(
     throw error;
   }
 }
+
+/** Earlier turns that go to the LLM as context. */
+export const HISTORY_TURNS = 5;
+
+/** A turn as the LLM sees it: never its rows, chart or suggestions. */
+export interface HistoryTurn {
+  question: string;
+  sql?: string;
+  narrative?: string;
+}
+
+/**
+ * The last HISTORY_TURNS turns of a conversation, oldest first; none without a conversation.
+ * A failed turn keeps only its question: its last SQL is known to be broken, and its text
+ * is an error message, not an answer.
+ */
+export function loadHistory(db: DatabaseSync, conversationId: string | null): HistoryTurn[] {
+  if (!conversationId) return [];
+  const rows = db
+    .prepare(
+      `SELECT question, sql, narrative, error FROM turns
+       WHERE conversation_id = ? ORDER BY id DESC LIMIT ?`,
+    )
+    .all(conversationId, HISTORY_TURNS) as {
+    question: string;
+    sql: string | null;
+    narrative: string | null;
+    error: string | null;
+  }[];
+  return rows.reverse().map(({ question, sql, narrative, error }) => {
+    const turn: HistoryTurn = { question };
+    if (error === null) {
+      if (sql) turn.sql = sql;
+      if (narrative) turn.narrative = narrative;
+    }
+    return turn;
+  });
+}

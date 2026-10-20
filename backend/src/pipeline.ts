@@ -1,5 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { buildChart, type ChartBlock, type ChartSpec } from './chart.ts';
+import type { HistoryTurn } from './conversations.ts';
 import { generateSql, type StepLogger } from './generate-sql.ts';
 import { buildInsights } from './insights.ts';
 import type { LlmClient } from './llm.ts';
@@ -52,6 +53,8 @@ export interface PipelineInput {
   dataDb: DatabaseSync;
   llm: LlmClient;
   log: PipelineLogger;
+  /** Earlier turns of the conversation, oldest first: context for SQL and insights. */
+  history?: HistoryTurn[];
 }
 
 /**
@@ -66,6 +69,7 @@ export async function answerQuestion({
   dataDb,
   llm,
   log,
+  history = [],
 }: PipelineInput): Promise<PipelineResult> {
   let lastSql: string | null = null;
   let step = 'sql';
@@ -74,7 +78,7 @@ export async function answerQuestion({
     const onSql = (sql: string) => {
       lastSql = sql;
     };
-    const result = await generateSql({ question, db: dataDb, llm, log, onSql });
+    const result = await generateSql({ question, db: dataDb, llm, log, history, onSql });
     log.info(
       { step, durationMs: elapsed(started), result: result.ok ? 'ok' : result.kind },
       'Pipeline step done',
@@ -84,7 +88,7 @@ export async function answerQuestion({
     step = 'insights';
     started = performance.now();
     const { sql, columns, rows } = result;
-    const insights = await buildInsights({ question, sql, columns, rows, llm });
+    const insights = await buildInsights({ question, sql, columns, rows, llm, history });
     log.info({ step, durationMs: elapsed(started), result: 'ok' }, 'Pipeline step done');
 
     const blocks: Block[] = [{ type: 'text', markdown: insights.narrative }];

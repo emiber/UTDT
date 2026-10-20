@@ -213,6 +213,62 @@ describe('POST /api/chat', () => {
     expect(body.blocks.map((b: { type: string }) => b.type)).toEqual(['text']);
   });
 
+  describe('conversation history', () => {
+    it('sends the earlier turns to the SQL and insights requests, never their rows', async () => {
+      dataDb.exec("INSERT INTO items (name, qty) VALUES ('zz-sentinel', 42)");
+      start(
+        sqlReply('SELECT name, qty FROM items ORDER BY id'),
+        jsonResponse(INSIGHTS),
+        // The second turn's own rows leave the sentinel out: only the first turn has it.
+        sqlReply('SELECT name FROM items WHERE qty < 10'),
+        jsonResponse(INSIGHTS),
+        sqlReply('SELECT qty FROM items'),
+        jsonResponse(INSIGHTS),
+      );
+
+      const first = (await chat({ question: 'Units per item?' })).json();
+      await chat({ question: 'And only names?', conversationId: first.conversationId });
+      await chat({ question: 'Fresh start?' });
+
+      const prompts = llm.requests.map((request) => String(request.input));
+      const firstTurn = [
+        'Question: Units per item?',
+        'SQL: SELECT name, qty FROM items ORDER BY id',
+        'Answer: Ink leads with 999 units.',
+      ].join('\n');
+      for (const prompt of prompts.slice(2, 4)) {
+        expect(prompt).toContain(firstTurn);
+        expect(prompt).not.toContain('zz-sentinel');
+        expect(prompt).not.toContain('Turn 2:');
+      }
+      for (const prompt of prompts.slice(4)) {
+        expect(prompt).not.toContain('Conversation so far');
+      }
+    });
+
+    it('sends only the question of a turn whose SQL attempts all failed', async () => {
+      start(
+        sqlReply('SELECT zz_bad FROM items'),
+        sqlReply('SELECT zz_bad FROM items'),
+        sqlReply('SELECT zz_bad FROM items'),
+        sqlReply('SELECT name FROM items'),
+        jsonResponse(INSIGHTS),
+      );
+
+      const first = (await chat({ question: 'Colors?' })).json();
+      await chat({ question: 'And names?', conversationId: first.conversationId });
+
+      const onlyQuestion = ['Turn 1:', 'Question: Colors?', '', 'Question:', 'And names?'].join(
+        '\n',
+      );
+      for (const prompt of llm.requests.slice(3).map((request) => String(request.input))) {
+        expect(prompt).toContain(onlyQuestion);
+        expect(prompt).not.toContain('zz_bad');
+        expect(prompt).not.toContain(NO_ANSWER_MESSAGE);
+      }
+    });
+  });
+
   it.each([
     ['no question', {}],
     ['a question that is not a string', { question: 42 }],
