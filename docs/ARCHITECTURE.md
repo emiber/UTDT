@@ -115,13 +115,21 @@ Each step is its own issue. The design:
 2. **Build the schema context** from the metadata tables.
 3. **Generate SQL** (Responses API, Structured Outputs) from the question, the schema
    context and the last turns of the conversation.
-4. **Guard and execute.** Safety is layered:
+4. **Guard and execute** (`executeSql` in `backend/src/execute-sql.ts`, built). Safety is
+   layered:
    - the query runs on a **read-only** connection — SQLite itself rejects any write;
    - a cheap check accepts exactly one statement starting with `SELECT` or `WITH`
-     (also blocks `ATTACH`/`PRAGMA`), so the LLM gets a clear error to fix;
-   - a row cap: an oversized result is sent back for a more selective query.
-   On a guard or SQL error the LLM retries with the error as feedback, up to a fixed
-   retry budget.
+     (also blocks `ATTACH`/`PRAGMA`, `CREATE TEMP TABLE`, and the extra statements
+     `node:sqlite` would silently drop), so the LLM gets a clear error to fix. A `;`
+     inside a string, a quoted identifier or a comment doesn't count;
+   - a row cap of 500: a bigger result is rejected, not truncated, and reading stops at
+     row 501, so even an endless recursive CTE ends.
+
+   Rows come back as lists aligned with the column names, so duplicate names keep both
+   values. Errors a rewritten query can fix are **returned** with a `kind` (`guard`,
+   `sql`, `row_limit`) and a message for the LLM; anything else (e.g. a closed
+   connection) is thrown. On a returned error the LLM retries with the message as
+   feedback, up to a fixed retry budget.
 5. **Build the insights** (Responses API, Structured Outputs). The LLM receives the
    question, the SQL, the column list and a sample of the rows, and returns **only**
    the narrative, a chart spec (`type`: bar/line/pie/doughnut, `x` column, `series`
