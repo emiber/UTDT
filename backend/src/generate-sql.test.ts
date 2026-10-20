@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { openDatabase, openReadOnlyDatabase } from './db.ts';
 import { MAX_ROWS } from './execute-sql.ts';
 import { generateSql, MAX_ATTEMPTS, type StepLogger } from './generate-sql.ts';
+import { LlmError } from './llm.ts';
 import { createMetadataTables, insertMetadata } from './metadata.ts';
 import { fakeLlm, incompleteResponse, jsonResponse, refusalResponse } from './testing/fake-llm.ts';
 
@@ -164,7 +165,10 @@ describe('generateSql', () => {
   ])('throws without retrying when %s', async (_case, reply, message) => {
     const llm = fakeLlm(reply);
 
-    await expect(ask(llm)).rejects.toThrow(message);
+    const call = ask(llm);
+
+    await expect(call).rejects.toThrow(message);
+    await expect(call).rejects.toBeInstanceOf(LlmError);
     expect(llm.requests).toHaveLength(1);
     expect(logs).toEqual([
       { step: 'generate_sql', attempt: 1, durationMs: expect.any(Number), result: 'error' },

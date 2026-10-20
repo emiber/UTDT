@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createLlmClient, requestStructured, type StructuredRequest } from './llm.ts';
+import { createLlmClient, LlmError, requestStructured, type StructuredRequest } from './llm.ts';
 import { fakeLlm, incompleteResponse, jsonResponse, refusalResponse } from './testing/fake-llm.ts';
 
 const ENV = { OPENAI_API_KEY: 'sk-test-key', OPENAI_MODEL: 'test-model' };
@@ -74,9 +74,10 @@ describe('requestStructured', () => {
   it('throws when the model refuses', async () => {
     const llm = fakeLlm(refusalResponse('I cannot help with that.'));
 
-    await expect(requestStructured(llm, REQUEST)).rejects.toThrow(
-      'The model refused to answer: I cannot help with that.',
-    );
+    const call = requestStructured(llm, REQUEST);
+
+    await expect(call).rejects.toThrow('The model refused to answer: I cannot help with that.');
+    await expect(call).rejects.toBeInstanceOf(LlmError);
   });
 
   it.each([
@@ -88,7 +89,10 @@ describe('requestStructured', () => {
     ],
     ['failed without details', { status: 'failed', output: [] }, 'not completed: failed'],
   ])('throws when the response is %s', async (_case, response, message) => {
-    await expect(requestStructured(fakeLlm(response), REQUEST)).rejects.toThrow(message);
+    const call = requestStructured(fakeLlm(response), REQUEST);
+
+    await expect(call).rejects.toThrow(message);
+    await expect(call).rejects.toBeInstanceOf(LlmError);
   });
 
   it.each([['not json'], ['null'], ['[1]'], ['']])('throws when the output is %j', async (text) => {
@@ -97,9 +101,10 @@ describe('requestStructured', () => {
       output: [{ type: 'message', content: [{ type: 'output_text', text }] }],
     });
 
-    await expect(requestStructured(llm, REQUEST)).rejects.toThrow(
-      'The model returned no valid JSON object.',
-    );
+    const call = requestStructured(llm, REQUEST);
+
+    await expect(call).rejects.toThrow('The model returned no valid JSON object.');
+    await expect(call).rejects.toBeInstanceOf(LlmError);
   });
 
   it('skips output items without message content, like reasoning', async () => {
@@ -112,10 +117,14 @@ describe('requestStructured', () => {
     await expect(requestStructured(llm, REQUEST)).resolves.toEqual({ answer: 'yes' });
   });
 
-  it('propagates API errors', async () => {
-    const llm = fakeLlm(new Error('429 Rate limit reached'));
+  it('wraps API errors in an LlmError that keeps the original as its cause', async () => {
+    const apiError = new Error('429 Rate limit reached');
 
-    await expect(requestStructured(llm, REQUEST)).rejects.toThrow('429 Rate limit reached');
+    const error = await requestStructured(fakeLlm(apiError), REQUEST).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(LlmError);
+    expect(error).toMatchObject({ message: 'OpenAI request failed: 429 Rate limit reached' });
+    expect((error as LlmError).cause).toBe(apiError);
   });
 });
 

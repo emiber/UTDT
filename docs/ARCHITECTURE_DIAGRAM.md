@@ -26,7 +26,7 @@ flowchart TB
       classify["1 · Classify the question"]
       genSql["2-3 · Schema context + generate SQL"]
       guard["4 · Guard and execute<br/>SELECT/WITH only · row cap"]
-      insights["5 · Build the insights<br/>narrative · chart spec · suggestions"]
+      insights["5 · Build the insights<br/>narrative · suggestions"]
       persist["6 · Persist the turn"]
     end
   end
@@ -49,24 +49,25 @@ flowchart TB
   apiFetch -->|"401"| keyForm
   authHook -->|"public, no key"| health
   authHook --> catalogRoute
-  authHook -.-> chatRoute
+  authHook --> chatRoute
   health -->|"SQLite version"| appDb
   catalogRoute --> dataDb
   seed -->|"recreates from scratch"| dataDb
 
+  chatRoute -->|"no classification yet"| genSql
   chatRoute -.-> classify -.-> genSql
   genSql --> guard
-  guard -.-> insights -.-> persist
+  guard --> insights --> persist
   guard -->|"error → retry"| genSql
   guard -->|"generated SQL"| dataDb
   genSql -->|"schema context"| dataDb
-  persist -.-> appDb
+  persist --> appDb
   classify -.->|"Decisions"| openai
   genSql -->|"Responses"| openai
-  insights -.->|"Responses"| openai
+  insights -->|"Responses"| openai
   evalCmd -.->|"golden questions"| classify
   evalCmd -.->|"Decisions: scores"| openai
 
   classDef planned stroke-dasharray: 5 5
-  class chatUi,chatRoute,classify,insights,persist,evalCmd planned
+  class chatUi,classify,evalCmd planned
 ```

@@ -2,7 +2,7 @@
 id: 8
 title: "Agregar POST /api/chat: pipeline, insights y persistencia"
 type: feat
-status: refined
+status: closed
 parent: 1
 created: 2026-10-19
 ---
@@ -230,3 +230,75 @@ Ya están diferidos en `docs/ARCHITECTURE.md`:
 - Streaming de la respuesta.
 - Prompts estándar con SQL prevalidado.
 - Timeout de consultas o worker thread.
+
+## Pull request
+Branch: `feat/8-chat-narrativa-y-tabla` → `epic/1-poc-chatbot-text-to-sql`
+
+### What it does
+- **`POST /api/chat`** (`backend/src/chat.ts`), detrás del hook de key de #3:
+  - **Validación:** el body se valida sin coerción de tipos. `question` necesita al menos un carácter que no sea espacio, y `conversationId`, si viene, un string no vacío. Si no cumple, da `400`.
+  - **Conversación:** un `conversationId` desconocido da `404`, sin llamar a OpenAI ni guardar nada.
+  - **Respuesta:** `200` con `{ conversationId, turnId, blocks, suggestions }`. Los bloques son `[text, table]`, o solo `[text]` con 0 filas.
+  - **Intentos agotados:** `200` con un bloque `text` fijo en inglés y `suggestions: []`.
+  - **Errores:** `502` si falla OpenAI y `500` ante un error inesperado, los dos con mensaje genérico. El detalle queda en el log y en el turno. Si falla la lectura de la conversación o el guardado del turno, también da `500`, y no se guarda nada.
+- **`answerQuestion`** (`backend/src/pipeline.ts`) corre la generación de SQL (#7), los insights y arma los bloques, sin HTTP ni `app.db`.
+  - Con los intentos agotados devuelve el motivo.
+  - Lo que lanza sale como `PipelineError`, con el error original como `cause` y el último SQL generado. Ese SQL lo recibe por un callback `onSql` nuevo en `generateSql`.
+- **`buildInsights`** (`backend/src/insights.ts`):
+  - es un request Structured Outputs con un schema de solo `narrative` y exactamente 3 `suggestions` (`minItems`/`maxItems`);
+  - recibe la pregunta, el SQL, las columnas, las primeras 50 filas (`SAMPLE_ROWS`) y el total;
+  - las plantillas son `prompts/insights-system.liquid` e `insights-user.liquid`.
+- **`LlmError`** (`backend/src/llm.ts`): todo lo que falla en `requestStructured`, incluidos los errores del SDK, sale como `LlmError`. Es lo que separa el `502` del `500`.
+- **`backend/src/conversations.ts`:**
+  - las tablas `conversations` y `turns` se crean al construir la app si no existen, y conservan los datos;
+  - `saveTurn` guarda en una transacción: pregunta, SQL, narrativa, respuesta en JSON, error y duración.
+- **Cableado:**
+  - `buildApp` recibe `llm`, y acepta opciones de logger para los tests;
+  - `server.ts` arma el cliente al arrancar, así que sin `OPENAI_API_KEY` u `OPENAI_MODEL` el backend no arranca.
+- **Logs:** una línea por paso (`sql`, `insights` y `persist`), con duración y resultado, también cuando el paso falla. No incluyen la pregunta, el SQL ni las keys.
+- **Tests:**
+  - `testing/dataset.ts` es un dataset en memoria para los tests;
+  - `timing.ts` tiene un único `elapsed()`;
+  - el proyecto backend de Vitest usa un timeout de 20 s, porque el primer request de Fastify en un archivo pasaba los 5 s con todo el gate en paralelo.
+- **Docs:**
+  - `docs/ARCHITECTURE.md`: la fila de la API, los pasos 5 y 6, la forma de los bloques, *Chat endpoint*, *LLM layer*, *Observability* y *Configuration*, con las 3 variables obligatorias;
+  - `README.md`: *Status*, *Getting started* con las variables de OpenAI y la estructura;
+  - `docs/ARCHITECTURE_DIAGRAM.md`: chat, insights y persistencia pasan a sólidos;
+  - `.env.example`: las variables de OpenAI marcadas como obligatorias.
+
+### Verification
+- Lint: `npm run lint` — pass
+- Tests: `npm run test:coverage` — pass (20 archivos, 259 tests).
+  - El primer test de `chat.test.ts` pasó dos veces los 5 s con el gate completo; corrido solo tarda 0,3 s. Se resolvió con el timeout de 20 s del backend.
+  - El flake de arranque de los workers del frontend no apareció.
+- Coverage: 100% en sentencias, funciones y líneas, y 99,36% en ramas (umbral 85%). La única rama sin cubrir es el `if (db.isTransaction)` falso en `conversations.ts:78`. Archivos nuevos o cambiados bajo el umbral: ninguno.
+- Manual: pass, con el `.env` real y `OPENAI_MODEL=gpt-5.4-mini`.
+  - **Sin `OPENAI_MODEL`:** con la variable vacía, el backend sale con código 1 y el error `OPENAI_MODEL is not set…`, y `/api/health` no responde.
+  - **Español:** por el proxy de Vite, "¿Cuáles fueron las ventas totales por país en 2025?" dio `200` con la narrativa en español, una tabla `country,total_sales` de 5 filas y 3 sugerencias en español.
+  - **Inglés:** "And which product category sold the most units?", en la misma conversación, dio `200` con la narrativa en inglés, una tabla de 1 fila y 3 sugerencias en inglés.
+  - **Errores:** pregunta en blanco `400`, conversación inexistente `404`, sin key `401`.
+  - **Persistencia y logs:** los dos turnos quedaron en `data/app.db` con su SQL. El log tiene los pasos `generate_sql`, `execute_sql`, `sql`, `insights` y `persist`, y ninguna key.
+  - Después de los ajustes de la review, otra pregunta en español dio `200` con `text,table` y 3 sugerencias.
+- Self-review: 3 rondas con agente separado, sin blockers. Sugerencias aplicadas:
+  - el último SQL intentado queda en el turno aunque falle un reintento;
+  - línea de log para los pasos que fallan;
+  - `500` genérico si falla la lectura de la conversación;
+  - test de punta a punta con más filas que la muestra;
+  - tests que fijan el contrato de `LlmError` y la línea de `persist`;
+  - doc de la coerción apagada en toda la app;
+  - un solo `elapsed()`;
+  - docs y diagrama al día.
+
+  El último cambio, un refactor de `elapsed()`, el timeout y una frase del doc, se verificó con el gate y una corrida real. (separate agent)
+- Plan: aprobado de antemano por el usuario para el trabajo desatendido del 2026-10-19.
+- Security: pass.
+  - La ruta queda detrás del hook deny-by-default, con test de `401`.
+  - El body se valida en el borde, y el SQL de `app.db` usa parámetros.
+  - `data.db` solo se lee por el ejecutor read-only de #6.
+  - Los `502` y `500` son genéricos: un 401 de OpenAI, que trae un fragmento enmascarado de la key, no llega al cliente.
+  - Los logs no tienen keys, y un test lo chequea.
+- Docs: updated `README.md`, `docs/ARCHITECTURE.md`, `docs/ARCHITECTURE_DIAGRAM.md`, `.env.example`
+
+### Out of scope / follow-ups
+- Tu `.env` no tenía `OPENAI_MODEL` y, desde este issue, el backend no arranca sin esa variable. Agregué al final la línea `OPENAI_MODEL=gpt-5.4-mini`, sin leer ni tocar el resto del archivo. Cambiala si preferís otro modelo.
+- Propuesto, sin crear: el timeout de 20 s del backend es un parche para el arranque en frío bajo carga. Es la misma familia que el flake de los workers del frontend (follow-up pendiente de #3).

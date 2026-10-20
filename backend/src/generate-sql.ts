@@ -1,8 +1,9 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { executeSql, MAX_ROWS } from './execute-sql.ts';
-import { requestStructured, type LlmClient } from './llm.ts';
+import { LlmError, requestStructured, type LlmClient } from './llm.ts';
 import { renderPrompt } from './prompts.ts';
 import { buildSchemaContext } from './schema-context.ts';
+import { elapsed } from './timing.ts';
 
 /** Attempts per question, the first one included: at most two retries. */
 export const MAX_ATTEMPTS = 3;
@@ -31,6 +32,8 @@ export interface GenerateSqlInput {
   db: DatabaseSync;
   llm: LlmClient;
   log: StepLogger;
+  /** Called with each generated SQL, so a caller still knows the last one if a later step throws. */
+  onSql?: (sql: string) => void;
 }
 
 /**
@@ -44,6 +47,7 @@ export async function generateSql({
   db,
   llm,
   log,
+  onSql,
 }: GenerateSqlInput): Promise<GenerateSqlResult> {
   const schemaContext = buildSchemaContext(db);
   const instructions = renderPrompt('sql-system', { maxRows: MAX_ROWS });
@@ -59,8 +63,9 @@ export async function generateSql({
         instructions,
         input: renderPrompt('sql-user', { schemaContext, question, failures }),
       });
-      if (typeof output.sql !== 'string') throw new Error('The model returned no SQL string.');
+      if (typeof output.sql !== 'string') throw new LlmError('The model returned no SQL string.');
       sql = output.sql;
+      onSql?.(sql);
     } catch (error) {
       // A failed or hung call still shows up in the log, with how long it took.
       log.info(
@@ -101,8 +106,4 @@ export async function generateSql({
     }
     failures.push({ sql, message: result.message });
   }
-}
-
-function elapsed(started: number): number {
-  return Math.round(performance.now() - started);
 }
