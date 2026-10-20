@@ -84,7 +84,7 @@ export async function requestStructured<T>(llm: LlmClient, request: StructuredRe
 function parseObject(text: string): object {
   try {
     const value: unknown = JSON.parse(text);
-    if (typeof value === 'object' && value !== null) return value;
+    if (typeof value === 'object' && value !== null && !Array.isArray(value)) return value;
   } catch {
     // Not JSON: same error as JSON that isn't an object.
   }

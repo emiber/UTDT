@@ -91,7 +91,7 @@ describe('requestStructured', () => {
     await expect(requestStructured(fakeLlm(response), REQUEST)).rejects.toThrow(message);
   });
 
-  it.each([['not json'], ['null'], ['']])('throws when the output is %j', async (text) => {
+  it.each([['not json'], ['null'], ['[1]'], ['']])('throws when the output is %j', async (text) => {
     const llm = fakeLlm({
       status: 'completed',
       output: [{ type: 'message', content: [{ type: 'output_text', text }] }],
