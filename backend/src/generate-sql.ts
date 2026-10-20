@@ -1,6 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { executeSql, MAX_ROWS } from './execute-sql.ts';
-import { requestStructured, type LlmClient } from './llm.ts';
+import { LlmError, requestStructured, type LlmClient } from './llm.ts';
 import { renderPrompt } from './prompts.ts';
 import { buildSchemaContext } from './schema-context.ts';
 
@@ -59,7 +59,7 @@ export async function generateSql({
         instructions,
         input: renderPrompt('sql-user', { schemaContext, question, failures }),
       });
-      if (typeof output.sql !== 'string') throw new Error('The model returned no SQL string.');
+      if (typeof output.sql !== 'string') throw new LlmError('The model returned no SQL string.');
       sql = output.sql;
     } catch (error) {
       // A failed or hung call still shows up in the log, with how long it took.

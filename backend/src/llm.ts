@@ -35,6 +35,17 @@ function requireVariable(env: NodeJS.ProcessEnv, name: string): string {
   return value;
 }
 
+/**
+ * A failed OpenAI call: the API or the network failed (after the SDK's own retries), or the
+ * model refused, stopped early, or returned no usable object. Callers map it to a 502.
+ */
+export class LlmError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = 'LlmError';
+  }
+}
+
 export interface StructuredRequest {
   /** Name of the output format, e.g. `sql_query`. */
   name: string;
@@ -48,24 +59,29 @@ export interface StructuredRequest {
 
 /**
  * One Responses API request with Structured Outputs (strict JSON schema). Returns the parsed
- * object; throws on a refusal, an incomplete response, or an API error (after the SDK's own
- * retries for transient ones).
+ * object; throws an LlmError on a refusal, an incomplete response, or an API error (after
+ * the SDK's own retries for transient ones).
  */
 export async function requestStructured<T>(llm: LlmClient, request: StructuredRequest): Promise<T> {
-  const response = await llm.createResponse({
-    model: llm.model,
-    instructions: request.instructions,
-    input: request.input,
-    // Every request carries its whole context, so OpenAI doesn't need to keep a copy.
-    store: false,
-    text: {
-      format: { type: 'json_schema', name: request.name, schema: request.schema, strict: true },
-    },
-  });
+  let response: LlmResponse;
+  try {
+    response = await llm.createResponse({
+      model: llm.model,
+      instructions: request.instructions,
+      input: request.input,
+      // Every request carries its whole context, so OpenAI doesn't need to keep a copy.
+      store: false,
+      text: {
+        format: { type: 'json_schema', name: request.name, schema: request.schema, strict: true },
+      },
+    });
+  } catch (error) {
+    throw new LlmError(`OpenAI request failed: ${(error as Error).message}`, { cause: error });
+  }
 
   if (response.status !== 'completed') {
     const detail = response.incomplete_details?.reason ?? response.error?.message;
-    throw new Error(
+    throw new LlmError(
       `OpenAI response not completed: ${response.status}${detail ? ` (${detail})` : ''}`,
     );
   }
@@ -73,7 +89,7 @@ export async function requestStructured<T>(llm: LlmClient, request: StructuredRe
     item.type === 'message' ? (item.content ?? []) : [],
   );
   const refusal = content.find((c) => c.type === 'refusal');
-  if (refusal) throw new Error(`The model refused to answer: ${refusal.refusal}`);
+  if (refusal) throw new LlmError(`The model refused to answer: ${refusal.refusal}`);
   const text = content
     .filter((c) => c.type === 'output_text')
     .map((c) => c.text)
@@ -88,5 +104,5 @@ function parseObject(text: string): object {
   } catch {
     // Not JSON: same error as JSON that isn't an object.
   }
-  throw new Error('The model returned no valid JSON object.');
+  throw new LlmError('The model returned no valid JSON object.');
 }
