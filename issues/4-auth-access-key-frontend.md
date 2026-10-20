@@ -2,7 +2,7 @@
 id: 4
 title: Agregar pantalla de access key en el frontend
 type: feat
-status: refined
+status: closed
 parent: 1
 created: 2026-10-19
 ---
@@ -104,3 +104,48 @@ Que la app pida la access key compartida antes de dejar usarla, la mande en cada
 - **Validar la key apenas se ingresa**, con un endpoint de chequeo en #3. No está en el diseño aprobado. Revisar si molesta que una key incorrecta se detecte recién en la primera llamada protegida.
 - **Logout o cambiar la key.** Cerrar la pestaña la borra, y un `401` la vuelve a pedir.
 - **Recordar la key entre pestañas** con `localStorage`. `docs/ARCHITECTURE.md` eligió `sessionStorage`.
+
+## Pull request
+Branch: `feat/4-auth-access-key-frontend` → `epic/1-poc-chatbot-text-to-sql`
+
+### What it does
+- **`frontend/src/auth.ts`:** el estado de la key en un `reactive` espejado en `sessionStorage` (`utdt.accessKey`).
+  - `loadStoredKey` lee la key guardada.
+  - `saveKey` recorta la key e ignora una vacía.
+  - `rejectKey` la olvida y marca el rechazo.
+- **`frontend/src/api.ts`:** `apiFetch` es la única forma de llamar a `/api/*`.
+  - Manda `Authorization: Bearer <key>`.
+  - Ante un `401` olvida la key, y la app vuelve a pedirla. Lo hace solo si la key no cambió durante el request, así no borra una recién reingresada.
+  - Ante otro status lanza un `ApiError` con `status`.
+  - Una key que no puede viajar en un header se trata como rechazada.
+  - `getHealth` pasa a usarla.
+- **`App.vue`** alterna entre dos pantallas según haya key:
+  - **`AccessKeyForm.vue`:** campo password con `autocomplete="off"`, botón deshabilitado con la key vacía y aviso "Access key rejected. Enter it again.";
+  - **`BackendStatus.vue`:** el estado del backend que antes estaba en `App.vue`. Así el health check corre recién con key.
+- **Docs:** `README.md` (*Status* y estructura) y `docs/ARCHITECTURE.md` (*Auth* y *Frontend*).
+
+### Verification
+- Lint: `npm run lint` — pass
+- Tests: `npm run test:coverage` — pass (10 archivos, 99 tests)
+- Coverage: 100% en sentencias, ramas, funciones y líneas (umbral 85%); archivos nuevos o cambiados bajo el umbral: ninguno
+- Manual: pass.
+  - Con el `.env` real (sin imprimir la key), `npm run dev` levanta los dos servidores.
+  - Por el proxy de Vite:
+    - health da `200`;
+    - una ruta protegida da `401` sin key y `404` con la key del `.env`, así que el proxy reenvía el header;
+    - la key no aparece en el log.
+  - Los componentes compilan, y `npm run build -w frontend` pasa.
+  - El flujo de pantallas en un navegador real no se probó: lo cubren los tests de componentes.
+- Self-review: sin blockers. Se aplicaron las cinco sugerencias:
+  - una key no enviable cuenta como rechazada;
+  - un `401` tardío no borra una key nueva;
+  - `enableAutoUnmount` en los tests;
+  - `autocomplete="off"`;
+  - el doc de errores de red.
+
+  Sugerencias no aplicadas: ninguna. (separate agent)
+- Security: pass. La key vive solo en `sessionStorage`: nunca va en la URL, en `localStorage`, en cookies ni en `console`. Los errores no la muestran y no se lee el body del `401`. La validación real sigue siendo la de #3 en el servidor.
+- Docs: updated `README.md`, `docs/ARCHITECTURE.md`
+
+### Out of scope / follow-ups
+None
