@@ -2,7 +2,7 @@
 id: 5
 title: Exponer el catálogo de datos (GET /api/catalog) y mostrarlo en el frontend
 type: feat
-status: refined
+status: closed
 parent: 1
 created: 2026-10-19
 ---
@@ -200,3 +200,48 @@ Comentario en el epic: "tiene que traer el detalle de las tablas y las columnas,
 - **Validar los metadatos contra el esquema real** (avisar de tablas o columnas declaradas que no existen). Sería útil con la carga manual, pero no hace falta para probar el concepto.
 - **Claves primarias, `NOT NULL` y cantidad de filas en el catálogo.** No se pidieron. Se agregan si hacen falta.
 - **Búsqueda, filtros y refresco en la sección `Available data`.** El catálogo de la demo es chico.
+
+## Pull request
+Branch: `feat/5-catalogo-de-datos` → `epic/1-poc-chatbot-text-to-sql`
+
+### What it does
+- **`backend/src/catalog.ts`:** `readCatalog(db)` arma el catálogo con la forma de *Data*.
+  - Solo cuenta las tablas declaradas en `meta_tables`: descarta las columnas y relaciones de tablas no declaradas.
+  - Respeta el orden de carga (`ORDER BY rowid`) y ordena los índices por nombre.
+  - Lee los índices de SQLite (`pragma_index_list` / `pragma_index_info`), con los nombres como parámetros. Una parte de expresión de un índice sale como `(expression)`, en vez de `null`.
+  - Lanza un error si faltan las tablas `meta_*`.
+- **`backend/src/app.ts`:** `GET /api/catalog`, protegida por el hook de #3. `buildApp` recibe la conexión `dataDb`.
+- **`backend/src/server.ts`:** abre `data.db` read-only al arrancar, antes de `listen`. Sin el archivo, el backend no arranca.
+- **Frontend:**
+  - `getCatalog()` en `api.ts`, con `apiFetch`.
+  - `DataCatalog.vue`: un `<details>` `Available data`, cerrado, que pide el catálogo al montarse. Muestra los estados de carga, error y vacío, y cada tabla con sus columnas e índices, más las relaciones.
+  - `App.vue`: la pantalla principal suma la sección.
+- **Docs:** `docs/ARCHITECTURE.md` (*Data*, *Catalog*, *Backend API*, *Auth* y *Frontend*) y `README.md` (*Status*, seed obligatorio antes de `npm run dev`, aviso de Windows y estructura).
+
+### Verification
+- Lint: `npm run lint` — pass
+- Tests: `npm run test:coverage` — pass (12 archivos, 122 tests)
+- Coverage: 100% en sentencias, ramas, funciones y líneas (umbral 85%); archivos nuevos o cambiados bajo el umbral: ninguno
+- Build: `npm run build -w frontend` — pass
+- Manual: pass, con el `.env` real y sin imprimir la key.
+  - Sin `data/data.db`, el backend no arranca y muestra `Database not found at …\data\data.db. Run \`npm run seed\` to create it.`; `/api/health` no responde.
+  - Con `npm run seed` y `npm run dev`, por el proxy de Vite:
+    - health da `200`;
+    - `/api/catalog` da `401` sin key;
+    - con la key da `200`, con `customers`, `products` y `orders`, sus columnas, `idx_orders_customer_id` e `idx_orders_product_id`, y las 2 relaciones.
+  - La key no aparece en el log.
+  - La sección en un navegador real no se probó (no hay navegador en esta sesión): la cubren los tests de componentes.
+- Self-review: 2 rondas con agente separado, sin blockers.
+  - Aplicadas: documentar el `(expression)` (JSDoc y *Catalog*) y reacomodar el párrafo del doc.
+  - No aplicada: responder el `500` sin el mensaje de SQLite. El issue pide el `500` estándar de Fastify, igual que `/api/health`. Queda como follow-up.
+
+  (separate agent; el último cambio, solo de formato del doc, se verificó inline)
+- Plan: aprobado de antemano por el usuario para el trabajo desatendido del 2026-10-19.
+- Security: pass.
+  - La ruta nueva queda detrás del hook deny-by-default, con test de `401`.
+  - Los nombres de tabla e índice van como parámetros, y la conexión es read-only.
+  - El `500` incluye el mensaje de SQLite (p. ej. `no such table: meta_tables`) solo para quien tiene la key (ver follow-ups).
+- Docs: updated `README.md`, `docs/ARCHITECTURE.md`
+
+### Out of scope / follow-ups
+- Propuesto, sin crear: un manejador de errores que, en los `5xx`, loguee el error y responda un mensaje genérico. Así no viajan al cliente mensajes internos de SQLite, algo que pesa más cuando #6/#8 ejecuten SQL del LLM.
