@@ -177,6 +177,16 @@ describe('runEvalCommand', () => {
     ]);
   });
 
+  it('says so and returns 1 when the report cannot be written', async () => {
+    llm = fakeLlm(new Error('x'), new Error('y'));
+    judge = fakeDecisions();
+    // A file where the report directory should be.
+    writeFileSync(path.join(dir, 'reports'), 'not a directory');
+
+    expect(await run()).toBe(1);
+    expect(lines.at(-1)).toMatch(/^The report could not be written: /);
+  });
+
   describe('startup errors', () => {
     beforeEach(() => {
       llm = fakeLlm();
@@ -193,7 +203,7 @@ describe('runEvalCommand', () => {
 
       expect(code).toBe(1);
       expect(lines).toEqual([
-        `The evaluation could not start: ${name} is not set. Copy .env.example to .env in the repo root and set it.`,
+        `The evaluation could not start: ${name} is not set. Add it to the .env in the repo root (see .env.example).`,
       ]);
       expect(existsSync(path.join(dir, 'reports'))).toBe(false);
     });

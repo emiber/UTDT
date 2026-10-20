@@ -31,7 +31,7 @@ export function createLlmClient(env: NodeJS.ProcessEnv = process.env): LlmClient
 function requireVariable(env: NodeJS.ProcessEnv, name: string): string {
   const value = env[name]?.trim();
   if (!value) {
-    throw new Error(`${name} is not set. Copy .env.example to .env in the repo root and set it.`);
+    throw new Error(`${name} is not set. Add it to the .env in the repo root (see .env.example).`);
   }
   return value;
 }

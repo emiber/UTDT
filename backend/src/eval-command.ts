@@ -83,8 +83,14 @@ export async function runEvalCommand(options: EvalCommandOptions): Promise<numbe
       summary,
       results,
     };
-    mkdirSync(options.reportDir, { recursive: true });
-    writeFileSync(file, `${JSON.stringify(report, null, 2)}\n`);
+    try {
+      mkdirSync(options.reportDir, { recursive: true });
+      writeFileSync(file, `${JSON.stringify(report, null, 2)}\n`);
+    } catch (error) {
+      // The lines and the summary are already printed: say why the file is missing.
+      print(`The report could not be written: ${(error as Error).message}`);
+      return 1;
+    }
     print(`Report: ${file}`);
     return 0;
   } finally {
