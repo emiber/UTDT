@@ -58,12 +58,12 @@ export function buildApp({
   });
 
   // A server error never shows its own message to the client (a SQLite one names tables,
-  // for example): it's logged, and the response is generic. A client error (a 400 from
-  // validation, a 415...) goes on to Fastify's default handler, unchanged.
+  // for example): it's logged, and the response is generic. Only a client error (an Error
+  // with a 4xx status: a 400 from validation, a 415...) goes on to Fastify's default
+  // handler, unchanged. Anything can be thrown, so `error` may not even be an Error.
   app.setErrorHandler((error, request, reply) => {
-    // Anything can be thrown, so `error` may not even be an object.
-    const statusCode = (error as FastifyError | null)?.statusCode;
-    if (statusCode !== undefined && statusCode < 500) throw error;
+    const status = error instanceof Error ? (error as FastifyError).statusCode : undefined;
+    if (status !== undefined && status >= 400 && status < 500) throw error;
     request.log.error({ err: error }, 'Request failed');
     return reply.code(500).send({
       statusCode: 500,

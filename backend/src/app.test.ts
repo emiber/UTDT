@@ -160,6 +160,37 @@ describe('access key', () => {
   });
 });
 
+describe('errors', () => {
+  it.each([
+    ['an Error without a status', new Error('SQLITE secret')],
+    ['an Error with a 3xx status', Object.assign(new Error('secret'), { statusCode: 302 })],
+    ['an Error with a null status', Object.assign(new Error('secret'), { statusCode: null })],
+    ['a string', 'secret'],
+    ['undefined', undefined],
+    ['an object with a 4xx status', { statusCode: 400, message: 'secret' }],
+  ])('answers a generic 500 when a route throws %s', async (_case, thrown) => {
+    app.get('/api/throws', async () => {
+      throw thrown;
+    });
+
+    const res = await app.inject({ method: 'GET', url: '/api/throws', headers: AUTH });
+
+    expect(res.statusCode).toBe(500);
+    expect(res.json()).toEqual(SERVER_ERROR);
+  });
+
+  it('keeps the status and message of an Error with a 4xx status', async () => {
+    app.get('/api/throws', async () => {
+      throw Object.assign(new Error('Too many questions.'), { statusCode: 429 });
+    });
+
+    const res = await app.inject({ method: 'GET', url: '/api/throws', headers: AUTH });
+
+    expect(res.statusCode).toBe(429);
+    expect(res.json()).toMatchObject({ statusCode: 429, message: 'Too many questions.' });
+  });
+});
+
 describe('GET /api/catalog', () => {
   const get = () => app.inject({ method: 'GET', url: '/api/catalog', headers: AUTH });
 
