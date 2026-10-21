@@ -283,7 +283,7 @@ describe('generateSql', () => {
     );
     expect(instructions).toContain('Keep the names unique, and never use SELECT *');
     expect(instructions).toContain(
-      'write the latest query of the conversation again, changed only as asked',
+      'redo an earlier answer, write the latest query of the conversation again, changed only as asked',
     );
   });
 

@@ -277,8 +277,8 @@ work.
 - Prompts are LiquidJS templates in `backend/src/prompts/*.liquid`, apart from the code,
   rendered by `renderPrompt` (`backend/src/prompts.ts`). Questions, earlier turns, SQL
   and errors go in as template variables, and HTML escaping stays off (LiquidJS's default),
-  so they reach the LLM literally. The history is one partial, `history.liquid`, that every
-  user prompt includes with `{% render %}`.
+  so they reach the LLM literally. The history is one partial, `history.liquid`, that the
+  classify, reply, SQL and insights user prompts include with `{% render %}`.
 - Model ids come from `.env` (`OPENAI_MODEL`, `OPENAI_DECISIONS_MODEL`), not from code.
 
 ### Evaluation (LLM-as-a-judge, offline)
