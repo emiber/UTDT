@@ -25,9 +25,18 @@ describe('buildInsights', () => {
 
     const format = llm.requests[0].text?.format;
     expect(format).toMatchObject({ type: 'json_schema', name: 'insights', strict: true });
-    const schema = (format as unknown as { schema: { properties: Record<string, unknown> } })
-      .schema;
-    expect(Object.keys(schema.properties)).toEqual(['narrative', 'suggestions', 'chart']);
+    const { schema } = format as unknown as {
+      schema: { properties: Record<string, unknown>; required: string[] };
+    };
+    // The language goes first, so the rest of the output follows it.
+    expect(Object.keys(schema.properties)).toEqual([
+      'language',
+      'narrative',
+      'suggestions',
+      'chart',
+    ]);
+    // Strict Structured Outputs require every property.
+    expect(schema.required).toEqual(Object.keys(schema.properties));
     expect(schema.properties.suggestions).toMatchObject({ minItems: 3, maxItems: 3 });
     // The chart spec only names columns: there's no field for values.
     const chart = schema.properties.chart as { anyOf: { properties?: object }[] };
@@ -59,6 +68,12 @@ describe('buildInsights', () => {
       "if the question asks for a chart and the result can't be charted",
     );
     expect(instructions).toContain('A single value (one row, one column) is shown without a table');
+  });
+
+  it('drops the language field from what it returns', async () => {
+    const llm = fakeLlm(jsonResponse({ language: 'Spanish', ...INSIGHTS, chart: null }));
+
+    expect(await buildInsights(input([['ink', 5]], llm))).toEqual({ ...INSIGHTS, chart: null });
   });
 
   it('returns the chart spec, or null when there is none', async () => {
@@ -94,9 +109,9 @@ describe('buildInsights', () => {
     expect(prompt).toContain('Columns (JSON): ["name","qty"]');
     expect(prompt).toContain('Total rows: 2');
     expect(prompt).toContain('Rows (JSON, one per line):\n["ink",5]\n["pen",null]');
-    expect(String(llm.requests[0].instructions)).toContain(
-      'Write everything in the language of the question',
-    );
+    const instructions = String(llm.requests[0].instructions);
+    expect(instructions).toContain('Write everything in the language of the question');
+    expect(instructions).toContain('whatever the language of the earlier turns');
   });
 
   it('sends the conversation history before the question', async () => {

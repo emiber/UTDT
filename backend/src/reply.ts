@@ -9,6 +9,13 @@ import { renderPrompt } from './prompts.ts';
 const REPLY_SCHEMA = {
   type: 'object',
   properties: {
+    // Written first, so the rest follows it: without it, earlier turns in another language
+    // pull the reply into theirs. The value itself isn't used.
+    language: {
+      type: 'string',
+      description:
+        'The language of the message, not of the earlier turns (e.g. "English"). The reply and the suggestions are written in it.',
+    },
     narrative: { type: 'string', description: 'The short markdown reply.' },
     suggestions: {
       type: 'array',
@@ -18,7 +25,7 @@ const REPLY_SCHEMA = {
       description: 'Three questions the described data can answer.',
     },
   },
-  required: ['narrative', 'suggestions'],
+  required: ['language', 'narrative', 'suggestions'],
   additionalProperties: false,
 };
 
