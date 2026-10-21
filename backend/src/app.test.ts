@@ -8,6 +8,11 @@ import { fakeClassifier, fakeLlm } from './testing/fake-llm.ts';
 
 const ACCESS_KEY = 'test-access-key';
 const AUTH = { authorization: `Bearer ${ACCESS_KEY}` };
+const SERVER_ERROR = {
+  statusCode: 500,
+  error: 'Internal Server Error',
+  message: 'Something went wrong on the server.',
+};
 
 let db: DatabaseSync;
 let dataDb: DatabaseSync;
@@ -63,12 +68,13 @@ describe('GET /api/health', () => {
     expect(res.statusCode).toBe(200);
   });
 
-  it('fails with 500 when the database is unavailable', async () => {
+  it('fails with a generic 500 when the database is unavailable', async () => {
     db.close();
 
     const res = await app.inject({ method: 'GET', url: '/api/health' });
 
     expect(res.statusCode).toBe(500);
+    expect(res.json()).toEqual(SERVER_ERROR);
   });
 });
 
@@ -118,6 +124,11 @@ describe('access key', () => {
 
     expect(withoutKey.statusCode).toBe(401);
     expect(withKey.statusCode).toBe(404);
+    expect(withKey.json()).toEqual({
+      statusCode: 404,
+      error: 'Not Found',
+      message: 'Route GET:/api/nope not found',
+    });
   });
 
   it('checks the key before validating the body', async () => {
@@ -139,6 +150,45 @@ describe('access key', () => {
     });
 
     expect(res.statusCode).toBe(400);
+    // A client error keeps Fastify's own message.
+    expect(res.json()).toEqual({
+      statusCode: 400,
+      code: 'FST_ERR_VALIDATION',
+      error: 'Bad Request',
+      message: 'body/text must be string',
+    });
+  });
+});
+
+describe('errors', () => {
+  it.each([
+    ['an Error without a status', new Error('SQLITE secret')],
+    ['an Error with a 5xx status', Object.assign(new Error('secret'), { statusCode: 503 })],
+    ['an Error with a 3xx status', Object.assign(new Error('secret'), { statusCode: 302 })],
+    ['an Error with a null status', Object.assign(new Error('secret'), { statusCode: null })],
+    ['a string', 'secret'],
+    ['undefined', undefined],
+    ['an object with a 4xx status', { statusCode: 400, message: 'secret' }],
+  ])('answers a generic 500 when a route throws %s', async (_case, thrown) => {
+    app.get('/api/throws', async () => {
+      throw thrown;
+    });
+
+    const res = await app.inject({ method: 'GET', url: '/api/throws', headers: AUTH });
+
+    expect(res.statusCode).toBe(500);
+    expect(res.json()).toEqual(SERVER_ERROR);
+  });
+
+  it('keeps the status and message of an Error with a 4xx status', async () => {
+    app.get('/api/throws', async () => {
+      throw Object.assign(new Error('Too many questions.'), { statusCode: 429 });
+    });
+
+    const res = await app.inject({ method: 'GET', url: '/api/throws', headers: AUTH });
+
+    expect(res.statusCode).toBe(429);
+    expect(res.json()).toMatchObject({ statusCode: 429, message: 'Too many questions.' });
   });
 });
 
@@ -227,12 +277,31 @@ describe('GET /api/catalog', () => {
     ]);
   });
 
-  it('fails with 500 when the metadata tables are missing', async () => {
+  it('fails with a generic 500 when the metadata tables are missing, logging the cause', async () => {
+    const lines: string[] = [];
+    await app.close();
+    app = buildApp({
+      db,
+      dataDb,
+      llm: fakeLlm(),
+      decisions: fakeClassifier(),
+      accessKey: ACCESS_KEY,
+      logger: { level: 'info', stream: { write: (line: string) => lines.push(line) } },
+    });
     dataDb.exec('DROP TABLE meta_tables');
 
     const res = await get();
 
     expect(res.statusCode).toBe(500);
+    expect(res.json()).toEqual(SERVER_ERROR);
+    expect(res.body).not.toContain('meta_tables');
+    const errors = lines.map((line) => JSON.parse(line)).filter((entry) => entry.level === 50);
+    expect(errors).toEqual([
+      expect.objectContaining({
+        msg: 'Request failed',
+        err: expect.objectContaining({ message: 'no such table: meta_tables' }),
+      }),
+    ]);
   });
 
   it('reads the metadata on every request', async () => {

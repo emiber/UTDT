@@ -81,10 +81,16 @@ only purpose is to exercise the pipeline.
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
 | `GET` | `/api/health` | none | Liveness check; reports the SQLite version of `app.db` (scaffold) |
-| `GET` | `/api/catalog` | access key | What the bot can answer about: declared tables with their columns and indexes, and their relationships (see *Catalog* above). A read error is a standard `500` |
+| `GET` | `/api/catalog` | access key | What the bot can answer about: declared tables with their columns and indexes, and their relationships (see *Catalog* above). A read error is a generic `500` |
 | `POST` | `/api/chat` | access key | `{ conversationId?, question }` → `{ conversationId, turnId, blocks, suggestions }`: runs the pipeline below and saves the turn (see *Chat endpoint*) |
 
 The backend listens on `127.0.0.1:3000`; the Vite dev server (port 5173) proxies `/api` there.
+
+**Errors:** a server error (a `5xx`, or an error without a status) is logged with its
+detail, and the client gets a generic `500` in Fastify's error format, with the message
+`Something went wrong on the server.`, so a SQLite message never reaches it. Client
+errors (a `400` from validation, a `404`, the `401` of the access key) keep Fastify's
+format and message. `POST /api/chat` answers its own `502` and `500` (see *Chat endpoint*).
 
 **Auth**: a single shared access key (`APP_ACCESS_KEY` in `.env`).
 

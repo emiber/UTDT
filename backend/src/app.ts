@@ -1,4 +1,8 @@
-import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
+import Fastify, {
+  type FastifyError,
+  type FastifyInstance,
+  type FastifyServerOptions,
+} from 'fastify';
 import type { DatabaseSync } from 'node:sqlite';
 import { hasValidAccessKey } from './auth.ts';
 import { readCatalog } from './catalog.ts';
@@ -50,6 +54,21 @@ export function buildApp({
       statusCode: 401,
       error: 'Unauthorized',
       message: 'Missing or invalid access key.',
+    });
+  });
+
+  // A server error never shows its own message to the client (a SQLite one names tables,
+  // for example): it's logged, and the response is generic. Only a client error (an Error
+  // with a 4xx `statusCode`: a 400 from validation, a 415...) goes on to Fastify's default
+  // handler, unchanged. Anything can be thrown, so `error` may not even be an Error.
+  app.setErrorHandler((error, request, reply) => {
+    const status = error instanceof Error ? (error as FastifyError).statusCode : undefined;
+    if (status !== undefined && status >= 400 && status < 500) throw error;
+    request.log.error({ err: error }, 'Request failed');
+    return reply.code(500).send({
+      statusCode: 500,
+      error: 'Internal Server Error',
+      message: 'Something went wrong on the server.',
     });
   });
 
