@@ -21,9 +21,16 @@ export type GenerateSqlResult =
 const SQL_SCHEMA = {
   type: 'object',
   properties: {
+    // Written first, so the aliases follow it: without it, earlier turns in another language
+    // pull the column names into theirs. The value itself isn't used.
+    language: {
+      type: 'string',
+      description:
+        'The language of the question, not of the earlier turns (e.g. "English"). The column aliases are written in it.',
+    },
     sql: { type: 'string', description: 'One SQLite statement that starts with SELECT or WITH.' },
   },
-  required: ['sql'],
+  required: ['language', 'sql'],
   additionalProperties: false,
 };
 

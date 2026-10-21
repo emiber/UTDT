@@ -147,7 +147,8 @@ Each step is its own issue. The design:
    already retries transient ones). Each attempt logs one line per step with its duration
    and result. The prompt asks for a short, readable alias for every result column, in the
    language of the question (`AS "Precio unitario"`, never `SELECT *`): the table headers,
-   the chart labels and the narrative all use those names. A follow-up that only asks to
+   the chart labels and the narrative all use those names (the output names its language
+   first, see *Language* in step 5). A follow-up that only asks to
    show, chart, sort or redo an earlier answer gets the latest query of the conversation
    again, changed only as asked.
 4. **Guard and execute** (`executeSql` in `backend/src/execute-sql.ts`). Safety is layered:
@@ -197,11 +198,12 @@ Each step is its own issue. The design:
    insights call isn't retried. Rows keep their SQL order: nothing is grouped, sorted or
    cut.
 
-   **Language:** the insights and the text-only reply (step 1) each start their output with
-   a `language` field, the language of the current message, and write the rest in it. The
+   **Language:** the SQL (step 3), the insights and the text-only reply (step 1) each start
+   their output with a `language` field, the language of the current message, and write
+   the rest in it: the column aliases, the narrative, the suggestions, the chart title. The
    value isn't used. Without it, earlier turns in another language pulled the answer into
-   theirs: in a Spanish conversation, an English question got a Spanish answer, even with
-   a prompt rule against it.
+   theirs: in a Spanish conversation, an English question got Spanish column names and a
+   Spanish answer, even with a prompt rule against it.
 6. **Persist the turn** in `app.db` (question, SQL, narrative, response, error, timing,
    classification). Failed turns are saved too, so the turns are the query log. An older
    `app.db` gets the `classification` column added at startup.

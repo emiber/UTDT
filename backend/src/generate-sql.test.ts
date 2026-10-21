@@ -78,11 +78,24 @@ describe('generateSql', () => {
       name: 'sql_query',
       strict: true,
       schema: expect.objectContaining({
-        properties: { sql: expect.objectContaining({ type: 'string' }) },
-        required: ['sql'],
+        // The language goes first, so the column aliases follow it.
+        properties: {
+          language: expect.objectContaining({ type: 'string' }),
+          sql: expect.objectContaining({ type: 'string' }),
+        },
+        required: ['language', 'sql'],
         additionalProperties: false,
       }),
     });
+    const { properties } = (request.text?.format as unknown as { schema: { properties: object } })
+      .schema;
+    expect(Object.keys(properties)).toEqual(['language', 'sql']);
+  });
+
+  it('ignores the language field of the output', async () => {
+    const llm = fakeLlm(jsonResponse({ language: 'English', sql: OK_SQL }));
+
+    expect(await ask(llm)).toMatchObject({ ok: true, sql: OK_SQL });
   });
 
   it('treats an empty result as a success, without retrying', async () => {
