@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   APP_DB_PATH,
   DATA_DB_PATH,
+  MAX_VALUE_LENGTH,
   openDatabase,
   openReadOnlyDatabase,
   sqliteVersion,
@@ -51,6 +52,31 @@ describe('openReadOnlyDatabase', () => {
       expect(db.prepare('SELECT x FROM t').get()).toEqual({ x: 1 });
       expect(() => db.exec('INSERT INTO t VALUES (2)')).toThrow(/readonly/);
       expect(() => db.exec('CREATE TABLE u (y INTEGER)')).toThrow(/readonly/);
+    } finally {
+      db.close();
+    }
+  });
+
+  it(`caps a string or blob at ${MAX_VALUE_LENGTH} bytes, stored or computed`, () => {
+    const file = path.join(makeTempDir(), 'data.db');
+    const writer = openDatabase(file);
+    writer.exec(`CREATE TABLE t (v TEXT); INSERT INTO t VALUES (hex(zeroblob(500001)));`);
+    writer.close();
+
+    const db = openReadOnlyDatabase(file);
+    try {
+      const value = db.prepare('SELECT zeroblob(500000) AS v').get()?.v;
+      expect(value).toHaveLength(500_000);
+      const atLimit = db.prepare(`SELECT zeroblob(${MAX_VALUE_LENGTH}) AS v`).get()?.v;
+      expect(atLimit).toHaveLength(MAX_VALUE_LENGTH);
+      expect(() => db.prepare(`SELECT zeroblob(${MAX_VALUE_LENGTH + 1})`).get()).toThrow(
+        'string or blob too big',
+      );
+      expect(() => db.prepare(`SELECT hex(zeroblob(${MAX_VALUE_LENGTH}))`).get()).toThrow(
+        'string or blob too big',
+      );
+      // 1,000,002 characters, written by a connection without the cap.
+      expect(() => db.prepare('SELECT v FROM t').get()).toThrow('string or blob too big');
     } finally {
       db.close();
     }

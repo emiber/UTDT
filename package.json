@@ -5,7 +5,7 @@
   "description": "POC of a Text-to-SQL chatbot: natural-language questions answered with insights, tables and charts.",
   "type": "module",
   "engines": {
-    "node": ">=24"
+    "node": ">=24.15"
   },
   "workspaces": [
     "backend",

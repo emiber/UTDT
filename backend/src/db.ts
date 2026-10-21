@@ -16,16 +16,20 @@ export function openDatabase(file: string): DatabaseSync {
   return new DatabaseSync(file);
 }
 
+/** The largest string or blob a read-only connection produces, in bytes (UTF-8 for text). */
+export const MAX_VALUE_LENGTH = 1_000_000;
+
 /**
  * Opens an existing database read-only, so SQLite itself rejects any write to the file.
  * Temp tables are still allowed, so code that runs untrusted SQL must also check the
- * statement. Never creates the file.
+ * statement. A value longer than MAX_VALUE_LENGTH fails with "string or blob too big":
+ * SQLite's own limit (1 GB) lets through values that crash Node. Never creates the file.
  */
 export function openReadOnlyDatabase(file: string): DatabaseSync {
   if (!existsSync(file)) {
     throw new Error(`Database not found at ${file}. Run \`npm run seed\` to create it.`);
   }
-  return new DatabaseSync(file, { readOnly: true });
+  return new DatabaseSync(file, { readOnly: true, limits: { length: MAX_VALUE_LENGTH } });
 }
 
 export function sqliteVersion(db: DatabaseSync): string {

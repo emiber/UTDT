@@ -170,11 +170,12 @@ describe('executeSql: SQL errors', () => {
     });
   });
 
-  it('returns an error for a value over SQLite’s size limit', () => {
-    expect(executeSql(db, 'SELECT zeroblob(2000000000)')).toMatchObject({
+  it('returns an error for a value over the connection’s size limit', () => {
+    // 1,200,000 characters: over MAX_VALUE_LENGTH, far under what crashes Node.
+    expect(executeSql(db, 'SELECT hex(zeroblob(600000))')).toEqual({
       ok: false,
       kind: 'sql',
-      message: expect.stringMatching(/too big/),
+      message: 'string or blob too big',
     });
   });
 
