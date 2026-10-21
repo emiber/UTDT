@@ -20,6 +20,13 @@ export interface Insights {
 const INSIGHTS_SCHEMA = {
   type: 'object',
   properties: {
+    // Written first, so the rest follows it: without it, earlier turns in another language
+    // pull the narrative into theirs. The value itself isn't used.
+    language: {
+      type: 'string',
+      description:
+        'The language of the question, not of the earlier turns (e.g. "English"). The narrative, the suggestions and the chart title are written in it.',
+    },
     narrative: { type: 'string', description: 'A short markdown narrative of the result.' },
     suggestions: {
       type: 'array',
@@ -50,7 +57,7 @@ const INSIGHTS_SCHEMA = {
       ],
     },
   },
-  required: ['narrative', 'suggestions', 'chart'],
+  required: ['language', 'narrative', 'suggestions', 'chart'],
   additionalProperties: false,
 };
 

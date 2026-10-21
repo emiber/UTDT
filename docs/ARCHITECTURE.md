@@ -188,6 +188,12 @@ Each step is its own issue. The design:
    column) goes without a table: the narrative already says it. So an answer is always
    text, plus a table and a chart when they add something.
 
+   **Language:** the insights and the text-only reply (step 1) each start their output with
+   a `language` field, the language of the current message, and write the rest in it. The
+   value isn't used. Without it, earlier turns in another language pulled the answer into
+   theirs: in a Spanish conversation, an English question got a Spanish answer 4 times out
+   of 4, even with a prompt rule against it.
+
    `buildChart` (`backend/src/chart.ts`) checks the spec against the result: the result has
    rows; `x` and each series name exactly one result column (a repeated name doesn't);
    `series` isn't empty and doesn't include `x`; every series value is a number or `null`;
