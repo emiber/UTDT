@@ -281,10 +281,18 @@ work.
   Structured Outputs request and returns the parsed object. Every failure (API or network
   errors after the SDK's retries, a refusal, an incomplete response, output that isn't a
   JSON object) is thrown as an `LlmError`, which the chat endpoint maps to a `502`; raw SDK
-  errors never escape. Each request carries its whole
-  context, so the response doesn't need to be stored (`store: false`). Pipeline functions
-  receive the client as a parameter. **Tests never hit the network**: they pass the fake
-  client in `backend/src/testing/fake-llm.ts`.
+  errors never escape. Each request carries its whole context, so the response doesn't
+  need to be stored (`store: false`). Pipeline functions receive the client as a
+  parameter. **Tests never hit the network**: they pass the fake client in
+  `backend/src/testing/fake-llm.ts`.
+- **Timeouts:** both clients share one SDK instance setup (`createOpenAI`): 30 s per
+  attempt (`REQUEST_TIMEOUT_MS`) and one retry (`MAX_RETRIES`), instead of the SDK's 10
+  minutes and 2 retries. A request that hangs gives up after about a minute, as an
+  `LlmError`. A chat request makes at most 5 calls in series (the classification, up to 3
+  SQL attempts and the insights), so the backend's worst case is about 5 × 2 × 30 s =
+  300 s, plus the SDK's wait before each retry (0.5 s, or the API's `Retry-After`, up to
+  60 s). The frontend waits 6 minutes (see *Frontend*). The SQL itself has no timeout (see
+  *Query timeout* in the deferred decisions).
 - Prompts are LiquidJS templates in `backend/src/prompts/*.liquid`, apart from the code,
   rendered by `renderPrompt` (`backend/src/prompts.ts`). Questions, earlier turns, SQL
   and errors go in as template variables, and HTML escaping stays off (LiquidJS's default),
@@ -353,6 +361,13 @@ deterministic.
   - Errors show in the thread in place of the answer. A `404` (the backend no longer knows
     the conversation) drops the conversation id, so the next question starts a new one;
     other errors keep it. A `401` goes back to the key screen (`apiFetch`).
+  - `postChat` gives up after 6 minutes (`CHAT_TIMEOUT_MS`, an `AbortSignal.timeout`), and
+    the thread says *Could not get an answer: the request took too long.* It's a safety
+    net above the backend's worst case (about 300 s, see *LLM layer*), so it practically
+    never cuts an answer that can still arrive. The backend isn't told: it still finishes
+    and saves the turn. If the conversation already had an id, the next question gets that
+    turn as history; a timeout on the first question leaves no id, so the next one starts
+    a new conversation.
   - The thread and the conversation id live only in memory: a reload starts a new
     conversation.
 - Plain components and composables: no router (two screens, switched by auth state),
@@ -432,7 +447,9 @@ API model, for the classification and the judge. Each issue adds the variables i
 
 Fixed for now, and not configurable: the database paths (`data/app.db`, `data/data.db`,
 relative to the repo root), the backend port (3000), the golden file and report paths, and
-tuning values (retry budget, row cap, insights row sample, context turns). They become
+tuning values (retry budget, row cap, insights row sample, context turns, the OpenAI
+timeout and retries, the chat timeout). A slow model in `OPENAI_MODEL` (over 30 s per
+call) would need the timeout raised in `backend/src/llm.ts`. They become
 config only when there's a reason.
 
 ## Deferred decisions

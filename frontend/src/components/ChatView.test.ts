@@ -5,13 +5,14 @@ import ChatView from './ChatView.vue';
 
 enableAutoUnmount(afterEach);
 
-type Reply = Response | Error | Promise<Response>;
+type Reply = Response | Error | DOMException | Promise<Response>;
 
 function stubChat(...replies: Reply[]) {
   const fetchMock = vi.fn<typeof fetch>(async () => {
     const reply = replies.shift();
     if (!reply) throw new Error('Unexpected request');
-    if (reply instanceof Error) throw reply;
+    // A DOMException isn't an Error here, so it's checked on its own.
+    if (reply instanceof Error || reply instanceof DOMException) throw reply;
     return reply;
   });
   vi.stubGlobal('fetch', fetchMock);
@@ -215,6 +216,11 @@ describe('ChatView', () => {
       'a network error',
       new TypeError('Failed to fetch'),
       'Could not get an answer: Failed to fetch',
+    ],
+    [
+      'a timeout',
+      new DOMException('The operation timed out.', 'TimeoutError'),
+      'Could not get an answer: the request took too long.',
     ],
   ])('shows %s in the thread and keeps the conversation', async (_case, reply, message) => {
     const fetchMock = stubChat(answer(), reply, answer({ turnId: 3 }));
