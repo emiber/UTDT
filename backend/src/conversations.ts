@@ -20,9 +20,17 @@ export function createConversationTables(db: DatabaseSync): void {
       narrative TEXT,
       response TEXT,
       error TEXT,
-      duration_ms INTEGER NOT NULL
+      duration_ms INTEGER NOT NULL,
+      classification TEXT
     );
   `);
+  // An app.db from before the classification step: add its column, keeping the turns.
+  const columns = db.prepare("SELECT name FROM pragma_table_info('turns')").all() as {
+    name: string;
+  }[];
+  if (!columns.some((c) => c.name === 'classification')) {
+    db.exec('ALTER TABLE turns ADD COLUMN classification TEXT');
+  }
 }
 
 export function conversationExists(db: DatabaseSync, id: string): boolean {
@@ -38,6 +46,8 @@ export interface Turn {
   response: unknown;
   error: string | null;
   durationMs: number;
+  /** The classifier's label, or null when there was none (it failed, or the turn did). */
+  classification: string | null;
 }
 
 /**
@@ -59,8 +69,9 @@ export function saveTurn(
     const { lastInsertRowid } = db
       .prepare(
         `INSERT INTO turns
-           (conversation_id, created_at, question, sql, narrative, response, error, duration_ms)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+           (conversation_id, created_at, question, sql, narrative, response, error, duration_ms,
+            classification)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
@@ -71,6 +82,7 @@ export function saveTurn(
         turn.response === null ? null : JSON.stringify(turn.response),
         turn.error,
         turn.durationMs,
+        turn.classification,
       );
     db.exec('COMMIT');
     return { conversationId: id, turnId: Number(lastInsertRowid) };

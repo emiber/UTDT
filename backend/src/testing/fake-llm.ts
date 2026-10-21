@@ -67,3 +67,20 @@ export function fakeDecisions(...replies: (DecisionAnswer[] | Error)[]): FakeDec
     },
   };
 }
+
+/** A DecisionClient that always classifies the message as `label`, with this confidence. */
+export function fakeClassifier(label = 'data_question', confidence = 0.9): FakeDecisions {
+  const requests: DecisionCreateParams[] = [];
+  return {
+    model: 'fake-decisions-model',
+    requests,
+    async createDecision(body) {
+      requests.push(body);
+      return {
+        answers: [
+          { type: 'choice', name: 'classification', choice: label, confidence, probabilities: [] },
+        ],
+      };
+    },
+  };
+}

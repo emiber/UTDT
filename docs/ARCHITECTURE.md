@@ -105,14 +105,24 @@ The backend listens on `127.0.0.1:3000`; the Vite dev server (port 5173) proxies
 
 Enough for a local demo, not for real users (see deferred decisions).
 
-### Text-to-SQL pipeline *(steps 2–6 built; classification in a later issue)*
+### Text-to-SQL pipeline
 
 Each step is its own issue. The design:
 
-1. **Classify** the question (Decisions API, `choices`) against the catalog and the recent
-   turns: answerable from the data, needs clarification, or out of scope. Out-of-scope
-   answers explain what data *is* available (from the catalog). Exact labels are defined
-   in the issue.
+1. **Classify** the message (`classifyQuestion` in `backend/src/classify.ts`): one Decisions
+   API `choice` question over the schema context, the recent turns and the message, with
+   four labels — `data_question`, `conversation` (greetings, thanks, questions about the
+   bot), `needs_clarification` (about the data but too vague) and `out_of_scope`.
+   - Anything but a data question gets a **text-only reply** (`buildReply` in
+     `backend/src/reply.ts`, Responses API, Structured Outputs), in the language of the
+     message and with no figures: a greeting is returned with a sentence on what data is
+     available, a vague question gets the one question that would make it answerable, an
+     off-topic one gets what can be asked. Three suggestions the data can answer. No SQL
+     runs.
+   - A label other than `data_question` with confidence under 0.5 counts as a data
+     question: better to try the data than to refuse unsure.
+   - If the Decisions API fails, a warning is logged and the message goes down the data
+     path, as before the classifier existed.
 2. **Build the schema context** from the metadata tables (`buildSchemaContext` in
    `backend/src/schema-context.ts`, on top of the catalog): tables, columns and
    relationships in load order, without indexes or rows.
@@ -155,7 +165,9 @@ Each step is its own issue. The design:
    title). The prompt asks for `null` when the result can't be charted or a chart adds
    nothing (e.g. one or two rows). The **backend** builds the table and the chart data from
    the real result rows — the LLM never re-types data, so it can't invent numbers, and it
-   saves tokens. With 0 rows there's no table and no chart.
+   saves tokens. With 0 rows there's no table and no chart, and a single value (1 row × 1
+   column) goes without a table: the narrative already says it. So an answer is always
+   text, plus a table and a chart when they add something.
 
    `buildChart` (`backend/src/chart.ts`) checks the spec against the result: the result has
    rows; `x` and each series name exactly one result column (a repeated name doesn't);
@@ -164,12 +176,15 @@ Each step is its own issue. The design:
    in the log (its reason, not the rows): the answer comes out without a chart, and the
    insights call isn't retried. Rows keep their SQL order: nothing is grouped, sorted or
    cut.
-6. **Persist the turn** in `app.db` (question, SQL, narrative, response, error, timing;
-   later the classification). Failed turns are saved too, so the turns are the query log.
+6. **Persist the turn** in `app.db` (question, SQL, narrative, response, error, timing,
+   classification). Failed turns are saved too, so the turns are the query log. An older
+   `app.db` gets the `classification` column added at startup.
 
-Steps 2–5 run in `answerQuestion` (`backend/src/pipeline.ts`), with no HTTP or `app.db`,
-so the offline evaluation can reuse it. Its result also carries the checked chart spec (or
-`null`), which the HTTP response leaves out. When every SQL attempt fails it returns why
+Steps 1–5 run in `answerQuestion` (`backend/src/pipeline.ts`), with no HTTP or `app.db`,
+so the offline evaluation can reuse it. Its result is a data answer (`kind: 'data'`), a
+text reply (`kind: 'reply'`) or the reason every SQL attempt failed, each with the
+classification. A data answer also carries the checked chart spec (or `null`), which the
+HTTP response leaves out. When every SQL attempt fails it returns why
 (without insights); anything it throws is a `PipelineError` whose `cause` is the original
 error (an `LlmError` for OpenAI failures) and which keeps the final SQL, if any.
 
@@ -199,9 +214,10 @@ keep their values; `NULL` is `null`. The chart block comes last, after the table
   app-wide, so future querystring or params schemas must use `type: 'string'` and parse by
   hand. An unknown `conversationId` is a `404`. Neither calls OpenAI or saves anything.
 - Without a `conversationId` it starts a new conversation (the backend makes the id).
-- `200`: `blocks` = `[text, table]` (`[text]` with 0 rows), plus a `chart` block last when
-  the LLM's spec fits the result, and 3 `suggestions`. When every SQL attempt fails: `200`
-  with one fixed English `text` block and no suggestions.
+- `200`: `blocks` = `[text, table]` (`[text]` with 0 rows or a single value), plus a
+  `chart` block last when the LLM's spec fits the result, and 3 `suggestions`. A message
+  that isn't a data question: `[text]` and 3 suggestions. When every SQL attempt fails:
+  `200` with one fixed English `text` block and no suggestions.
 - `502` when an OpenAI call fails (API, network, refusal, incomplete output) and `500` on
   an unexpected error, both with a generic message in Fastify's error format; the detail
   goes to the log and the saved turn. A new conversation is created with that turn, but its
@@ -210,9 +226,9 @@ keep their values; `NULL` is `null`. The chart block comes last, after the table
   and saves nothing: those are the only failures after body validation that leave no turn.
 
 **Multi-turn:** each conversation keeps its turns in `app.db`; the last 5 turns
-(question, SQL, narrative — not the data rows, chart or suggestions) go to the SQL and
-insights steps, so follow-ups like "and for last year?" work. *(Later issue: the
-classification step gets the same history.)*
+(question, SQL, narrative — not the data rows, chart or suggestions) go to the
+classification, SQL, insights and reply steps, so follow-ups like "and for last year?"
+work.
 
 - `loadHistory` (`backend/src/conversations.ts`) reads them oldest first, before the
   current turn is saved, so a question is never its own history. A new conversation (no
@@ -226,7 +242,7 @@ classification step gets the same history.)*
 - The window of 5 is a constant: no summarizing or truncation. A reload starts a new
   conversation, because the frontend keeps the id only in memory.
 
-### LLM layer (OpenAI API) *(Responses and the Decisions client built; classification in a later issue)*
+### LLM layer (OpenAI API)
 
 - **Responses API** for everything that generates text: SQL and insights. Structured
   Outputs (JSON schema) guarantee parseable responses — no "strip the markdown fence and
@@ -385,11 +401,11 @@ only what the scaffold's code uses. `openai` and `liquidjs` came with SQL genera
 ## Configuration
 
 Root `.env` (gitignored; placeholders in `.env.example`), loaded by Node's
-`--env-file-if-exists`. Three variables are **required**: without any of them the backend
-refuses to start, with an error naming it. `APP_ACCESS_KEY` is the app's shared key
-(auth); `OPENAI_API_KEY` and `OPENAI_MODEL` (a model with Structured Outputs in the
-Responses API) are for the LLM. `OPENAI_DECISIONS_MODEL` (the Decisions API model) is
-needed only by `npm run eval`, which checks it. Each issue adds the variables it uses.
+`--env-file-if-exists`. Four variables are **required**: without any of them the backend
+(and `npm run eval`) refuses to start, with an error naming it. `APP_ACCESS_KEY` is the
+app's shared key (auth); `OPENAI_API_KEY` and `OPENAI_MODEL` (a model with Structured
+Outputs in the Responses API) are for the LLM; `OPENAI_DECISIONS_MODEL` is the Decisions
+API model, for the classification and the judge. Each issue adds the variables it uses.
 
 Fixed for now, and not configurable: the database paths (`data/app.db`, `data/data.db`,
 relative to the repo root), the backend port (3000), the golden file and report paths, and

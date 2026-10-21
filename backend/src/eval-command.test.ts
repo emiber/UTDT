@@ -7,6 +7,7 @@ import { runEvalCommand, type EvalCommandOptions } from './eval-command.ts';
 import type { DecisionAnswer } from './llm.ts';
 import { createMetadataTables, insertMetadata } from './metadata.ts';
 import {
+  fakeClassifier,
   fakeDecisions,
   fakeLlm,
   jsonResponse,
@@ -77,6 +78,7 @@ function run(overrides: Partial<EvalCommandOptions> = {}) {
     now: () => NOW,
     createLlm: () => llm,
     createJudge: () => judge,
+    createDecisions: () => fakeClassifier(),
     ...overrides,
   });
 }
@@ -199,7 +201,12 @@ describe('runEvalCommand', () => {
       ['OPENAI_DECISIONS_MODEL', { OPENAI_API_KEY: 'k', OPENAI_MODEL: 'm' }],
     ])('stops when %s is missing', async (name, env) => {
       // The real client factories: they check the variables before any request.
-      const code = await run({ env, createLlm: undefined, createJudge: undefined });
+      const code = await run({
+        env,
+        createLlm: undefined,
+        createJudge: undefined,
+        createDecisions: undefined,
+      });
 
       expect(code).toBe(1);
       expect(lines).toEqual([

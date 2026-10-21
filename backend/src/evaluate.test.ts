@@ -12,7 +12,13 @@ import {
 } from './evaluate.ts';
 import type { DecisionAnswer } from './llm.ts';
 import { openTestDataDb } from './testing/dataset.ts';
-import { fakeDecisions, fakeLlm, jsonResponse, type FakeDecisions } from './testing/fake-llm.ts';
+import {
+  fakeClassifier,
+  fakeDecisions,
+  fakeLlm,
+  jsonResponse,
+  type FakeDecisions,
+} from './testing/fake-llm.ts';
 
 const GOLDEN = { id: 'units', question: 'Units per item?' };
 const SQL = 'SELECT name, qty FROM items ORDER BY id';
@@ -45,7 +51,13 @@ afterEach(() => {
 });
 
 function deps(llm: ReturnType<typeof fakeLlm>, judge: FakeDecisions): EvalDeps {
-  return { dataDb, llm, judge, schemaContext: 'Table items: One row per item.' };
+  return {
+    dataDb,
+    llm,
+    decisions: fakeClassifier(),
+    judge,
+    schemaContext: 'Table items: One row per item.',
+  };
 }
 
 describe('parseGolden', () => {
@@ -203,6 +215,24 @@ describe('evaluateCase', () => {
       status: 'error',
       error: 'OpenAI request failed: 500 Server error',
       sql: null,
+    });
+    expect(judge.requests).toHaveLength(0);
+  });
+
+  it('marks a golden question the classifier sends to a text reply as without an answer', async () => {
+    const judge = fakeDecisions();
+    const reply = jsonResponse({ narrative: 'Hi!', suggestions: ['A?', 'B?', 'C?'] });
+
+    const result = await evaluateCase(GOLDEN, {
+      ...deps(fakeLlm(reply), judge),
+      decisions: fakeClassifier('conversation'),
+    });
+
+    expect(result).toMatchObject({
+      status: 'unanswered',
+      reason: 'classified as conversation',
+      sql: null,
+      criteria: null,
     });
     expect(judge.requests).toHaveLength(0);
   });

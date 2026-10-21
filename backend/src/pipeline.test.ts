@@ -4,7 +4,14 @@ import { SAMPLE_ROWS } from './insights.ts';
 import { LlmError } from './llm.ts';
 import { answerQuestion, PipelineError, type PipelineLogger } from './pipeline.ts';
 import { openTestDataDb } from './testing/dataset.ts';
-import { fakeLlm, jsonResponse, refusalResponse } from './testing/fake-llm.ts';
+import {
+  fakeClassifier,
+  fakeDecisions,
+  fakeLlm,
+  jsonResponse,
+  refusalResponse,
+  type FakeDecisions,
+} from './testing/fake-llm.ts';
 
 const INSIGHTS = { narrative: 'Ink sold the most.', suggestions: ['A?', 'B?', 'C?'] };
 const sqlReply = (sql: string) => jsonResponse({ sql });
@@ -13,8 +20,10 @@ let dataDb: DatabaseSync;
 let logs: Record<string, unknown>[];
 let warnings: Record<string, unknown>[];
 let log: PipelineLogger;
+let decisions: FakeDecisions;
 
 beforeEach(() => {
+  decisions = fakeClassifier();
   dataDb = openTestDataDb();
   logs = [];
   warnings = [];
@@ -26,7 +35,7 @@ afterEach(() => {
 });
 
 const ask = (llm: ReturnType<typeof fakeLlm>) =>
-  answerQuestion({ question: 'Units per item?', dataDb, llm, log });
+  answerQuestion({ question: 'Units per item?', dataDb, llm, decisions, log });
 
 async function rejection(promise: Promise<unknown>): Promise<PipelineError> {
   const error = await promise.catch((e: unknown) => e);
@@ -43,6 +52,8 @@ describe('answerQuestion', () => {
 
     expect(await ask(llm)).toEqual({
       ok: true,
+      kind: 'data',
+      classification: 'data_question',
       sql: 'SELECT name, qty FROM items ORDER BY id',
       columns: ['name', 'qty'],
       rows: [
@@ -83,6 +94,7 @@ describe('answerQuestion', () => {
 
     expect(await ask(llm)).toEqual({
       ok: false,
+      classification: 'data_question',
       sql: 'SELECT c FROM items',
       kind: 'sql',
       message: 'no such column: c',
@@ -172,7 +184,7 @@ describe('answerQuestion', () => {
         labels: ['pen', 'ink'],
         datasets: [{ label: 'qty', data: [3, 5] }],
       });
-      expect(result.ok && result.chart).toEqual(SPEC);
+      expect(result.ok && result.kind === 'data' && result.chart).toEqual(SPEC);
       expect(warnings).toEqual([]);
     });
 
@@ -180,7 +192,7 @@ describe('answerQuestion', () => {
       const result = await ask(withChart(null));
 
       expect(result.ok && result.blocks.map((b) => b.type)).toEqual(['text', 'table']);
-      expect(result.ok && result.chart).toBeNull();
+      expect(result.ok && result.kind === 'data' && result.chart).toBeNull();
       expect(warnings).toEqual([]);
     });
 
@@ -188,7 +200,7 @@ describe('answerQuestion', () => {
       const result = await ask(withChart({ ...SPEC, series: ['nope'] }));
 
       expect(result.ok && result.blocks.map((b) => b.type)).toEqual(['text', 'table']);
-      expect(result.ok && result.chart).toBeNull();
+      expect(result.ok && result.kind === 'data' && result.chart).toBeNull();
       expect(warnings).toEqual([{ reason: 'column "nope" is not in the result' }]);
     });
 
@@ -198,5 +210,59 @@ describe('answerQuestion', () => {
       expect(result.ok && result.blocks.map((b) => b.type)).toEqual(['text']);
       expect(warnings).toEqual([{ reason: 'the result has no rows' }]);
     });
+  });
+});
+
+describe('answerQuestion: classification', () => {
+  const REPLY = {
+    narrative: '¡Hola! Puedo responder sobre los artículos.',
+    suggestions: ['A?', 'B?', 'C?'],
+  };
+
+  it('replies with text only, without SQL, to a message that is not a data question', async () => {
+    decisions = fakeClassifier('conversation');
+    const llm = fakeLlm(jsonResponse(REPLY));
+
+    expect(await ask(llm)).toEqual({
+      ok: true,
+      kind: 'reply',
+      classification: 'conversation',
+      narrative: REPLY.narrative,
+      suggestions: REPLY.suggestions,
+      blocks: [{ type: 'text', markdown: REPLY.narrative }],
+    });
+    // The only Responses call is the reply: no SQL was generated.
+    expect(llm.requests).toHaveLength(1);
+    expect(llm.requests[0].text?.format).toMatchObject({ name: 'reply' });
+    expect(logs.map((l) => l.step).filter(Boolean)).toEqual(['classify', 'reply']);
+  });
+
+  it('answers from the data, with a warning, when the classifier fails', async () => {
+    decisions = fakeDecisions(new Error('503 Busy'));
+    const llm = fakeLlm(sqlReply('SELECT name FROM items'), jsonResponse(INSIGHTS));
+
+    const result = await ask(llm);
+
+    expect(result).toMatchObject({ ok: true, kind: 'data', classification: null });
+    expect(warnings).toEqual([{ reason: 'OpenAI decision failed: 503 Busy' }]);
+  });
+
+  it('throws when the reply request fails', async () => {
+    decisions = fakeClassifier('out_of_scope');
+
+    const error = await rejection(ask(fakeLlm(new Error('500 Server error'))));
+
+    expect(error.cause).toBeInstanceOf(LlmError);
+    expect(error.sql).toBeNull();
+  });
+
+  it.each([
+    ['a single value', 'SELECT count(*) AS n FROM items', ['text']],
+    ['two rows of one column', 'SELECT name FROM items', ['text', 'table']],
+    ['one row of two columns', 'SELECT name, qty FROM items WHERE id = 1', ['text', 'table']],
+  ])('shows a table for %s only when it adds something', async (_case, sql, types) => {
+    const result = await ask(fakeLlm(sqlReply(sql), jsonResponse(INSIGHTS)));
+
+    expect(result.ok && result.blocks.map((b) => b.type)).toEqual(types);
   });
 });

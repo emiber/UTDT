@@ -19,6 +19,7 @@ const TURN: Turn = {
   response: { blocks: [], suggestions: [] },
   error: null,
   durationMs: 12,
+  classification: 'data_question',
 };
 
 beforeEach(() => {
@@ -59,6 +60,7 @@ describe('saveTurn', () => {
       response: '{"blocks":[],"suggestions":[]}',
       error: null,
       duration_ms: 12,
+      classification: 'data_question',
     });
   });
 
@@ -160,5 +162,37 @@ describe('loadHistory', () => {
     }).conversationId;
 
     expect(loadHistory(db, id)).toEqual([{ question: 'Hi' }]);
+  });
+});
+
+describe('createConversationTables on an older app.db', () => {
+  it('adds the classification column, keeping the turns', () => {
+    const old = openDatabase(':memory:');
+    old.exec(`
+      CREATE TABLE conversations (id TEXT PRIMARY KEY, created_at TEXT NOT NULL);
+      CREATE TABLE turns (
+        id INTEGER PRIMARY KEY,
+        conversation_id TEXT NOT NULL REFERENCES conversations (id),
+        created_at TEXT NOT NULL,
+        question TEXT NOT NULL,
+        sql TEXT,
+        narrative TEXT,
+        response TEXT,
+        error TEXT,
+        duration_ms INTEGER NOT NULL
+      );
+      INSERT INTO conversations VALUES ('c1', 'then');
+      INSERT INTO turns (conversation_id, created_at, question, duration_ms)
+        VALUES ('c1', 'then', 'Old question?', 5);
+    `);
+    try {
+      createConversationTables(old);
+
+      expect(old.prepare('SELECT question, classification FROM turns').all()).toEqual([
+        { question: 'Old question?', classification: null },
+      ]);
+    } finally {
+      old.close();
+    }
   });
 });

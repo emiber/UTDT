@@ -43,10 +43,12 @@ it still has the one from `.env.example`. For example:
 node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
 ```
 
-`OPENAI_API_KEY` and `OPENAI_MODEL` are required too: the backend builds the OpenAI client
-at startup and refuses to start without either, naming the missing one. The key is used
-for every OpenAI call; the model must support Structured Outputs in the Responses API
-(e.g. `gpt-5.4-mini`).
+`OPENAI_API_KEY`, `OPENAI_MODEL` and `OPENAI_DECISIONS_MODEL` are required too: the
+backend builds the OpenAI clients at startup and refuses to start without any of them,
+naming the missing one. The key is used for every OpenAI call. `OPENAI_MODEL` must
+support Structured Outputs in the Responses API (e.g. `gpt-5.4-mini`), and
+`OPENAI_DECISIONS_MODEL` is the Decisions API model that classifies each question (today
+only `gpt-6-luna`).
 
 `npm run seed` loads a small, fictitious sales dataset and the metadata that describes it
 to the bot (see *Data* in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)). It's **required
