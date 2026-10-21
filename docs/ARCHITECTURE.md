@@ -139,16 +139,16 @@ Each step is its own issue. The design:
    classification, which gets it too.
 3. **Generate SQL** (Responses API, Structured Outputs) from the question, the schema
    context and the last turns of the conversation (`generateSql` in
-   `backend/src/generate-sql.ts`; see *Multi-turn*). The output is a strict `{ sql }`
-   object, passed to step 4 as is. It runs a generate → execute → retry loop: on a
+   `backend/src/generate-sql.ts`; see *Multi-turn*). The output is a strict
+   `{ language, sql }` object (see *Language* in step 5); only `sql` goes on to step 4, as
+   is. It runs a generate → execute → retry loop: on a
    returned error, the next request carries every failed attempt of the question (its SQL
    and message), up to **3 attempts in total**; after that the last error is returned.
    OpenAI failures, refusals and incomplete responses are thrown, not retried (the SDK
    already retries transient ones). Each attempt logs one line per step with its duration
    and result. The prompt asks for a short, readable alias for every result column, in the
    language of the question (`AS "Precio unitario"`, never `SELECT *`): the table headers,
-   the chart labels and the narrative all use those names (the output names its language
-   first, see *Language* in step 5). A follow-up that only asks to
+   the chart labels and the narrative all use those names. A follow-up that only asks to
    show, chart, sort or redo an earlier answer gets the latest query of the conversation
    again, changed only as asked.
 4. **Guard and execute** (`executeSql` in `backend/src/execute-sql.ts`). Safety is layered:

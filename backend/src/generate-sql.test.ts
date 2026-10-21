@@ -16,7 +16,8 @@ let logs: Record<string, unknown>[];
 let log: StepLogger;
 
 const OK_SQL = 'SELECT name, qty FROM items ORDER BY id';
-const sqlReply = (sql: unknown) => jsonResponse({ sql });
+// Like the real output: the language comes first, and generateSql must ignore it.
+const sqlReply = (sql: unknown) => jsonResponse({ language: 'English', sql });
 
 beforeEach(() => {
   tempDir = mkdtempSync(path.join(tmpdir(), 'utdt-gen-'));
@@ -90,12 +91,6 @@ describe('generateSql', () => {
     const { properties } = (request.text?.format as unknown as { schema: { properties: object } })
       .schema;
     expect(Object.keys(properties)).toEqual(['language', 'sql']);
-  });
-
-  it('ignores the language field of the output', async () => {
-    const llm = fakeLlm(jsonResponse({ language: 'English', sql: OK_SQL }));
-
-    expect(await ask(llm)).toMatchObject({ ok: true, sql: OK_SQL });
   });
 
   it('treats an empty result as a success, without retrying', async () => {
