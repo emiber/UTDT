@@ -213,8 +213,9 @@ Each step is its own issue. The design:
    `llm_calls`: `turn_id`, `step` (`classify`, `sql`, or `answer` for the insights or the
    text reply), `attempt` (1 to 3 for `sql`, 1 otherwise), `model`, `duration_ms` (the call
    only, the SDK's retries included, not the SQL execution) and the `input_tokens` and
-   `output_tokens` OpenAI reports. A failed call keeps its time with the tokens empty
-   (OpenAI reports none), and a failed turn keeps the calls it made. `requestStructured`
+   `output_tokens` OpenAI reports. A call that gets no response (a timeout, an API error)
+   keeps its time with the tokens empty; a refusal or an incomplete response keeps the
+   tokens OpenAI reports. A failed turn keeps the calls it made. `requestStructured`
    and `requestDecision` measure each call and pass it to an `onLlmCall` callback; each
    step tags its own, and the chat route collects them. Totals per turn and step:
 

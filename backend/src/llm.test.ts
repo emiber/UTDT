@@ -222,10 +222,11 @@ describe('requestStructured', () => {
     // The wait counts (timers can fire a little early), and nothing before the call does:
     // no call can take longer than the whole test.
     const testMs = performance.now() - testStarted;
-    expect(calls.map((c) => c.durationMs >= 30 && c.durationMs <= testMs + 1)).toEqual([
-      true,
-      true,
-    ]);
+    expect(calls).toHaveLength(2);
+    for (const { durationMs } of calls) {
+      expect(durationMs).toBeGreaterThanOrEqual(30);
+      expect(durationMs).toBeLessThanOrEqual(testMs + 1);
+    }
   });
 
   it('reports a failed call with its duration and no tokens', async () => {
@@ -367,12 +368,26 @@ describe('requestDecision', () => {
     expect((error as LlmError).cause).toBe(apiError);
   });
 
-  it('throws an LlmError when the answers do not match the questions', async () => {
+  it('throws an LlmError when the answers do not match the questions, after reporting the call', async () => {
+    const calls: LlmCall[] = [];
     const judge = fakeDecisions([{ type: 'predicate', name: 'p', probability: 1 }]);
 
-    await expect(requestDecision(judge, 'x', QUESTIONS)).rejects.toThrow(
+    await expect(requestDecision(judge, 'x', QUESTIONS, (c) => calls.push(c))).rejects.toThrow(
       'The decision has 1 answers for 2 questions.',
     );
+    expect(calls).toHaveLength(1);
+  });
+
+  it('reports a response that is not an object once, as a failed call', async () => {
+    const calls: LlmCall[] = [];
+    const client = { model: 'm', createDecision: async () => undefined as never };
+
+    await expect(requestDecision(client, 'x', QUESTIONS, (c) => calls.push(c))).rejects.toThrow(
+      LlmError,
+    );
+    expect(calls).toEqual([
+      { model: 'm', durationMs: expect.any(Number), inputTokens: null, outputTokens: null },
+    ]);
   });
 
   it('throws an LlmError when the response has no answers', async () => {

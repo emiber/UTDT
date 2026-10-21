@@ -326,7 +326,7 @@ describe('answerQuestion: LLM calls', () => {
     // step, attempt, model and tokens; the duration is real time, so only its type.
     for (const call of calls) expect(call.durationMs).toEqual(expect.any(Number));
     const summary = calls.map(({ step, attempt, model, inputTokens, outputTokens }) =>
-      [step, attempt, model, inputTokens, outputTokens].join(' '),
+      [step, attempt, model, inputTokens, outputTokens].map(String).join(' '),
     );
     return { result, summary };
   };
@@ -375,7 +375,10 @@ describe('answerQuestion: LLM calls', () => {
     const { result, summary } = await askRecording(fakeLlm(new Error('500 Server error')));
 
     expect(result).toBeInstanceOf(PipelineError);
-    expect(summary).toEqual(['classify 1 fake-decisions-model 50 0', 'answer 1 fake-model  ']);
+    expect(summary).toEqual([
+      'classify 1 fake-decisions-model 50 0',
+      'answer 1 fake-model null null',
+    ]);
   });
 
   it('reports a failed classification without tokens, then the data path', async () => {
@@ -385,7 +388,7 @@ describe('answerQuestion: LLM calls', () => {
     const { summary } = await askRecording(llm);
 
     expect(summary).toEqual([
-      'classify 1 fake-decisions-model  ',
+      'classify 1 fake-decisions-model null null',
       'sql 1 fake-model 100 20',
       'answer 1 fake-model 100 20',
     ]);
@@ -400,7 +403,7 @@ describe('answerQuestion: LLM calls', () => {
     expect(summary).toEqual([
       'classify 1 fake-decisions-model 50 0',
       'sql 1 fake-model 100 20',
-      'answer 1 fake-model  ',
+      'answer 1 fake-model null null',
     ]);
   });
 });
