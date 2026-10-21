@@ -183,6 +183,26 @@ describe('generateSql', () => {
     ]);
   });
 
+  it('reports the LLM call of each attempt with its number, a failed one without tokens', async () => {
+    const calls: { attempt: number; inputTokens: number | null }[] = [];
+    const llm = fakeLlm(sqlReply('SELECT nope FROM items'), new Error('Request timed out.'));
+
+    await expect(
+      generateSql({
+        question: 'Units?',
+        db,
+        llm,
+        log,
+        onLlmCall: (call) => calls.push(call),
+      }),
+    ).rejects.toThrow(LlmError);
+
+    expect(calls).toEqual([
+      expect.objectContaining({ attempt: 1, model: 'fake-model', inputTokens: 100 }),
+      expect.objectContaining({ attempt: 2, inputTokens: null, outputTokens: null }),
+    ]);
+  });
+
   it('propagates an error the executor throws, without asking again', async () => {
     const llm = fakeLlm(sqlReply(OK_SQL));
     const create = llm.createResponse;

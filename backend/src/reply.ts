@@ -1,6 +1,6 @@
 import type { Classification } from './classify.ts';
 import type { HistoryTurn } from './conversations.ts';
-import { LlmError, requestStructured, type LlmClient } from './llm.ts';
+import { LlmError, requestStructured, type LlmClient, type OnLlmCall } from './llm.ts';
 import { renderPrompt } from './prompts.ts';
 
 // The answer to a message that isn't a data question: text only, no SQL. It still points the
@@ -35,6 +35,8 @@ export interface ReplyInput {
   schemaContext: string;
   history: HistoryTurn[];
   llm: LlmClient;
+  /** Gets the Responses API call, failed or not. */
+  onLlmCall?: OnLlmCall;
 }
 
 /** Writes the text reply for a greeting, a vague question or an off-topic message. */
@@ -44,13 +46,18 @@ export async function buildReply({
   schemaContext,
   history,
   llm,
+  onLlmCall,
 }: ReplyInput): Promise<{ narrative: string; suggestions: string[] }> {
-  const output = await requestStructured<{ narrative?: unknown; suggestions?: unknown }>(llm, {
-    name: 'reply',
-    schema: REPLY_SCHEMA,
-    instructions: renderPrompt('reply-system', { classification }),
-    input: renderPrompt('reply-user', { schemaContext, history, question }),
-  });
+  const output = await requestStructured<{ narrative?: unknown; suggestions?: unknown }>(
+    llm,
+    {
+      name: 'reply',
+      schema: REPLY_SCHEMA,
+      instructions: renderPrompt('reply-system', { classification }),
+      input: renderPrompt('reply-user', { schemaContext, history, question }),
+    },
+    onLlmCall,
+  );
   const { narrative, suggestions } = output;
   if (
     typeof narrative !== 'string' ||

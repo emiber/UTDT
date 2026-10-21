@@ -118,9 +118,9 @@ backend/src/    Fastify app (app.ts), entry points (server.ts, seed-cli.ts), acc
                 (prompts/, prompts.ts), schema context (schema-context.ts), message
                 classification (classify.ts), text-only replies (reply.ts), SQL generation
                 with retries (generate-sql.ts), insights (insights.ts), charts (chart.ts),
-                the pipeline (pipeline.ts), the chat route (chat.ts), conversations and
-                turns (conversations.ts), offline evaluation (evaluate.ts, eval-command.ts,
-                eval-cli.ts), test helpers (testing/)
+                the pipeline (pipeline.ts), the chat route (chat.ts), conversations, turns
+                and their LLM calls (conversations.ts), offline evaluation (evaluate.ts,
+                eval-command.ts, eval-cli.ts), test helpers (testing/)
 backend/eval/   golden questions for `npm run eval`
 frontend/src/   Vue app (App.vue), API client (api.ts), access-key state (auth.ts),
                 components (components/: key screen, backend status, data catalog, chat

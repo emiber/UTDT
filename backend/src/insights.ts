@@ -1,6 +1,6 @@
 import { CHART_TYPES, type ChartSpec } from './chart.ts';
 import type { HistoryTurn } from './conversations.ts';
-import { LlmError, requestStructured, type LlmClient } from './llm.ts';
+import { LlmError, requestStructured, type LlmClient, type OnLlmCall } from './llm.ts';
 import { renderPrompt } from './prompts.ts';
 
 /** Rows the LLM sees: enough for most aggregations, few tokens. The table shows them all. */
@@ -69,6 +69,8 @@ export interface InsightsInput {
   llm: LlmClient;
   /** Earlier turns of the conversation, oldest first. */
   history?: HistoryTurn[];
+  /** Gets the Responses API call, failed or not. */
+  onLlmCall?: OnLlmCall;
 }
 
 /**
@@ -82,20 +84,25 @@ export async function buildInsights({
   rows,
   llm,
   history = [],
+  onLlmCall,
 }: InsightsInput): Promise<Insights> {
-  const output = await requestStructured<Partial<Insights>>(llm, {
-    name: 'insights',
-    schema: INSIGHTS_SCHEMA,
-    instructions: renderPrompt('insights-system', {}),
-    input: renderPrompt('insights-user', {
-      history,
-      question,
-      sql,
-      columns: JSON.stringify(columns),
-      rowCount: rows.length,
-      sample: rows.slice(0, SAMPLE_ROWS).map((row) => JSON.stringify(row)),
-    }),
-  });
+  const output = await requestStructured<Partial<Insights>>(
+    llm,
+    {
+      name: 'insights',
+      schema: INSIGHTS_SCHEMA,
+      instructions: renderPrompt('insights-system', {}),
+      input: renderPrompt('insights-user', {
+        history,
+        question,
+        sql,
+        columns: JSON.stringify(columns),
+        rowCount: rows.length,
+        sample: rows.slice(0, SAMPLE_ROWS).map((row) => JSON.stringify(row)),
+      }),
+    },
+    onLlmCall,
+  );
   const { narrative, suggestions } = output;
   if (typeof narrative !== 'string' || !isStringList(suggestions)) {
     throw new LlmError('The model returned no valid insights.');

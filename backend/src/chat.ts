@@ -6,6 +6,7 @@ import {
   saveTurn,
   type HistoryTurn,
   type Turn,
+  type TurnLlmCall,
 } from './conversations.ts';
 import { LlmError, type DecisionClient, type LlmClient } from './llm.ts';
 import { answerQuestion, type Block, type PipelineError } from './pipeline.ts';
@@ -72,6 +73,8 @@ export function registerChatRoute(
       }
 
       let turn: Omit<Turn, 'durationMs'>;
+      // Filled as the pipeline goes, so a failed turn still keeps the calls it made.
+      const llmCalls: TurnLlmCall[] = [];
       let body: { blocks: Block[]; suggestions: string[] } | null = null;
       let failure: { status: 502 | 500; message: string } | null = null;
       try {
@@ -82,6 +85,7 @@ export function registerChatRoute(
           decisions,
           log: request.log,
           history,
+          onLlmCall: (call) => llmCalls.push(call),
         });
         body = result.ok
           ? { blocks: result.blocks, suggestions: result.suggestions }
@@ -94,6 +98,7 @@ export function registerChatRoute(
           response: body,
           error: result.ok ? null : `${result.kind}: ${result.message}`,
           classification: result.classification,
+          llmCalls,
         };
       } catch (error) {
         // answerQuestion throws only PipelineErrors, wrapping the original as the cause.
@@ -110,6 +115,7 @@ export function registerChatRoute(
           response: null,
           error: (cause as Error).message,
           classification: null,
+          llmCalls,
         };
       }
 

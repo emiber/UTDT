@@ -10,10 +10,13 @@ import {
   requestStructured,
   type DecisionAnswer,
   type DecisionQuestion,
+  type LlmCall,
+  type LlmResponse,
   type StructuredRequest,
 } from './llm.ts';
 import {
   fakeDecisions,
+  FAKE_USAGE,
   fakeLlm,
   incompleteResponse,
   jsonResponse,
@@ -165,6 +168,83 @@ describe('requestStructured', () => {
     await expect(requestStructured(llm, REQUEST)).resolves.toEqual({ answer: 'yes' });
   });
 
+  it('reports the call with its model, duration and tokens', async () => {
+    const calls: LlmCall[] = [];
+
+    await requestStructured(fakeLlm(jsonResponse({ answer: 'yes' })), REQUEST, (c) =>
+      calls.push(c),
+    );
+
+    expect(calls).toEqual([
+      {
+        model: 'fake-model',
+        durationMs: expect.any(Number),
+        inputTokens: FAKE_USAGE.input_tokens,
+        outputTokens: FAKE_USAGE.output_tokens,
+      },
+    ]);
+  });
+
+  it('reports the tokens of a refusal, which OpenAI still counts, before throwing', async () => {
+    const calls: LlmCall[] = [];
+    const llm = fakeLlm({ ...refusalResponse('No.'), usage: FAKE_USAGE });
+
+    await expect(requestStructured(llm, REQUEST, (c) => calls.push(c))).rejects.toThrow(LlmError);
+    expect(calls).toMatchObject([{ inputTokens: 100, outputTokens: 20 }]);
+  });
+
+  it('measures the time of the call itself, also when it fails', async () => {
+    const calls: LlmCall[] = [];
+    const slow = (reply: () => LlmResponse) => ({
+      model: 'm',
+      createResponse: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 40));
+        return reply();
+      },
+    });
+    const testStarted = performance.now();
+
+    await requestStructured(
+      slow(() => jsonResponse({ answer: 'yes' })),
+      REQUEST,
+      (c) => calls.push(c),
+    );
+    await expect(
+      requestStructured(
+        slow(() => {
+          throw new Error('Request timed out.');
+        }),
+        REQUEST,
+        (c) => calls.push(c),
+      ),
+    ).rejects.toThrow(LlmError);
+
+    // The wait counts (timers can fire a little early), and nothing before the call does:
+    // no call can take longer than the whole test.
+    const testMs = performance.now() - testStarted;
+    expect(calls).toHaveLength(2);
+    for (const { durationMs } of calls) {
+      expect(durationMs).toBeGreaterThanOrEqual(30);
+      expect(durationMs).toBeLessThanOrEqual(testMs + 1);
+    }
+  });
+
+  it('reports a failed call with its duration and no tokens', async () => {
+    const calls: LlmCall[] = [];
+
+    await expect(
+      requestStructured(fakeLlm(new Error('Request timed out.')), REQUEST, (c) => calls.push(c)),
+    ).rejects.toThrow(LlmError);
+    expect(calls).toEqual([
+      {
+        model: 'fake-model',
+        durationMs: expect.any(Number),
+        inputTokens: null,
+        outputTokens: null,
+      },
+    ]);
+  });
+
   it('wraps API errors in an LlmError that keeps the original as its cause', async () => {
     const apiError = new Error('429 Rate limit reached');
 
@@ -252,6 +332,30 @@ describe('requestDecision', () => {
     ]);
   });
 
+  it('reports the call with its model, duration and tokens, or no tokens when it fails', async () => {
+    const calls: LlmCall[] = [];
+    const usage = { input_tokens: 70, output_tokens: 0 };
+    const client = {
+      model: 'm',
+      createDecision: async () => ({ answers: [{ type: 'refusal' as const, name: 'p' }], usage }),
+    };
+
+    await requestDecision(client, 'x', [QUESTIONS[1]], (c) => calls.push(c));
+    await expect(
+      requestDecision(fakeDecisions(new Error('503')), 'x', QUESTIONS, (c) => calls.push(c)),
+    ).rejects.toThrow(LlmError);
+
+    expect(calls).toEqual([
+      { model: 'm', durationMs: expect.any(Number), inputTokens: 70, outputTokens: 0 },
+      {
+        model: 'fake-decisions-model',
+        durationMs: expect.any(Number),
+        inputTokens: null,
+        outputTokens: null,
+      },
+    ]);
+  });
+
   it('wraps API errors in an LlmError that keeps the original as its cause', async () => {
     const apiError = new Error('400 Unsupported model');
 
@@ -264,12 +368,26 @@ describe('requestDecision', () => {
     expect((error as LlmError).cause).toBe(apiError);
   });
 
-  it('throws an LlmError when the answers do not match the questions', async () => {
+  it('throws an LlmError when the answers do not match the questions, after reporting the call', async () => {
+    const calls: LlmCall[] = [];
     const judge = fakeDecisions([{ type: 'predicate', name: 'p', probability: 1 }]);
 
-    await expect(requestDecision(judge, 'x', QUESTIONS)).rejects.toThrow(
+    await expect(requestDecision(judge, 'x', QUESTIONS, (c) => calls.push(c))).rejects.toThrow(
       'The decision has 1 answers for 2 questions.',
     );
+    expect(calls).toHaveLength(1);
+  });
+
+  it('reports a response that is not an object once, as a failed call', async () => {
+    const calls: LlmCall[] = [];
+    const client = { model: 'm', createDecision: async () => undefined as never };
+
+    await expect(requestDecision(client, 'x', QUESTIONS, (c) => calls.push(c))).rejects.toThrow(
+      LlmError,
+    );
+    expect(calls).toEqual([
+      { model: 'm', durationMs: expect.any(Number), inputTokens: null, outputTokens: null },
+    ]);
   });
 
   it('throws an LlmError when the response has no answers', async () => {

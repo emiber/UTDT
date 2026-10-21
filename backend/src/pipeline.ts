@@ -1,10 +1,10 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { buildChart, type ChartBlock, type ChartSpec } from './chart.ts';
 import { classifyQuestion, type Classification } from './classify.ts';
-import type { HistoryTurn } from './conversations.ts';
+import type { HistoryTurn, LlmStep, TurnLlmCall } from './conversations.ts';
 import { generateSql, type StepLogger } from './generate-sql.ts';
 import { buildInsights } from './insights.ts';
-import { LlmError, type DecisionClient, type LlmClient } from './llm.ts';
+import { LlmError, type DecisionClient, type LlmCall, type LlmClient } from './llm.ts';
 import { buildReply } from './reply.ts';
 import { buildSchemaContext } from './schema-context.ts';
 import { elapsed } from './timing.ts';
@@ -79,6 +79,8 @@ export interface PipelineInput {
   log: PipelineLogger;
   /** Earlier turns of the conversation, oldest first: context for every step. */
   history?: HistoryTurn[];
+  /** Gets each call to the LLM as it ends, failed ones included, even if the pipeline throws. */
+  onLlmCall?: (call: TurnLlmCall) => void;
 }
 
 /**
@@ -97,15 +99,27 @@ export async function answerQuestion({
   decisions,
   log,
   history = [],
+  onLlmCall,
 }: PipelineInput): Promise<PipelineResult> {
   let lastSql: string | null = null;
+  // Tags a step's calls; generateSql's calls bring their own attempt number. The `answer`
+  // step is the text reply or the insights, which the step logs call `reply` and `insights`.
+  const record =
+    (llmStep: LlmStep) =>
+    (call: LlmCall & { attempt?: number }): void =>
+      onLlmCall?.({ step: llmStep, attempt: 1, ...call });
   let step = 'classify';
   let started = performance.now();
   try {
     const schemaContext = buildSchemaContext(dataDb);
     let classification: Classification | null = null;
     try {
-      const result = await classifyQuestion(decisions, { question, schemaContext, history });
+      const result = await classifyQuestion(decisions, {
+        question,
+        schemaContext,
+        history,
+        onLlmCall: record('classify'),
+      });
       ({ classification } = result);
       log.info(
         {
@@ -129,7 +143,14 @@ export async function answerQuestion({
     if (classification && classification !== 'data_question') {
       step = 'reply';
       started = performance.now();
-      const reply = await buildReply({ question, classification, schemaContext, history, llm });
+      const reply = await buildReply({
+        question,
+        classification,
+        schemaContext,
+        history,
+        llm,
+        onLlmCall: record('answer'),
+      });
       log.info({ step, durationMs: elapsed(started), result: 'ok' }, 'Pipeline step done');
       const blocks: Block[] = [{ type: 'text', markdown: reply.narrative }];
       return { ok: true, kind: 'reply', classification, ...reply, blocks };
@@ -140,7 +161,15 @@ export async function answerQuestion({
     const onSql = (sql: string) => {
       lastSql = sql;
     };
-    const generated = await generateSql({ question, db: dataDb, llm, log, history, onSql });
+    const generated = await generateSql({
+      question,
+      db: dataDb,
+      llm,
+      log,
+      history,
+      onSql,
+      onLlmCall: record('sql'),
+    });
     log.info(
       { step, durationMs: elapsed(started), result: generated.ok ? 'ok' : generated.kind },
       'Pipeline step done',
@@ -151,7 +180,15 @@ export async function answerQuestion({
     step = 'insights';
     started = performance.now();
     const { sql, columns, rows } = result;
-    const insights = await buildInsights({ question, sql, columns, rows, llm, history });
+    const insights = await buildInsights({
+      question,
+      sql,
+      columns,
+      rows,
+      llm,
+      history,
+      onLlmCall: record('answer'),
+    });
     log.info({ step, durationMs: elapsed(started), result: 'ok' }, 'Pipeline step done');
 
     const blocks: Block[] = [{ type: 'text', markdown: insights.narrative }];

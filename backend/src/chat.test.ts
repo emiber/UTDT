@@ -50,6 +50,12 @@ const chat = (payload: unknown, headers: Record<string, string> = AUTH) =>
 
 const turns = () =>
   db.prepare('SELECT * FROM turns ORDER BY id').all() as Record<string, unknown>[];
+const llmCalls = () =>
+  db
+    .prepare(
+      'SELECT turn_id, step, attempt, model, input_tokens, output_tokens FROM llm_calls ORDER BY id',
+    )
+    .all();
 const conversationCount = () =>
   (db.prepare('SELECT count(*) AS n FROM conversations').get() as { n: number }).n;
 
@@ -98,6 +104,30 @@ describe('POST /api/chat', () => {
         duration_ms: expect.any(Number),
         classification: 'data_question',
       },
+    ]);
+  });
+
+  it('saves each LLM call of the turn, linked to it', async () => {
+    start(
+      sqlReply('SELECT nope FROM items'),
+      sqlReply('SELECT name FROM items'),
+      jsonResponse(INSIGHTS),
+    );
+
+    const { turnId } = (await chat({ question: 'Names?' })).json();
+
+    const call = { turn_id: turnId, attempt: 1, model: 'fake-model' };
+    expect(llmCalls()).toEqual([
+      {
+        ...call,
+        step: 'classify',
+        model: 'fake-decisions-model',
+        input_tokens: 50,
+        output_tokens: 0,
+      },
+      { ...call, step: 'sql', input_tokens: 100, output_tokens: 20 },
+      { ...call, step: 'sql', attempt: 2, input_tokens: 100, output_tokens: 20 },
+      { ...call, step: 'answer', input_tokens: 100, output_tokens: 20 },
     ]);
   });
 
@@ -391,6 +421,10 @@ describe('POST /api/chat', () => {
     const [turn] = turns();
     expect(turn).toMatchObject({ sql, response: null, narrative: null });
     expect(turn.error).toMatch(/429|refused|500/);
+    // The failed turn keeps every call it made: the classification, then one per reply.
+    const calls = llmCalls() as { turn_id: number }[];
+    expect(calls).toHaveLength(1 + replies.length);
+    expect(calls.every((call) => call.turn_id === turn.id)).toBe(true);
   });
 
   it('answers 500 with a generic message on an unexpected error, and saves it', async () => {
@@ -406,6 +440,38 @@ describe('POST /api/chat', () => {
       message: 'Something went wrong while answering the question.',
     });
     expect(turns()[0].error).toMatch(/no such table: meta_tables/);
+  });
+
+  it('keeps the LLM calls made before an unexpected error', async () => {
+    start(sqlReply('SELECT name FROM items'));
+    const create = llm.createResponse;
+    llm.createResponse = async (body) => {
+      // The SQL arrives, but the data.db connection is gone when it runs.
+      dataDb.close();
+      return create(body);
+    };
+
+    const res = await chat({ question: 'Names?' });
+
+    expect(res.statusCode).toBe(500);
+    const [turn] = turns();
+    expect(llmCalls()).toEqual([
+      expect.objectContaining({ turn_id: turn.id, step: 'classify' }),
+      expect.objectContaining({ turn_id: turn.id, step: 'sql', input_tokens: 100 }),
+    ]);
+  });
+
+  it('saves a failed answer call with no tokens', async () => {
+    start(sqlReply('SELECT name FROM items'), new Error('500 Internal Server Error'));
+
+    const res = await chat({ question: 'Names?' });
+
+    expect(res.statusCode).toBe(502);
+    expect(llmCalls()).toEqual([
+      expect.objectContaining({ step: 'classify', input_tokens: 50 }),
+      expect.objectContaining({ step: 'sql', input_tokens: 100, output_tokens: 20 }),
+      expect.objectContaining({ step: 'answer', input_tokens: null, output_tokens: null }),
+    ]);
   });
 
   it('logs each pipeline step, persist included, with its duration', async () => {

@@ -1,13 +1,21 @@
 import OpenAI from 'openai';
 import type { Decision, DecisionCreateParams } from 'openai/resources/decisions';
 import type { ResponseCreateParamsNonStreaming } from 'openai/resources/responses/responses';
+import { elapsed } from './timing.ts';
 
 // The only module that calls OpenAI. Pipeline functions receive an LlmClient as a
 // parameter, so tests pass a fake one and never hit the network.
 
+/** The token counts OpenAI reports for a request. */
+export interface LlmUsage {
+  input_tokens: number;
+  output_tokens: number;
+}
+
 /** The part of a Responses API response this module reads. */
 export interface LlmResponse {
   status?: string | null;
+  usage?: LlmUsage | null;
   error?: { message?: string | null } | null;
   incomplete_details?: { reason?: string | null } | null;
   output: { type: string; content?: { type: string; text?: string; refusal?: string }[] }[];
@@ -61,6 +69,31 @@ export class LlmError extends Error {
   }
 }
 
+/** One call to OpenAI, finished or failed, as a turn records it (`llm_calls` in app.db). */
+export interface LlmCall {
+  model: string;
+  /** How long the call took, the SDK's own retries included. */
+  durationMs: number;
+  /** null when OpenAI reported no usage: the call failed. */
+  inputTokens: number | null;
+  outputTokens: number | null;
+}
+
+/**
+ * Receives each call a request makes, so the pipeline can record the turn's calls. It must
+ * not throw: it runs on the request's success and failure paths.
+ */
+export type OnLlmCall = (call: LlmCall) => void;
+
+function llmCall(model: string, started: number, usage?: LlmUsage | null): LlmCall {
+  return {
+    model,
+    durationMs: elapsed(started),
+    inputTokens: usage?.input_tokens ?? null,
+    outputTokens: usage?.output_tokens ?? null,
+  };
+}
+
 export interface StructuredRequest {
   /** Name of the output format, e.g. `sql_query`. */
   name: string;
@@ -75,9 +108,15 @@ export interface StructuredRequest {
 /**
  * One Responses API request with Structured Outputs (strict JSON schema). Returns the parsed
  * object; throws an LlmError on a refusal, an incomplete response, or an API error (after
- * the SDK's own retries for transient ones).
+ * the SDK's own retries for transient ones). `onCall` gets the call either way, before the
+ * response is checked.
  */
-export async function requestStructured<T>(llm: LlmClient, request: StructuredRequest): Promise<T> {
+export async function requestStructured<T>(
+  llm: LlmClient,
+  request: StructuredRequest,
+  onCall?: OnLlmCall,
+): Promise<T> {
+  const started = performance.now();
   let response: LlmResponse;
   try {
     response = await llm.createResponse({
@@ -91,8 +130,11 @@ export async function requestStructured<T>(llm: LlmClient, request: StructuredRe
       },
     });
   } catch (error) {
+    onCall?.(llmCall(llm.model, started));
     throw new LlmError(`OpenAI request failed: ${(error as Error).message}`, { cause: error });
   }
+  // A refusal or an incomplete response still used tokens.
+  onCall?.(llmCall(llm.model, started, response.usage));
 
   if (response.status !== 'completed') {
     const detail = response.incomplete_details?.reason ?? response.error?.message;
@@ -132,7 +174,9 @@ export interface DecisionClient {
   /** The model id from `OPENAI_DECISIONS_MODEL`. */
   model: string;
   /** The Decisions API: the SDK's `decisions.create`, or a fake in tests. */
-  createDecision(body: DecisionCreateParams): Promise<{ answers: DecisionAnswer[] }>;
+  createDecision(
+    body: DecisionCreateParams,
+  ): Promise<{ answers: DecisionAnswer[]; usage?: LlmUsage | null }>;
 }
 
 /**
@@ -149,19 +193,24 @@ export function createDecisionClient(env: NodeJS.ProcessEnv = process.env): Deci
 /**
  * Asks the Decisions API questions about an input, which is evidence, not instructions.
  * Returns the answers in question order, as they came. Throws an LlmError when the call
- * fails or the answers don't match the questions.
+ * fails or the answers don't match the questions. `onCall` gets the call either way.
  */
 export async function requestDecision(
   client: DecisionClient,
   input: string,
   questions: DecisionQuestion[],
+  onCall?: OnLlmCall,
 ): Promise<DecisionAnswer[]> {
+  const started = performance.now();
   let answers: DecisionAnswer[];
+  let usage: LlmUsage | null | undefined;
   try {
-    ({ answers } = await client.createDecision({ model: client.model, input, questions }));
+    ({ answers, usage } = await client.createDecision({ model: client.model, input, questions }));
   } catch (error) {
+    onCall?.(llmCall(client.model, started));
     throw new LlmError(`OpenAI decision failed: ${(error as Error).message}`, { cause: error });
   }
+  onCall?.(llmCall(client.model, started, usage));
   if (answers?.length !== questions.length) {
     throw new LlmError(
       `The decision has ${answers?.length ?? 0} answers for ${questions.length} questions.`,
