@@ -138,11 +138,12 @@ Each step is its own issue. The design:
    returned error, the next request carries every failed attempt of the question (its SQL
    and message), up to **3 attempts in total**; after that the last error is returned.
    OpenAI failures, refusals and incomplete responses are thrown, not retried (the SDK
-   already retries transient ones). A follow-up that only asks to show, chart, sort or redo
-   the previous answer gets the previous turn's query again, changed only as asked. Each attempt logs one line per step with its duration
+   already retries transient ones). Each attempt logs one line per step with its duration
    and result. The prompt asks for a short, readable alias for every result column, in the
    language of the question (`AS "Precio unitario"`, never `SELECT *`): the table headers,
-   the chart labels and the narrative all use those names.
+   the chart labels and the narrative all use those names. A follow-up that only asks to
+   show, chart, sort or redo an earlier answer gets the latest query of the conversation
+   again, changed only as asked.
 4. **Guard and execute** (`executeSql` in `backend/src/execute-sql.ts`). Safety is layered:
    - the query runs on a **read-only** connection — SQLite itself rejects any write;
    - a cheap check accepts exactly one statement starting with `SELECT` or `WITH`
@@ -165,12 +166,12 @@ Each step is its own issue. The design:
 5. **Build the insights** (Responses API, Structured Outputs; `buildInsights` in
    `backend/src/insights.ts`). The LLM receives the question, the SQL, the column list,
    the first 50 rows, the total row count and the earlier turns of the conversation (see
-   *Multi-turn*), and returns **only** the narrative
-   (markdown), exactly 3 follow-up suggestions, in the language of the question, and a
-   chart spec or `null` (`type`: bar/line/pie/doughnut, `x` column, `series` columns,
-   title). The prompt asks for `null` when the result can't be charted or a chart adds
-   nothing (e.g. one or two rows), and for a chart whenever the question asks for one and
-   the result can be charted. The **backend** builds the table and the chart data from
+   *Multi-turn*), and returns **only** the narrative (markdown), exactly 3 follow-up
+   suggestions, in the language of the question, and a chart spec or `null` (`type`:
+   bar/line/pie/doughnut, `x` column, `series` columns, title). The prompt asks for `null`
+   when the result can't be charted or a chart adds nothing (e.g. one or two rows), and for
+   a chart whenever the question asks for one and the result can be charted; when it
+   can't, the narrative says so. The **backend** builds the table and the chart data from
    the real result rows — the LLM never re-types data, so it can't invent numbers, and it
    saves tokens. With 0 rows there's no table and no chart, and a single value (1 row × 1
    column) goes without a table: the narrative already says it. So an answer is always
