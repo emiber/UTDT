@@ -27,7 +27,8 @@ export const MAX_RETRIES = 1;
 
 /**
  * The SDK instance behind both clients. Its defaults (10 minutes per request, 2 retries)
- * would leave a hung call hanging the chat; with these, a request gives up after about a minute.
+ * would let a hung call block the chat for half an hour; with these, a request gives up
+ * after about a minute.
  */
 export function createOpenAI(apiKey: string): OpenAI {
   return new OpenAI({ apiKey, timeout: REQUEST_TIMEOUT_MS, maxRetries: MAX_RETRIES });

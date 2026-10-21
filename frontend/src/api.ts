@@ -92,8 +92,8 @@ export interface ChatResponse {
 
 /**
  * How long the UI waits for an answer before giving up. A safety net, not the normal wait:
- * it's above the backend's worst case (5 OpenAI calls in series × 2 attempts × 30 s =
- * 300 s), so it never cuts an answer that can still arrive.
+ * it's above the backend's worst case (about 5 OpenAI calls in series × 2 attempts × 30 s
+ * = 300 s), so it practically never cuts an answer that can still arrive.
  */
 export const CHAT_TIMEOUT_MS = 360_000;
 
