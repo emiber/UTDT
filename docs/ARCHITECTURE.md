@@ -129,8 +129,8 @@ Each step is its own issue. The design:
      path, as before the classifier existed.
 2. **Build the schema context** from the metadata tables (`buildSchemaContext` in
    `backend/src/schema-context.ts`, on top of the catalog): tables, columns and
-   relationships in load order, without indexes or rows. It's built once per message,
-   before the classification, which gets it too.
+   relationships in load order, without indexes or rows. It's built before the
+   classification, which gets it too.
 3. **Generate SQL** (Responses API, Structured Outputs) from the question, the schema
    context and the last turns of the conversation (`generateSql` in
    `backend/src/generate-sql.ts`; see *Multi-turn*). The output is a strict `{ sql }`
@@ -138,7 +138,8 @@ Each step is its own issue. The design:
    returned error, the next request carries every failed attempt of the question (its SQL
    and message), up to **3 attempts in total**; after that the last error is returned.
    OpenAI failures, refusals and incomplete responses are thrown, not retried (the SDK
-   already retries transient ones). Each attempt logs one line per step with its duration
+   already retries transient ones). A follow-up that only asks to show, chart, sort or redo
+   the previous answer gets the previous turn's query again, changed only as asked. Each attempt logs one line per step with its duration
    and result. The prompt asks for a short, readable alias for every result column, in the
    language of the question (`AS "Precio unitario"`, never `SELECT *`): the table headers,
    the chart labels and the narrative all use those names.
@@ -243,16 +244,16 @@ work.
   saved text is an error or the fixed "couldn't answer" message. It still takes a place in
   the window.
 - The prompts render the history from one partial, `prompts/history.liquid`, as context to
-  resolve references in the current question. Every SQL attempt gets it. Fields a turn
-  doesn't have are left out.
+  resolve references in the current question. The classification, the reply, every SQL
+  attempt and the insights get it. Fields a turn doesn't have are left out.
 - The window of 5 is a constant: no summarizing or truncation. A reload starts a new
   conversation, because the frontend keeps the id only in memory.
 
 ### LLM layer (OpenAI API)
 
-- **Responses API** for everything that generates text: SQL and insights. Structured
-  Outputs (JSON schema) guarantee parseable responses — no "strip the markdown fence and
-  hope" parsing.
+- **Responses API** for everything that generates text: SQL, insights and the text-only
+  reply. Structured Outputs (JSON schema) guarantee parseable responses — no "strip the
+  markdown fence and hope" parsing.
 - **Decisions API** for everything that picks from a fixed set: question classification
   and the judge's scores. It's fast and cheap (input tokens only). It's in **public beta**
   and returns no rationale.
@@ -275,8 +276,8 @@ work.
 - Prompts are LiquidJS templates in `backend/src/prompts/*.liquid`, apart from the code,
   rendered by `renderPrompt` (`backend/src/prompts.ts`). Questions, earlier turns, SQL
   and errors go in as template variables, and HTML escaping stays off (LiquidJS's default),
-  so they reach the LLM literally. The history is one partial, `history.liquid`, that both
-  user prompts include with `{% render %}`.
+  so they reach the LLM literally. The history is one partial, `history.liquid`, that every
+  user prompt includes with `{% render %}`.
 - Model ids come from `.env` (`OPENAI_MODEL`, `OPENAI_DECISIONS_MODEL`), not from code.
 
 ### Evaluation (LLM-as-a-judge, offline)

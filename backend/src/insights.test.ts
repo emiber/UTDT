@@ -54,6 +54,11 @@ describe('buildInsights', () => {
     expect(instructions).toContain('set chart to null');
     expect(instructions).toContain('one or two rows');
     expect(instructions).toContain("Don't mention the chart in the narrative");
+    expect(instructions).toContain('If the question asks for a chart, propose one');
+    expect(instructions).toContain(
+      "if the question asks for a chart and the result can't be charted",
+    );
+    expect(instructions).toContain('A single value (one row, one column) is shown without a table');
   });
 
   it('returns the chart spec, or null when there is none', async () => {
