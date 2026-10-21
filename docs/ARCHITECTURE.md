@@ -164,10 +164,10 @@ Each step is its own issue. The design:
    - a cap of 1,000,000 bytes per value, UTF-8 for text (`MAX_VALUE_LENGTH`, SQLite's
      `limits.length` on the read-only connection): a bigger string or blob, stored or
      computed, fails with `string or blob too big`, a `sql` error the LLM can fix (`printf`
-     returns `NULL` instead). Without it, a value of
-     hundreds of MB (e.g. `hex(zeroblob(300000000))`) stays under SQLite's own 1 GB limit
-     and crashes the Node process. The cap is per value: the total size of a response is
-     bounded only by the row cap.
+     returns `NULL` instead). Without it, a value of hundreds of MB (e.g.
+     `hex(zeroblob(300000000))`) stays under SQLite's own 1 GB limit and crashes the Node
+     process. The cap is per value: the total size of a response is bounded only by the
+     row cap.
 
    Rows come back as lists aligned with the column names, so duplicate names keep both
    values. Errors a rewritten query can fix are **returned** with a `kind` (`guard`,

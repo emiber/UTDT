@@ -5,8 +5,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   APP_DB_PATH,
   DATA_DB_PATH,
-  openDatabase,
   MAX_VALUE_LENGTH,
+  openDatabase,
   openReadOnlyDatabase,
   sqliteVersion,
 } from './db.ts';
