@@ -6,10 +6,14 @@
   "scripts": {
     "dev": "node --watch --env-file-if-exists=../.env src/server.ts",
     "start": "node --env-file-if-exists=../.env src/server.ts",
+    "seed": "node src/seed-cli.ts",
+    "eval": "node --env-file-if-exists=../.env src/eval-cli.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "fastify": "^5.12.7"
+    "fastify": "^5.12.7",
+    "liquidjs": "^10.30.0",
+    "openai": "^7.39.0"
   },
   "devDependencies": {
     "@types/node": "^24.19.2"

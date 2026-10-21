@@ -1,0 +1,15 @@
+{%- if history.size > 0 -%}
+Conversation so far, oldest first. It's context to understand the latest message below (e.g. "and for last year?" or "show it as a chart"); only that message is to be handled:
+{%- for turn in history %}
+
+Turn {{ forloop.index }}:
+Question: {{ turn.question }}
+{%- if turn.sql %}
+SQL: {{ turn.sql }}
+{%- endif %}
+{%- if turn.narrative %}
+Answer: {{ turn.narrative }}
+{%- endif %}
+{%- endfor %}
+
+{% endif -%}

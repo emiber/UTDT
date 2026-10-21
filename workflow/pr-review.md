@@ -29,7 +29,7 @@ Run these before anything else. They are read-only — if one fails, stop and re
 
 ### 1. Fetch the PR
 
-Read the issue file **on the branch** (`git show <branch>:issues/<n>-<slug>.md`). Its `## Pull request` section is the PR description; its `Branch:` line names the base. If the section is missing, infer the base from the issue — `parent` set → `epic/<parent>-<slug>`, otherwise `main` — and report the missing description (step 4, Verification reported).
+Read the issue file **on the branch** (`git show <branch>:issues/<n>-<slug>.md`, or `issues/completed/<n>-<slug>.md` once the PR has closed it; see `workflow/issue-tracker.md`). Its `## Pull request` section is the PR description; its `Branch:` line names the base. If the section is missing, infer the base from the issue — `parent` set → `epic/<parent>-<slug>`, otherwise `main` — and report the missing description (step 4, Verification reported).
 
 If the branch is already merged into its base (`git merge-base --is-ancestor <branch> <base>` succeeds), stop and report — there's nothing to review.
 
@@ -43,7 +43,7 @@ Anything that fits none of these (e.g. a child's branch based on `main`, or a br
 
 ### 2. Fetch the linked issue(s)
 
-The link is the branch name: `<type>/<n>-<slug>` belongs to issue `<n>`. Read `issues/<n>-<slug>.md` **from the branch** (`git show`), with its frontmatter (`type`, `status`, `parent`), body, and notes. For an **epic integration** PR, also read every child (`parent: <n>`, commands in `workflow/issue-tracker.md`) from the epic branch.
+The link is the branch name: `<type>/<n>-<slug>` belongs to issue `<n>`. Read `issues/<n>-<slug>.md` (or `issues/completed/<n>-<slug>.md`) **from the branch** (`git show`), with its frontmatter (`type`, `status`, `parent`), body, and notes. For an **epic integration** PR, also read every child (`parent: <n>`, commands in `workflow/issue-tracker.md`) from the epic branch.
 
 Review the diff against **every** linked issue. If the branch's issue file doesn't exist, add it as a blocker: a PR without its issue is untrackable.
 
@@ -68,7 +68,7 @@ Go through each item from `workflow/git-flow.md`. Mark each as **pass**, **fail*
 | Security checklist | Apply the [Security checklist](#security-checklist) below. Any blocker it lists — including a committed secret — is a blocker. |
 | Docs updated if needed | If behavior, setup, or public interface changed, check that `README` / `docs/ARCHITECTURE.md` / inline docs were updated in the same PR. |
 | Base branch is correct | Check against the PR type from step 1: **standalone** → base `main`; **epic child** → base `epic/<epicN>-<slug>`; **epic integration** (`epic/** → main`) → base `main` is correct and its child issues are **not** mis-targeted. A base that doesn't match the PR's type — in the `Branch:` line or in where the branch was actually cut from — is a blocker. |
-| Issue closed on the branch | The issue file on the branch has `status: closed` (epic integration: the epic and every child), so merging closes it. Still open → blocker. |
+| Issue closed on the branch | The issue file on the branch has `status: closed` and sits in `issues/completed/` (epic integration: the epic and every child), so merging closes it. Still open → blocker. |
 | Linter and tests pass | Not verifiable from the diff alone — flag as **warn**; the human can run the Quality gate commands from `docs/ARCHITECTURE.md` after checking out the branch. Escalate to blocker if there are obvious syntax or style violations in the diff. |
 | Coverage meets threshold | Not verifiable from the diff alone — flag as **warn** if new code paths have no visible tests, or if Verification lists new/changed files below the threshold without a reason. |
 | Verification reported | The `## Pull request` section has a **Verification** list with a line for every gate in `workflow/git-flow.md` (lint, tests, coverage, self-review, security, docs), each pass or `n/a` with a reason, plus an **Out of scope / follow-ups** list. Missing section or missing gates → **warn**. A gate reported as passed that the diff contradicts (e.g. "tests: pass" with a test file deleted) → blocker. Not applicable to an epic integration PR (its children carry it). |

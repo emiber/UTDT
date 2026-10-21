@@ -122,7 +122,7 @@ No push, no platform: the PR is the working branch plus a description in its iss
    None | - <item>
    ```
 
-3. **Close the issue on the branch**: set `status: closed` in its frontmatter. Merging the branch is what closes it on the base — the local equivalent of `Closes #<n>` (see `workflow/issue-tracker.md`, Status travels with the branch). For an epic child this closes it on the epic branch; it shows as closed on `main` once the epic ships.
+3. **Close the issue on the branch**: set `status: closed` in its frontmatter and move the file to `issues/completed/` with `git mv` (see `workflow/issue-tracker.md`, Close). Merging the branch is what closes it on the base — the local equivalent of `Closes #<n>` (see `workflow/issue-tracker.md`, Status travels with the branch). For an epic child this closes it on the epic branch; it shows as closed on `main` once the epic ships.
 4. Commit only the issue file: `chore(issues): close #<n> <title>`.
 
 **Verification rules.** Every gate gets a line. A gate that doesn't apply (e.g. no tests for a docs-only change) is `n/a` with the reason — never dropped. Never report a gate as passed unless you ran it in this session. A failing gate never appears in a PR: it stops the flow until it's fixed (or you report to the user) — the PR is prepared only with every gate passing or `n/a`.

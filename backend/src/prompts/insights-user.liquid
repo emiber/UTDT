@@ -1,0 +1,15 @@
+{% render 'history', history: history %}Question:
+{{ question }}
+
+SQL:
+{{ sql }}
+
+Columns (JSON): {{ columns }}
+Total rows: {{ rowCount }}
+{%- if sample.size > 0 %}
+
+{% if sample.size < rowCount %}First {{ sample.size }} rows{% else %}Rows{% endif %} (JSON, one per line):
+{%- for row in sample %}
+{{ row }}
+{%- endfor %}
+{%- endif %}

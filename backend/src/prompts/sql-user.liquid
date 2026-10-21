@@ -1,0 +1,15 @@
+Schema:
+{{ schemaContext }}
+
+{% render 'history', history: history %}Question:
+{{ question }}
+{%- if failures.size > 0 %}
+
+Previous attempts for this question failed. Write a query that fixes these errors:
+{%- for failure in failures %}
+
+Attempt {{ forloop.index }}:
+SQL: {{ failure.sql }}
+Error: {{ failure.message }}
+{%- endfor %}
+{%- endif %}

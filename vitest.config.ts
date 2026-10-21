@@ -5,10 +5,20 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     projects: ['backend', 'frontend'],
+    // A few workers, not one per CPU: forking dozens at once (jsdom + coverage) on Windows
+    // overran Vitest's fixed 60 s worker start timeout. 4 was also the fastest, measured.
+    maxWorkers: 4,
     coverage: {
       provider: 'v8',
       include: ['backend/src/**/*.ts', 'frontend/src/**/*.{ts,vue}'],
-      exclude: ['**/*.test.ts', 'backend/src/server.ts', 'frontend/src/main.ts'],
+      // Entry points only: they just call tested functions.
+      exclude: [
+        '**/*.test.ts',
+        'backend/src/server.ts',
+        'backend/src/seed-cli.ts',
+        'backend/src/eval-cli.ts',
+        'frontend/src/main.ts',
+      ],
       reporter: ['text', 'html'],
       thresholds: {
         lines: 85,
