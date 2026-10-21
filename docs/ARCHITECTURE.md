@@ -441,6 +441,7 @@ config only when there's a reason.
 |---|---|
 | CSV/Excel import feature | Agreed for later. Data is loaded by hand for now. Excel will need a dependency (`exceljs`) when it comes |
 | Azure OpenAI | The Decisions API has no confirmed Azure availability. Moving Responses is a `baseURL` change; revisit when Decisions lands on Azure |
+| Table whitelist for the LLM's SQL | The generated SQL may read anything on the read-only `data.db` connection, not only the tables in `meta_tables`. Besides the dataset, that's `meta_*` (already public through the catalog), `sqlite_master` (the schema's `CREATE` statements), `dbstat` (page sizes) and table-valued pragmas such as `pragma_database_list`. Read-only, all of that is harmless, except that `pragma_database_list` returns the absolute path of `data.db` on the server, which then shows up in the answer. `app.db` (the conversations) is another connection and `ATTACH` is blocked, so it can't be read. Fine for a local demo; revisit (block those sources in `executeSql`, or check the tables a query reads) if the demo leaves localhost |
 | Online judge (scoring every answer live) | The offline eval measures quality without adding latency or cost to each chat |
 | Judge rationale via the Responses API | Decisions gives scores without a "why". Add explanations for low scores only if the scores alone aren't enough |
 | Real authentication / users | Local POC: a shared key is enough |
