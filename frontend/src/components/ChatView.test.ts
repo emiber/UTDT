@@ -46,6 +46,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe('ChatView', () => {
@@ -118,6 +119,42 @@ describe('ChatView', () => {
     await ask(wrapper, 'First?');
 
     expect(document.activeElement).toBe(wrapper.find('input').element);
+  });
+
+  it('scrolls down to each new question, then up to the start of its own answer', async () => {
+    let respond: (res: Response) => void = () => {};
+    stubChat(answer(), new Promise<Response>((resolve) => (respond = resolve)));
+    const wrapper = mount(ChatView);
+    // jsdom has no layout: fake the sizes and record where the thread scrolls to.
+    const scroller = wrapper.find('.chat__scroll').element;
+    const tops: number[] = [];
+    Object.defineProperty(scroller, 'scrollHeight', { value: 900 });
+    Object.defineProperty(scroller, 'scrollTop', { get: () => 0, set: (top) => tops.push(top) });
+    // Each turn sits 300 px below the previous one.
+    vi.spyOn(HTMLElement.prototype, 'offsetTop', 'get').mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      return [...scroller.querySelectorAll('.chat__turn')].indexOf(this) * 300;
+    });
+
+    await ask(wrapper, 'First?');
+    expect(tops).toEqual([900, -16]);
+
+    await ask(wrapper, 'Second?');
+    expect(tops).toEqual([900, -16, 900]);
+    respond(answer());
+    await flushPromises();
+    expect(tops).toEqual([900, -16, 900, 284]);
+  });
+
+  it('shows a welcome message until the first question', async () => {
+    stubChat(answer());
+    const wrapper = mount(ChatView);
+    expect(wrapper.find('.chat__empty').exists()).toBe(true);
+
+    await ask(wrapper, 'First?');
+
+    expect(wrapper.find('.chat__empty').exists()).toBe(false);
   });
 
   it.each([[''], ['   ']])('cannot send a blank question (%j)', async (text) => {

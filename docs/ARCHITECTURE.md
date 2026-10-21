@@ -288,13 +288,22 @@ deterministic.
 
 ### Frontend (Vue 3)
 
-- Access-key screen first: it asks for the `APP_ACCESS_KEY` value from `.env` before
-  showing anything else. Then the main screen: the backend health status and an
-  `Available data` section (a native `<details>`, closed by default) that shows the
-  catalog. The catalog is requested on mount, even while the section is closed.
-- Below it, the chat view (`ChatView.vue`): a question input and the conversation thread.
-  - Each question shows a waiting indicator; input, button and suggestions are disabled
-    until the answer arrives (one question at a time, no streaming).
+- Access-key screen first: a centered card that asks for the `APP_ACCESS_KEY` value from
+  `.env` before showing anything else. Then the main screen, which fills the window:
+  - a header with the brand, the backend health status (a pill) and an `Available data`
+    button. It's a native `<details>`, closed by default, that opens the catalog in a
+    dropdown panel with its own scroll. The catalog is requested on mount, even while the
+    section is closed;
+  - the conversation thread, the only part that scrolls, with a welcome message until the
+    first question;
+  - the question input, fixed at the bottom.
+- The chat view (`ChatView.vue`):
+  - The question is a bubble on the right in the brand gradient; the answer is a white card
+    on the left, next to the assistant's avatar, so the two never look alike.
+  - Sending a question scrolls down to it; when the answer arrives, the thread scrolls to
+    where that turn starts, so a long table doesn't hide the narrative.
+  - Each question shows an animated waiting indicator; input, button and suggestions are
+    disabled until the answer arrives (one question at a time, no streaming).
   - `ResponseBlocks.vue` renders the blocks in order: `text` as markdown with `micromark`,
     `table` as a plain HTML table, cells placed by position, and `chart` with
     `ChartBlock.vue`. Raw HTML is escaped, `javascript:` links are dropped, and markdown
@@ -309,7 +318,10 @@ deterministic.
   - The thread and the conversation id live only in memory: a reload starts a new
     conversation.
 - Plain components and composables: no router (two screens, switched by auth state),
-  no state library, no UI kit. Styles in SCSS.
+  no state library, no UI kit. Styles in SCSS, with the design tokens (colors, radii,
+  shadows, spacing) in `styles/_tokens.scss`: slate neutrals with an indigo accent. The
+  font is Inter, served locally by `@fontsource-variable/inter` (no request to a font
+  CDN); charts use it too.
 - Charts with Chart.js through vue-chartjs (`ChartBlock.vue`): bar, line, pie and doughnut,
   with the block's title and Chart.js's default palette (the `Colors` plugin). The block
   is drawn as it comes: the backend already checked it against the rows.
@@ -336,6 +348,7 @@ persisted turns in `app.db` are the query log. Nothing else for a POC.
 | LLM | OpenAI API: Responses + Decisions, via `openai` SDK | Responses for generation with Structured Outputs; Decisions for classification and judging. The Decisions API isn't on Azure, so everything goes to the OpenAI API with one key |
 | Frontend | Vue 3 + Vite | User's choice; Vite is the standard Vue toolchain |
 | Styles | SCSS (`sass`, pure JS) | User's preference. Vite supports it natively; the pure-JS package avoids native binaries |
+| Font | Inter, via `@fontsource-variable/inter` | The user asked for a nicer font. Self-hosted: the app is local, so it works offline and sends nothing to a third party |
 | Prompt templates | LiquidJS (`liquidjs`) | The user asked for something like Jinja2 for prompts: LiquidJS has the same base syntax (`{{ }}`, `{% if %}`, `{% for %}`), is pure JS, and doesn't escape HTML by default |
 | Markdown | `micromark` | Renders the narrative's markdown. Safe by default (escapes raw HTML, drops `javascript:` links; images are turned off by config), ships its own types, and needs no sanitizer next to it |
 | Charts | Chart.js + vue-chartjs | Proven, light, and covers bar/line/pie/doughnut. Its config is easy to build from data |

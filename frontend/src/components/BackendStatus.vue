@@ -25,15 +25,38 @@ onMounted(async () => {
 <style scoped lang="scss">
 @use '../styles/tokens' as *;
 
+// A small pill with a colored dot.
 .status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0;
+  padding: 0.3rem 0.75rem;
+  border-radius: $radius-pill;
+  background: $color-surface-alt;
+  border: 1px solid $color-border;
   color: $color-muted;
+  font-size: 0.78rem;
+  white-space: nowrap;
+
+  &::before {
+    content: '';
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    background: currentcolor;
+  }
 
   &--ok {
-    color: $color-ok;
+    color: $color-ok-text;
+    background: $color-ok-soft;
+    border-color: transparent;
   }
 
   &--error {
     color: $color-error;
+    background: $color-error-soft;
+    border-color: transparent;
   }
 }
 </style>

@@ -47,6 +47,31 @@ describe('ResponseBlocks', () => {
     expect(wrapper.findAll('td').map((td) => td.text())).toEqual(['1', '2', '3']);
   });
 
+  it('aligns number columns, header included, to the right', () => {
+    const wrapper = mount(ResponseBlocks, {
+      props: {
+        blocks: [
+          {
+            type: 'table',
+            columns: ['name', 'qty'],
+            rows: [
+              ['ink', 5],
+              ['pen', null],
+            ],
+          },
+        ],
+      },
+    });
+
+    expect(wrapper.findAll('th').map((th) => th.classes('num'))).toEqual([false, true]);
+    expect(
+      wrapper
+        .findAll('tbody tr')[0]
+        .findAll('td')
+        .map((td) => td.classes('num')),
+    ).toEqual([false, true]);
+  });
+
   it('shows raw HTML in the markdown as text, never as markup', () => {
     const wrapper = mount(ResponseBlocks, {
       props: {
