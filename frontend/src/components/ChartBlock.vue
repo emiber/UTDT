@@ -32,7 +32,7 @@ ChartJS.register(
 );
 // Same type as the rest of the UI.
 ChartJS.defaults.font.family = "'Inter Variable', system-ui, sans-serif";
-ChartJS.defaults.color = '#6b7385';
+ChartJS.defaults.color = '#5f6678';
 
 const COMPONENTS = { bar: Bar, line: Line, pie: Pie, doughnut: Doughnut };
 

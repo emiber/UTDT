@@ -79,7 +79,7 @@ function send() {
 </script>
 
 <template>
-  <section class="chat">
+  <main class="chat">
     <div ref="scroller" class="chat__scroll">
       <div v-if="!thread.length" class="chat__empty">
         <h2>What do you want to know?</h2>
@@ -145,7 +145,7 @@ function send() {
         </button>
       </form>
     </div>
-  </section>
+  </main>
 </template>
 
 <style scoped lang="scss">

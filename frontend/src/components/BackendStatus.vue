@@ -48,7 +48,7 @@ onMounted(async () => {
   }
 
   &--ok {
-    color: $color-ok;
+    color: $color-ok-text;
     background: $color-ok-soft;
     border-color: transparent;
   }

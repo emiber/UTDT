@@ -10,7 +10,7 @@ $font-mono: ui-monospace, 'Cascadia Code', 'SF Mono', Consolas, monospace;
 
 // Colors: slate neutrals with an indigo accent.
 $color-text: #1e2433;
-$color-muted: #6b7385;
+$color-muted: #5f6678;
 $color-bg: #f3f4f8;
 $color-surface: #ffffff;
 $color-surface-alt: #f7f8fb;
@@ -20,8 +20,9 @@ $color-primary-dark: #4338ca;
 $color-primary-soft: #eef0ff;
 $color-accent: #7c3aed;
 $color-ok: #16a34a;
+$color-ok-text: #166534;
 $color-ok-soft: #e8f7ee;
-$color-error: #dc2626;
+$color-error: #b91c1c;
 $color-error-soft: #fdecec;
 $gradient-primary: linear-gradient(135deg, $color-primary 0%, $color-accent 100%);
 

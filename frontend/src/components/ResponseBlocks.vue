@@ -5,6 +5,10 @@ import ChartBlock from './ChartBlock.vue';
 
 defineProps<{ blocks: Block[] }>();
 
+/** Whether a table column holds numbers, so its header lines up with its cells. */
+const isNumeric = (rows: unknown[][], column: number) =>
+  rows.some((row) => typeof row[column] === 'number');
+
 // micromark escapes raw HTML and drops dangerous link protocols (`javascript:`) by default,
 // so the LLM's markdown, which may echo user or dataset text, can't inject markup. Images
 // are turned off too: `![x](url)` renders as a plain link, so no remote URL loads by itself.
@@ -28,7 +32,13 @@ const toHtml = (markdown: string) =>
           <thead>
             <tr>
               <!-- Columns may repeat, so cells go by position, never by name. -->
-              <th v-for="(column, c) in block.columns" :key="c">{{ column }}</th>
+              <th
+                v-for="(column, c) in block.columns"
+                :key="c"
+                :class="{ num: isNumeric(block.rows, c) }"
+              >
+                {{ column }}
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -88,7 +98,9 @@ const toHtml = (markdown: string) =>
 
     table {
       min-width: 16rem;
-      border-collapse: collapse;
+      // Separate borders: collapsed ones stay behind when the sticky header scrolls.
+      border-collapse: separate;
+      border-spacing: 0;
       font-size: 0.875rem;
     }
 
