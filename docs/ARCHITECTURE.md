@@ -161,9 +161,10 @@ Each step is its own issue. The design:
      row 501. That bounds rows, not work: a query that must read everything before its
      first row (`ORDER BY`, `GROUP BY`, aggregates) still runs in full (see *Query
      timeout* in the deferred decisions);
-   - a cap of 1,000,000 characters or bytes per value (`MAX_VALUE_LENGTH`, SQLite's
-     `limits.length` on the read-only connection): a bigger string or blob fails with
-     `string or blob too big`, a `sql` error the LLM can fix. Without it, a value of
+   - a cap of 1,000,000 bytes per value, UTF-8 for text (`MAX_VALUE_LENGTH`, SQLite's
+     `limits.length` on the read-only connection): a bigger string or blob, stored or
+     computed, fails with `string or blob too big`, a `sql` error the LLM can fix (`printf`
+     returns `NULL` instead). Without it, a value of
      hundreds of MB (e.g. `hex(zeroblob(300000000))`) stays under SQLite's own 1 GB limit
      and crashes the Node process. The cap is per value: the total size of a response is
      bounded only by the row cap.
@@ -380,7 +381,7 @@ log. Nothing else for a POC.
 
 | Component | Chosen technology | Reason |
 |---|---|---|
-| Runtime | Node.js 24 (`engines: >=24`) | Already installed; runs TypeScript natively and ships `node:sqlite` |
+| Runtime | Node.js 24.15+ (`engines: >=24.15`) | Already installed; runs TypeScript natively and ships `node:sqlite`. 24.15 adds the `limits` option that caps value size (an older 24 ignores it) |
 | Language | TypeScript (strict, erasable syntax only) | Types on the response contract and the LLM JSON. Erasable syntax lets Node run `.ts` directly, with no build step for the backend |
 | Repo layout | npm workspaces | Built into npm. Two packages with one install and root scripts |
 | Backend | Fastify | JSON-schema validation, logger, and `app.inject()` for tests are all built in |
@@ -443,7 +444,7 @@ config only when there's a reason.
 | Online judge (scoring every answer live) | The offline eval measures quality without adding latency or cost to each chat |
 | Judge rationale via the Responses API | Decisions gives scores without a "why". Add explanations for low scores only if the scores alone aren't enough |
 | Real authentication / users | Local POC: a shared key is enough |
-| Query timeout / worker thread | `node:sqlite` is synchronous, so a slow query blocks the server. Each value is capped at 1,000,000 characters or bytes, but the total size of a result is bounded only by the row cap. That's fine for one user on a small dataset; move execution to a worker if it bites |
+| Query timeout / worker thread | `node:sqlite` is synchronous, so a slow query blocks the server. Each value is capped at 1,000,000 bytes, but the total size of a result is bounded only by the row cap. That's fine for one user on a small dataset; move execution to a worker if it bites |
 | Standard prompts with pre-validated SQL, feedback buttons, CSV download | Features from the reference project. Not needed to prove the concept |
 | Streaming responses | Adds complexity on both ends. Fine to wait for the full answer in a POC |
 | UI kit (e.g. PrimeVue DataTable) | Plain HTML tables are enough. Revisit if tables need sorting, paging or export |

@@ -25,7 +25,8 @@ Vitest · ESLint + Prettier. npm workspaces: [backend/](backend/) and [frontend/
 
 ## Getting started
 
-Prerequisites: **Node.js 24+** (it runs the backend's TypeScript natively and ships SQLite).
+Prerequisites: **Node.js 24.15+** (it runs the backend's TypeScript natively and ships SQLite;
+24.15 adds the SQLite limits the backend relies on).
 
 ```bash
 npm install

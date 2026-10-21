@@ -57,9 +57,11 @@ describe('openReadOnlyDatabase', () => {
     }
   });
 
-  it(`caps a string or blob at ${MAX_VALUE_LENGTH} characters or bytes`, () => {
+  it(`caps a string or blob at ${MAX_VALUE_LENGTH} bytes, stored or computed`, () => {
     const file = path.join(makeTempDir(), 'data.db');
-    openDatabase(file).close();
+    const writer = openDatabase(file);
+    writer.exec(`CREATE TABLE t (v TEXT); INSERT INTO t VALUES (hex(zeroblob(500001)));`);
+    writer.close();
 
     const db = openReadOnlyDatabase(file);
     try {
@@ -73,6 +75,8 @@ describe('openReadOnlyDatabase', () => {
       expect(() => db.prepare(`SELECT hex(zeroblob(${MAX_VALUE_LENGTH}))`).get()).toThrow(
         'string or blob too big',
       );
+      // 1,000,002 characters, written by a connection without the cap.
+      expect(() => db.prepare('SELECT v FROM t').get()).toThrow('string or blob too big');
     } finally {
       db.close();
     }

@@ -16,7 +16,7 @@ export function openDatabase(file: string): DatabaseSync {
   return new DatabaseSync(file);
 }
 
-/** The longest string or blob a read-only connection produces, in characters or bytes. */
+/** The largest string or blob a read-only connection produces, in bytes (UTF-8 for text). */
 export const MAX_VALUE_LENGTH = 1_000_000;
 
 /**

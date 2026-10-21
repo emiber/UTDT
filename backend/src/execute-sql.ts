@@ -2,8 +2,9 @@ import type { DatabaseSync } from 'node:sqlite';
 
 // Runs LLM-generated SQL on the dataset. Safety is layered: the connection is read-only
 // (SQLite itself rejects writes), a cheap guard accepts exactly one statement starting with
-// SELECT or WITH, and a row cap rejects oversized results. Problems a rewritten query can
-// fix are returned, with a message meant for the LLM; anything else is thrown.
+// SELECT or WITH, a row cap rejects oversized results, and the connection caps the size of
+// each value (`openReadOnlyDatabase`). Problems a rewritten query can fix are returned,
+// with a message meant for the LLM; anything else is thrown.
 
 /** Most rows a result may have. A bigger one is rejected, not truncated. */
 export const MAX_ROWS = 500;
@@ -76,7 +77,7 @@ function isQueryError(error: unknown): error is Error {
   return (
     (errcode & 0xff) === 1 || // SQLITE_ERROR: syntax, unknown table or column, overflow…
     errcode === 8 || // plain SQLITE_READONLY: a write on the read-only connection
-    (errcode & 0xff) === 18 || // SQLITE_TOOBIG: a string or blob over SQLite's size limit
+    (errcode & 0xff) === 18 || // SQLITE_TOOBIG: a string or blob over the connection's limit
     (errcode & 0xff) === 20 // SQLITE_MISMATCH: e.g. a non-integer LIMIT or OFFSET
   );
 }
