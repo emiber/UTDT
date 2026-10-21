@@ -163,6 +163,7 @@ describe('access key', () => {
 describe('errors', () => {
   it.each([
     ['an Error without a status', new Error('SQLITE secret')],
+    ['an Error with a 5xx status', Object.assign(new Error('secret'), { statusCode: 503 })],
     ['an Error with a 3xx status', Object.assign(new Error('secret'), { statusCode: 302 })],
     ['an Error with a null status', Object.assign(new Error('secret'), { statusCode: null })],
     ['a string', 'secret'],
