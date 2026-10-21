@@ -1,5 +1,5 @@
 import type { HistoryTurn } from './conversations.ts';
-import { LlmError, requestDecision, type DecisionClient } from './llm.ts';
+import { LlmError, requestDecision, type DecisionClient, type OnLlmCall } from './llm.ts';
 import { renderPrompt } from './prompts.ts';
 
 // Step 1 of the pipeline: is the message a question the data can answer? The Decisions API
@@ -30,6 +30,8 @@ export interface ClassifyInput {
   question: string;
   schemaContext: string;
   history: HistoryTurn[];
+  /** Gets the Decisions API call, failed or not. */
+  onLlmCall?: OnLlmCall;
 }
 
 export interface ClassifyResult {
@@ -46,7 +48,7 @@ export interface ClassifyResult {
  */
 export async function classifyQuestion(
   decisions: DecisionClient,
-  { question, schemaContext, history }: ClassifyInput,
+  { question, schemaContext, history, onLlmCall }: ClassifyInput,
 ): Promise<ClassifyResult> {
   const [answer] = await requestDecision(
     decisions,
@@ -60,6 +62,7 @@ export async function classifyQuestion(
         choices: CLASSIFICATIONS.map((value) => ({ value, description: DESCRIPTIONS[value] })),
       },
     ],
+    onLlmCall,
   );
   if (answer.type !== 'choice' || !CLASSIFICATIONS.includes(answer.choice as Classification)) {
     throw new LlmError('The classifier returned an unexpected answer.');

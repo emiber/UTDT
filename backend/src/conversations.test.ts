@@ -20,7 +20,21 @@ const TURN: Turn = {
   error: null,
   durationMs: 12,
   classification: 'data_question',
+  llmCalls: [],
 };
+
+const CALLS: Turn['llmCalls'] = [
+  {
+    step: 'classify',
+    attempt: 1,
+    model: 'm-dec',
+    durationMs: 300,
+    inputTokens: 50,
+    outputTokens: 0,
+  },
+  { step: 'sql', attempt: 1, model: 'm', durationMs: 900, inputTokens: 400, outputTokens: 30 },
+  { step: 'sql', attempt: 2, model: 'm', durationMs: 30000, inputTokens: null, outputTokens: null },
+];
 
 beforeEach(() => {
   db = openDatabase(':memory:');
@@ -88,6 +102,52 @@ describe('saveTurn', () => {
     expect(() => saveTurn(db, null, invalid)).toThrow(/NOT NULL/);
     expect(count('conversations')).toBe(0);
     expect(db.isTransaction).toBe(false);
+  });
+
+  it('stores each LLM call of the turn, in order, a failed one without tokens', () => {
+    const { turnId } = saveTurn(db, null, { ...TURN, llmCalls: CALLS });
+
+    expect(db.prepare('SELECT * FROM llm_calls ORDER BY id').all()).toEqual([
+      {
+        id: 1,
+        turn_id: turnId,
+        step: 'classify',
+        attempt: 1,
+        model: 'm-dec',
+        duration_ms: 300,
+        input_tokens: 50,
+        output_tokens: 0,
+      },
+      {
+        id: 2,
+        turn_id: turnId,
+        step: 'sql',
+        attempt: 1,
+        model: 'm',
+        duration_ms: 900,
+        input_tokens: 400,
+        output_tokens: 30,
+      },
+      {
+        id: 3,
+        turn_id: turnId,
+        step: 'sql',
+        attempt: 2,
+        model: 'm',
+        duration_ms: 30000,
+        input_tokens: null,
+        output_tokens: null,
+      },
+    ]);
+  });
+
+  it('saves neither the turn nor its calls when a call cannot be saved', () => {
+    const calls = [CALLS[0], { ...CALLS[1], model: null }] as unknown as Turn['llmCalls'];
+
+    expect(() => saveTurn(db, null, { ...TURN, llmCalls: calls })).toThrow(/NOT NULL/);
+    expect(count('turns')).toBe(0);
+    expect(count('llm_calls')).toBe(0);
+    expect(count('conversations')).toBe(0);
   });
 });
 
@@ -166,7 +226,7 @@ describe('loadHistory', () => {
 });
 
 describe('createConversationTables on an older app.db', () => {
-  it('adds the classification column, keeping the turns', () => {
+  it('adds the classification column and the llm_calls table, keeping the turns', () => {
     const old = openDatabase(':memory:');
     old.exec(`
       CREATE TABLE conversations (id TEXT PRIMARY KEY, created_at TEXT NOT NULL);
@@ -191,6 +251,7 @@ describe('createConversationTables on an older app.db', () => {
       expect(old.prepare('SELECT question, classification FROM turns').all()).toEqual([
         { question: 'Old question?', classification: null },
       ]);
+      expect(old.prepare('SELECT count(*) AS n FROM llm_calls').get()).toEqual({ n: 0 });
     } finally {
       old.close();
     }

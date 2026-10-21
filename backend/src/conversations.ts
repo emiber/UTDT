@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
+import type { LlmCall } from './llm.ts';
 
-// App state in app.db: conversations and their turns. Every answered question is a turn,
-// failed ones included, so the turns are also the query log.
+// App state in app.db: conversations, their turns, and each turn's calls to the LLM. Every
+// answered question is a turn, failed ones included, so the turns are also the query log.
 
-/** Creates the conversation and turn tables if they don't exist yet; keeps existing data. */
+/** Creates the conversation, turn and LLM call tables if missing; keeps existing data. */
 export function createConversationTables(db: DatabaseSync): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS conversations (
@@ -23,6 +24,16 @@ export function createConversationTables(db: DatabaseSync): void {
       duration_ms INTEGER NOT NULL,
       classification TEXT
     );
+    CREATE TABLE IF NOT EXISTS llm_calls (
+      id INTEGER PRIMARY KEY,
+      turn_id INTEGER NOT NULL REFERENCES turns (id),
+      step TEXT NOT NULL,
+      attempt INTEGER NOT NULL,
+      model TEXT NOT NULL,
+      duration_ms INTEGER NOT NULL,
+      input_tokens INTEGER,
+      output_tokens INTEGER
+    );
   `);
   // An app.db from before the classification step: add its column, keeping the turns.
   const columns = db.prepare("SELECT name FROM pragma_table_info('turns')").all() as {
@@ -37,6 +48,16 @@ export function conversationExists(db: DatabaseSync, id: string): boolean {
   return db.prepare('SELECT 1 FROM conversations WHERE id = ?').get(id) !== undefined;
 }
 
+/** The pipeline step an LLM call belongs to: `answer` is the insights or the text reply. */
+export type LlmStep = 'classify' | 'sql' | 'answer';
+
+/** One call to the LLM in a turn, as `llm_calls` stores it. */
+export interface TurnLlmCall extends LlmCall {
+  step: LlmStep;
+  /** The SQL attempt (1 to 3); 1 for the other steps. */
+  attempt: number;
+}
+
 export interface Turn {
   question: string;
   /** The final SQL, or the last one tried when the turn failed. */
@@ -48,11 +69,14 @@ export interface Turn {
   durationMs: number;
   /** The classifier's label, or null when there was none (it failed, or the turn did). */
   classification: string | null;
+  /** Every call to the LLM the turn made, in order, failed ones included. */
+  llmCalls: TurnLlmCall[];
 }
 
 /**
- * Saves a turn, in the given conversation or in a new one when `conversationId` is null.
- * Both writes happen in one transaction, so a failed turn leaves no empty conversation.
+ * Saves a turn and its LLM calls, in the given conversation or in a new one when
+ * `conversationId` is null. Every write happens in one transaction, so a failed save leaves
+ * no empty conversation and no calls without their turn.
  */
 export function saveTurn(
   db: DatabaseSync,
@@ -84,8 +108,25 @@ export function saveTurn(
         turn.durationMs,
         turn.classification,
       );
+    const turnId = Number(lastInsertRowid);
+    const insertCall = db.prepare(
+      `INSERT INTO llm_calls
+         (turn_id, step, attempt, model, duration_ms, input_tokens, output_tokens)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    );
+    for (const call of turn.llmCalls) {
+      insertCall.run(
+        turnId,
+        call.step,
+        call.attempt,
+        call.model,
+        call.durationMs,
+        call.inputTokens,
+        call.outputTokens,
+      );
+    }
     db.exec('COMMIT');
-    return { conversationId: id, turnId: Number(lastInsertRowid) };
+    return { conversationId: id, turnId };
   } catch (error) {
     if (db.isTransaction) db.exec('ROLLBACK');
     throw error;

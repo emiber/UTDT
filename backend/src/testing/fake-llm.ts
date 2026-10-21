@@ -1,14 +1,21 @@
 import type { ResponseCreateParamsNonStreaming } from 'openai/resources/responses/responses';
 import type { DecisionCreateParams } from 'openai/resources/decisions';
-import type { DecisionAnswer, DecisionClient, LlmClient, LlmResponse } from '../llm.ts';
+import type { DecisionAnswer, DecisionClient, LlmClient, LlmResponse, LlmUsage } from '../llm.ts';
 
 // Test helpers: a fake LlmClient and the responses it can return. Tests never hit the
 // network.
 
+/** The tokens every fake JSON response reports. */
+export const FAKE_USAGE: LlmUsage = { input_tokens: 100, output_tokens: 20 };
+
+/** The tokens every fakeClassifier decision reports. */
+export const FAKE_DECISION_USAGE: LlmUsage = { input_tokens: 50, output_tokens: 0 };
+
 /** A completed response whose output is `value` as JSON, like Structured Outputs returns. */
-export function jsonResponse(value: unknown): LlmResponse {
+export function jsonResponse(value: unknown, usage: LlmUsage = FAKE_USAGE): LlmResponse {
   return {
     status: 'completed',
+    usage,
     output: [{ type: 'message', content: [{ type: 'output_text', text: JSON.stringify(value) }] }],
   };
 }
@@ -80,6 +87,7 @@ export function fakeClassifier(label = 'data_question', confidence = 0.9): FakeD
         answers: [
           { type: 'choice', name: 'classification', choice: label, confidence, probabilities: [] },
         ],
+        usage: FAKE_DECISION_USAGE,
       };
     },
   };

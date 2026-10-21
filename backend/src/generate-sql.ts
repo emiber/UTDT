@@ -1,7 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import type { HistoryTurn } from './conversations.ts';
 import { executeSql, MAX_ROWS } from './execute-sql.ts';
-import { LlmError, requestStructured, type LlmClient } from './llm.ts';
+import { LlmError, requestStructured, type LlmCall, type LlmClient } from './llm.ts';
 import { renderPrompt } from './prompts.ts';
 import { buildSchemaContext } from './schema-context.ts';
 import { elapsed } from './timing.ts';
@@ -44,6 +44,8 @@ export interface GenerateSqlInput {
   history?: HistoryTurn[];
   /** Called with each generated SQL, so a caller still knows the last one if a later step throws. */
   onSql?: (sql: string) => void;
+  /** Gets each attempt's call to the LLM, failed or not, with the attempt number. */
+  onLlmCall?: (call: LlmCall & { attempt: number }) => void;
 }
 
 /**
@@ -59,6 +61,7 @@ export async function generateSql({
   log,
   history = [],
   onSql,
+  onLlmCall,
 }: GenerateSqlInput): Promise<GenerateSqlResult> {
   const schemaContext = buildSchemaContext(db);
   const instructions = renderPrompt('sql-system', { maxRows: MAX_ROWS });
@@ -68,12 +71,16 @@ export async function generateSql({
     let started = performance.now();
     let sql: string;
     try {
-      const output = await requestStructured<{ sql: unknown }>(llm, {
-        name: 'sql_query',
-        schema: SQL_SCHEMA,
-        instructions,
-        input: renderPrompt('sql-user', { schemaContext, history, question, failures }),
-      });
+      const output = await requestStructured<{ sql: unknown }>(
+        llm,
+        {
+          name: 'sql_query',
+          schema: SQL_SCHEMA,
+          instructions,
+          input: renderPrompt('sql-user', { schemaContext, history, question, failures }),
+        },
+        (call) => onLlmCall?.({ ...call, attempt }),
+      );
       if (typeof output.sql !== 'string') throw new LlmError('The model returned no SQL string.');
       sql = output.sql;
       onSql?.(sql);

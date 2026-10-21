@@ -38,7 +38,7 @@ Two database files, kept apart on purpose:
 | File | Contents | Access from the app |
 |---|---|---|
 | `data/data.db` | The dataset being queried **plus** its metadata tables | **Read-only** connection, opened at startup, for the catalog and every LLM-generated query. Written only by the seed script. |
-| `data/app.db` | App state: conversations and their turns | Read-write, by the backend only |
+| `data/app.db` | App state: conversations, their turns, and each turn's calls to the LLM | Read-write, by the backend only |
 
 Keeping them separate means a generated query can't read or touch app state.
 
@@ -207,6 +207,22 @@ Each step is its own issue. The design:
 6. **Persist the turn** in `app.db` (question, SQL, narrative, response, error, timing,
    classification). Failed turns are saved too, so the turns are the query log. An older
    `app.db` gets the `classification` column added at startup.
+
+   With the turn, in the same transaction, go its calls to the LLM, one row each in
+   `llm_calls`: `turn_id`, `step` (`classify`, `sql`, or `answer` for the insights or the
+   text reply), `attempt` (1 to 3 for `sql`, 1 otherwise), `model`, `duration_ms` (the call
+   only, the SDK's retries included, not the SQL execution) and the `input_tokens` and
+   `output_tokens` OpenAI reports. A failed call keeps its time with the tokens empty
+   (OpenAI reports none), and a failed turn keeps the calls it made. `requestStructured`
+   and `requestDecision` measure each call and pass it to an `onLlmCall` callback; each
+   step tags its own, and the chat route collects them. Totals per turn and step:
+
+   ```sql
+   SELECT turn_id, step, COUNT(*) AS calls, SUM(duration_ms) AS ms,
+          SUM(input_tokens) AS input_tokens, SUM(output_tokens) AS output_tokens
+   FROM llm_calls
+   GROUP BY turn_id, step;
+   ```
 
 Steps 1–5 run in `answerQuestion` (`backend/src/pipeline.ts`), with no HTTP or `app.db`,
 so the offline evaluation can reuse it. Its result is a data answer (`kind: 'data'`), a
@@ -399,7 +415,8 @@ label was overridden; a failed classification is a warning with `result: 'error'
 and `persist` for each chat request, plus SQL generation, which logs each attempt's
 generation (`ok` or `error`) and execution (`ok`, the error `kind`, or `error` when it
 throws), without the SQL or the question. The persisted turns in `app.db` are the query
-log. Nothing else for a POC.
+log, and `llm_calls` has the time and tokens of every call to the LLM (see step 6).
+Nothing else for a POC.
 
 ## Tech stack
 

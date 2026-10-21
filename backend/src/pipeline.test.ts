@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SAMPLE_ROWS } from './insights.ts';
 import { LlmError, type DecisionAnswer } from './llm.ts';
 import { answerQuestion, PipelineError, type PipelineLogger } from './pipeline.ts';
+import type { TurnLlmCall } from './conversations.ts';
 import { openTestDataDb } from './testing/dataset.ts';
 import {
   fakeClassifier,
@@ -308,5 +309,89 @@ describe('answerQuestion: classification', () => {
     const result = await ask(fakeLlm(sqlReply(sql), jsonResponse(INSIGHTS)));
 
     expect(result.ok && result.blocks.map((b) => b.type)).toEqual(types);
+  });
+});
+
+describe('answerQuestion: LLM calls', () => {
+  const askRecording = async (llm: ReturnType<typeof fakeLlm>) => {
+    const calls: TurnLlmCall[] = [];
+    const result = await answerQuestion({
+      question: 'Units per item?',
+      dataDb,
+      llm,
+      decisions,
+      log,
+      onLlmCall: (call) => calls.push(call),
+    }).catch((error: unknown) => error);
+    // step, attempt, model and tokens; the duration is real time, so only its type.
+    for (const call of calls) expect(call.durationMs).toEqual(expect.any(Number));
+    const summary = calls.map(({ step, attempt, model, inputTokens, outputTokens }) =>
+      [step, attempt, model, inputTokens, outputTokens].join(' '),
+    );
+    return { result, summary };
+  };
+
+  it('reports the classification, the SQL and the answer of a data question', async () => {
+    const llm = fakeLlm(sqlReply('SELECT name, qty FROM items'), jsonResponse(INSIGHTS));
+
+    const { summary } = await askRecording(llm);
+
+    expect(summary).toEqual([
+      'classify 1 fake-decisions-model 50 0',
+      'sql 1 fake-model 100 20',
+      'answer 1 fake-model 100 20',
+    ]);
+  });
+
+  it('reports each SQL attempt with its number', async () => {
+    const llm = fakeLlm(
+      sqlReply('SELECT nope FROM items'),
+      sqlReply('SELECT name FROM items'),
+      jsonResponse(INSIGHTS),
+    );
+
+    const { summary } = await askRecording(llm);
+
+    expect(summary).toEqual([
+      'classify 1 fake-decisions-model 50 0',
+      'sql 1 fake-model 100 20',
+      'sql 2 fake-model 100 20',
+      'answer 1 fake-model 100 20',
+    ]);
+  });
+
+  it('reports the classification and the text reply of a message that is not a data question', async () => {
+    decisions = fakeClassifier('conversation');
+    const llm = fakeLlm(jsonResponse({ narrative: '¡Hola!', suggestions: ['A?', 'B?', 'C?'] }));
+
+    const { summary } = await askRecording(llm);
+
+    expect(summary).toEqual(['classify 1 fake-decisions-model 50 0', 'answer 1 fake-model 100 20']);
+  });
+
+  it('reports a failed classification without tokens, then the data path', async () => {
+    decisions = fakeDecisions(new Error('503 Busy'));
+    const llm = fakeLlm(sqlReply('SELECT name FROM items'), jsonResponse(INSIGHTS));
+
+    const { summary } = await askRecording(llm);
+
+    expect(summary).toEqual([
+      'classify 1 fake-decisions-model  ',
+      'sql 1 fake-model 100 20',
+      'answer 1 fake-model 100 20',
+    ]);
+  });
+
+  it('reports the calls made before the pipeline throws, the failed one included', async () => {
+    const llm = fakeLlm(sqlReply('SELECT name FROM items'), new Error('Request timed out.'));
+
+    const { result, summary } = await askRecording(llm);
+
+    expect(result).toBeInstanceOf(PipelineError);
+    expect(summary).toEqual([
+      'classify 1 fake-decisions-model 50 0',
+      'sql 1 fake-model 100 20',
+      'answer 1 fake-model  ',
+    ]);
   });
 });

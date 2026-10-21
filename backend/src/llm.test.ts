@@ -10,10 +10,12 @@ import {
   requestStructured,
   type DecisionAnswer,
   type DecisionQuestion,
+  type LlmCall,
   type StructuredRequest,
 } from './llm.ts';
 import {
   fakeDecisions,
+  FAKE_USAGE,
   fakeLlm,
   incompleteResponse,
   jsonResponse,
@@ -165,6 +167,47 @@ describe('requestStructured', () => {
     await expect(requestStructured(llm, REQUEST)).resolves.toEqual({ answer: 'yes' });
   });
 
+  it('reports the call with its model, duration and tokens', async () => {
+    const calls: LlmCall[] = [];
+
+    await requestStructured(fakeLlm(jsonResponse({ answer: 'yes' })), REQUEST, (c) =>
+      calls.push(c),
+    );
+
+    expect(calls).toEqual([
+      {
+        model: 'fake-model',
+        durationMs: expect.any(Number),
+        inputTokens: FAKE_USAGE.input_tokens,
+        outputTokens: FAKE_USAGE.output_tokens,
+      },
+    ]);
+  });
+
+  it('reports the tokens of a refusal, which OpenAI still counts, before throwing', async () => {
+    const calls: LlmCall[] = [];
+    const llm = fakeLlm({ ...refusalResponse('No.'), usage: FAKE_USAGE });
+
+    await expect(requestStructured(llm, REQUEST, (c) => calls.push(c))).rejects.toThrow(LlmError);
+    expect(calls).toMatchObject([{ inputTokens: 100, outputTokens: 20 }]);
+  });
+
+  it('reports a failed call with its duration and no tokens', async () => {
+    const calls: LlmCall[] = [];
+
+    await expect(
+      requestStructured(fakeLlm(new Error('Request timed out.')), REQUEST, (c) => calls.push(c)),
+    ).rejects.toThrow(LlmError);
+    expect(calls).toEqual([
+      {
+        model: 'fake-model',
+        durationMs: expect.any(Number),
+        inputTokens: null,
+        outputTokens: null,
+      },
+    ]);
+  });
+
   it('wraps API errors in an LlmError that keeps the original as its cause', async () => {
     const apiError = new Error('429 Rate limit reached');
 
@@ -249,6 +292,30 @@ describe('requestDecision', () => {
     expect(await requestDecision(judge, 'The input.', QUESTIONS)).toEqual(answers);
     expect(judge.requests).toEqual([
       { model: 'fake-decisions-model', input: 'The input.', questions: QUESTIONS },
+    ]);
+  });
+
+  it('reports the call with its model, duration and tokens, or no tokens when it fails', async () => {
+    const calls: LlmCall[] = [];
+    const usage = { input_tokens: 70, output_tokens: 0 };
+    const client = {
+      model: 'm',
+      createDecision: async () => ({ answers: [{ type: 'refusal' as const, name: 'p' }], usage }),
+    };
+
+    await requestDecision(client, 'x', [QUESTIONS[1]], (c) => calls.push(c));
+    await expect(
+      requestDecision(fakeDecisions(new Error('503')), 'x', QUESTIONS, (c) => calls.push(c)),
+    ).rejects.toThrow(LlmError);
+
+    expect(calls).toEqual([
+      { model: 'm', durationMs: expect.any(Number), inputTokens: 70, outputTokens: 0 },
+      {
+        model: 'fake-decisions-model',
+        durationMs: expect.any(Number),
+        inputTokens: null,
+        outputTokens: null,
+      },
     ]);
   });
 
