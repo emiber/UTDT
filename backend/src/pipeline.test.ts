@@ -369,6 +369,15 @@ describe('answerQuestion: LLM calls', () => {
     expect(summary).toEqual(['classify 1 fake-decisions-model 50 0', 'answer 1 fake-model 100 20']);
   });
 
+  it('reports a failed text reply without tokens', async () => {
+    decisions = fakeClassifier('out_of_scope');
+
+    const { result, summary } = await askRecording(fakeLlm(new Error('500 Server error')));
+
+    expect(result).toBeInstanceOf(PipelineError);
+    expect(summary).toEqual(['classify 1 fake-decisions-model 50 0', 'answer 1 fake-model  ']);
+  });
+
   it('reports a failed classification without tokens, then the data path', async () => {
     decisions = fakeDecisions(new Error('503 Busy'));
     const llm = fakeLlm(sqlReply('SELECT name FROM items'), jsonResponse(INSIGHTS));

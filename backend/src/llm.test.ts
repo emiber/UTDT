@@ -11,6 +11,7 @@ import {
   type DecisionAnswer,
   type DecisionQuestion,
   type LlmCall,
+  type LlmResponse,
   type StructuredRequest,
 } from './llm.ts';
 import {
@@ -190,6 +191,41 @@ describe('requestStructured', () => {
 
     await expect(requestStructured(llm, REQUEST, (c) => calls.push(c))).rejects.toThrow(LlmError);
     expect(calls).toMatchObject([{ inputTokens: 100, outputTokens: 20 }]);
+  });
+
+  it('measures the time of the call itself, also when it fails', async () => {
+    const calls: LlmCall[] = [];
+    const slow = (reply: () => LlmResponse) => ({
+      model: 'm',
+      createResponse: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 40));
+        return reply();
+      },
+    });
+    const testStarted = performance.now();
+
+    await requestStructured(
+      slow(() => jsonResponse({ answer: 'yes' })),
+      REQUEST,
+      (c) => calls.push(c),
+    );
+    await expect(
+      requestStructured(
+        slow(() => {
+          throw new Error('Request timed out.');
+        }),
+        REQUEST,
+        (c) => calls.push(c),
+      ),
+    ).rejects.toThrow(LlmError);
+
+    // The wait counts (timers can fire a little early), and nothing before the call does:
+    // no call can take longer than the whole test.
+    const testMs = performance.now() - testStarted;
+    expect(calls.map((c) => c.durationMs >= 30 && c.durationMs <= testMs + 1)).toEqual([
+      true,
+      true,
+    ]);
   });
 
   it('reports a failed call with its duration and no tokens', async () => {

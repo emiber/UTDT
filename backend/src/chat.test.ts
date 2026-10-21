@@ -442,6 +442,38 @@ describe('POST /api/chat', () => {
     expect(turns()[0].error).toMatch(/no such table: meta_tables/);
   });
 
+  it('keeps the LLM calls made before an unexpected error', async () => {
+    start(sqlReply('SELECT name FROM items'));
+    const create = llm.createResponse;
+    llm.createResponse = async (body) => {
+      // The SQL arrives, but the data.db connection is gone when it runs.
+      dataDb.close();
+      return create(body);
+    };
+
+    const res = await chat({ question: 'Names?' });
+
+    expect(res.statusCode).toBe(500);
+    const [turn] = turns();
+    expect(llmCalls()).toEqual([
+      expect.objectContaining({ turn_id: turn.id, step: 'classify' }),
+      expect.objectContaining({ turn_id: turn.id, step: 'sql', input_tokens: 100 }),
+    ]);
+  });
+
+  it('saves a failed answer call with no tokens', async () => {
+    start(sqlReply('SELECT name FROM items'), new Error('500 Internal Server Error'));
+
+    const res = await chat({ question: 'Names?' });
+
+    expect(res.statusCode).toBe(502);
+    expect(llmCalls()).toEqual([
+      expect.objectContaining({ step: 'classify', input_tokens: 50 }),
+      expect.objectContaining({ step: 'sql', input_tokens: 100, output_tokens: 20 }),
+      expect.objectContaining({ step: 'answer', input_tokens: null, output_tokens: null }),
+    ]);
+  });
+
   it('logs each pipeline step, persist included, with its duration', async () => {
     const lines: string[] = [];
     llm = fakeLlm(sqlReply('SELECT name FROM items'), jsonResponse(INSIGHTS));

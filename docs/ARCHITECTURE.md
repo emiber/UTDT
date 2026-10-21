@@ -206,7 +206,8 @@ Each step is its own issue. The design:
    Spanish answer, even with a prompt rule against it.
 6. **Persist the turn** in `app.db` (question, SQL, narrative, response, error, timing,
    classification). Failed turns are saved too, so the turns are the query log. An older
-   `app.db` gets the `classification` column added at startup.
+   `app.db` gets the `classification` column and the `llm_calls` table added at startup,
+   keeping its turns.
 
    With the turn, in the same transaction, go its calls to the LLM, one row each in
    `llm_calls`: `turn_id`, `step` (`classify`, `sql`, or `answer` for the insights or the

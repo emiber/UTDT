@@ -79,7 +79,10 @@ export interface LlmCall {
   outputTokens: number | null;
 }
 
-/** Receives each call a request makes, so the pipeline can record the turn's calls. */
+/**
+ * Receives each call a request makes, so the pipeline can record the turn's calls. It must
+ * not throw: it runs on the request's success and failure paths.
+ */
 export type OnLlmCall = (call: LlmCall) => void;
 
 function llmCall(model: string, started: number, usage?: LlmUsage | null): LlmCall {
@@ -199,15 +202,15 @@ export async function requestDecision(
   onCall?: OnLlmCall,
 ): Promise<DecisionAnswer[]> {
   const started = performance.now();
-  let decision: Awaited<ReturnType<DecisionClient['createDecision']>>;
+  let answers: DecisionAnswer[];
+  let usage: LlmUsage | null | undefined;
   try {
-    decision = await client.createDecision({ model: client.model, input, questions });
+    ({ answers, usage } = await client.createDecision({ model: client.model, input, questions }));
   } catch (error) {
     onCall?.(llmCall(client.model, started));
     throw new LlmError(`OpenAI decision failed: ${(error as Error).message}`, { cause: error });
   }
-  onCall?.(llmCall(client.model, started, decision.usage));
-  const { answers } = decision;
+  onCall?.(llmCall(client.model, started, usage));
   if (answers?.length !== questions.length) {
     throw new LlmError(
       `The decision has ${answers?.length ?? 0} answers for ${questions.length} questions.`,

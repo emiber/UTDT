@@ -102,11 +102,12 @@ export async function answerQuestion({
   onLlmCall,
 }: PipelineInput): Promise<PipelineResult> {
   let lastSql: string | null = null;
-  // Tags a step's calls; generateSql's calls bring their own attempt number.
+  // Tags a step's calls; generateSql's calls bring their own attempt number. The `answer`
+  // step is the text reply or the insights, which the step logs call `reply` and `insights`.
   const record =
-    (step: LlmStep) =>
+    (llmStep: LlmStep) =>
     (call: LlmCall & { attempt?: number }): void =>
-      onLlmCall?.({ step, attempt: 1, ...call });
+      onLlmCall?.({ step: llmStep, attempt: 1, ...call });
   let step = 'classify';
   let started = performance.now();
   try {
