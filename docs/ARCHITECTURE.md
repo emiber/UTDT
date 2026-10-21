@@ -160,9 +160,13 @@ Each step is its own issue. The design:
    - a row cap of 500: a bigger result is rejected, not truncated, and reading stops at
      row 501. That bounds rows, not work: a query that must read everything before its
      first row (`ORDER BY`, `GROUP BY`, aggregates) still runs in full (see *Query
-     timeout* in the deferred decisions). Value size isn't capped either: a value of
-     hundreds of MB (e.g. `hex(zeroblob(300000000))`) can crash the Node process. Only
-     values over SQLite's own 1 GB limit come back as an error.
+     timeout* in the deferred decisions);
+   - a cap of 1,000,000 characters or bytes per value (`MAX_VALUE_LENGTH`, SQLite's
+     `limits.length` on the read-only connection): a bigger string or blob fails with
+     `string or blob too big`, a `sql` error the LLM can fix. Without it, a value of
+     hundreds of MB (e.g. `hex(zeroblob(300000000))`) stays under SQLite's own 1 GB limit
+     and crashes the Node process. The cap is per value: the total size of a response is
+     bounded only by the row cap.
 
    Rows come back as lists aligned with the column names, so duplicate names keep both
    values. Errors a rewritten query can fix are **returned** with a `kind` (`guard`,
@@ -439,7 +443,7 @@ config only when there's a reason.
 | Online judge (scoring every answer live) | The offline eval measures quality without adding latency or cost to each chat |
 | Judge rationale via the Responses API | Decisions gives scores without a "why". Add explanations for low scores only if the scores alone aren't enough |
 | Real authentication / users | Local POC: a shared key is enough |
-| Query timeout / worker thread | `node:sqlite` is synchronous, so a slow query blocks the server, and a query that returns a value of hundreds of MB can crash the process. That's fine for one user on a small dataset; move execution to a worker (which also contains a crash) if it bites |
+| Query timeout / worker thread | `node:sqlite` is synchronous, so a slow query blocks the server. Each value is capped at 1,000,000 characters or bytes, but the total size of a result is bounded only by the row cap. That's fine for one user on a small dataset; move execution to a worker if it bites |
 | Standard prompts with pre-validated SQL, feedback buttons, CSV download | Features from the reference project. Not needed to prove the concept |
 | Streaming responses | Adds complexity on both ends. Fine to wait for the full answer in a POC |
 | UI kit (e.g. PrimeVue DataTable) | Plain HTML tables are enough. Revisit if tables need sorting, paging or export |

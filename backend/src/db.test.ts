@@ -6,6 +6,7 @@ import {
   APP_DB_PATH,
   DATA_DB_PATH,
   openDatabase,
+  MAX_VALUE_LENGTH,
   openReadOnlyDatabase,
   sqliteVersion,
 } from './db.ts';
@@ -51,6 +52,27 @@ describe('openReadOnlyDatabase', () => {
       expect(db.prepare('SELECT x FROM t').get()).toEqual({ x: 1 });
       expect(() => db.exec('INSERT INTO t VALUES (2)')).toThrow(/readonly/);
       expect(() => db.exec('CREATE TABLE u (y INTEGER)')).toThrow(/readonly/);
+    } finally {
+      db.close();
+    }
+  });
+
+  it(`caps a string or blob at ${MAX_VALUE_LENGTH} characters or bytes`, () => {
+    const file = path.join(makeTempDir(), 'data.db');
+    openDatabase(file).close();
+
+    const db = openReadOnlyDatabase(file);
+    try {
+      const value = db.prepare('SELECT zeroblob(500000) AS v').get()?.v;
+      expect(value).toHaveLength(500_000);
+      const atLimit = db.prepare(`SELECT zeroblob(${MAX_VALUE_LENGTH}) AS v`).get()?.v;
+      expect(atLimit).toHaveLength(MAX_VALUE_LENGTH);
+      expect(() => db.prepare(`SELECT zeroblob(${MAX_VALUE_LENGTH + 1})`).get()).toThrow(
+        'string or blob too big',
+      );
+      expect(() => db.prepare(`SELECT hex(zeroblob(${MAX_VALUE_LENGTH}))`).get()).toThrow(
+        'string or blob too big',
+      );
     } finally {
       db.close();
     }
