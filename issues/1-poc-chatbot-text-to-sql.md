@@ -26,3 +26,4 @@ created: 2026-10-19
 17. #18 Estabilizar el arranque de los workers de Vitest
 18. #19 Rechazar al arrancar el placeholder de APP_ACCESS_KEY
 19. #20 Rediseñar la UI del chat con input fijo, mensajes diferenciados y un estilo más cuidado
+20. #21 Mostrar nombres de columna legibles en tablas y gráficos
