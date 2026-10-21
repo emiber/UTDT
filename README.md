@@ -11,8 +11,10 @@ shared access key. The frontend first asks for that key (the `APP_ACCESS_KEY` va
 your `.env`), then shows the backend status, an `Available data` section with the tables,
 columns, relationships and indexes the bot knows about, and the chat: ask a question and
 get a narrative, a table and, when it helps, a chart of real data, with follow-up
-suggestions you can click. Follow-ups like "and for last year?" use the last turns of the
-conversation, which is saved in `data/app.db`; reloading the page starts a new one.
+suggestions you can click. A greeting, a vague question or an off-topic one gets a short
+text reply instead, with no query run. Follow-ups like "and for last year?" use the last
+turns of the conversation, which is saved in `data/app.db`; reloading the page starts a
+new one.
 Features are built one small issue at a time; see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 for the design and the decisions behind it.
 
@@ -43,10 +45,12 @@ it still has the one from `.env.example`. For example:
 node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
 ```
 
-`OPENAI_API_KEY` and `OPENAI_MODEL` are required too: the backend builds the OpenAI client
-at startup and refuses to start without either, naming the missing one. The key is used
-for every OpenAI call; the model must support Structured Outputs in the Responses API
-(e.g. `gpt-5.4-mini`).
+`OPENAI_API_KEY`, `OPENAI_MODEL` and `OPENAI_DECISIONS_MODEL` are required too: the
+backend builds the OpenAI clients at startup and refuses to start without any of them,
+naming the missing one. The key is used for every OpenAI call. `OPENAI_MODEL` must
+support Structured Outputs in the Responses API (e.g. `gpt-5.4-mini`), and
+`OPENAI_DECISIONS_MODEL` is the Decisions API model that classifies each question (today
+only `gpt-6-luna`).
 
 `npm run seed` loads a small, fictitious sales dataset and the metadata that describes it
 to the bot (see *Data* in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)). It's **required
@@ -80,8 +84,9 @@ needed.
 - **Requirements:** `npm run seed`, and a `.env` with a real `OPENAI_API_KEY`, `OPENAI_MODEL`
   and `OPENAI_DECISIONS_MODEL` (today the Decisions API only supports `gpt-6-luna`). If
   something is missing it says what and exits without calling OpenAI.
-- **It costs money:** each question is a full pipeline run plus one judge call. That's why it
-  runs by hand and isn't part of the quality gate.
+- **It costs money:** each question is a full pipeline run (a classification, then the SQL
+  and insights calls) plus one judge call. That's why it runs by hand and isn't part of the
+  quality gate.
 - **Output:** one line per question, a summary, and a JSON report in `data/eval/`
   (gitignored) with every answer and score.
 - **Reading the summary:** it shows values, not a verdict. *The SQL answers the question*
@@ -109,7 +114,8 @@ backend/src/    Fastify app (app.ts), entry points (server.ts, seed-cli.ts), acc
                 (auth.ts), SQLite helpers (db.ts), metadata tables and seeding (metadata.ts,
                 seed.ts), demo data (demo-dataset.ts), data catalog (catalog.ts), guarded
                 SQL execution (execute-sql.ts), OpenAI client (llm.ts), prompt templates
-                (prompts/, prompts.ts), schema context (schema-context.ts), SQL generation
+                (prompts/, prompts.ts), schema context (schema-context.ts), message
+                classification (classify.ts), text-only replies (reply.ts), SQL generation
                 with retries (generate-sql.ts), insights (insights.ts), charts (chart.ts),
                 the pipeline (pipeline.ts), the chat route (chat.ts), conversations and
                 turns (conversations.ts), offline evaluation (evaluate.ts, eval-command.ts,

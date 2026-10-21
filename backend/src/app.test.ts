@@ -4,7 +4,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import { buildApp } from './app.ts';
 import { openDatabase, sqliteVersion } from './db.ts';
 import { createMetadataTables, insertMetadata } from './metadata.ts';
-import { fakeLlm } from './testing/fake-llm.ts';
+import { fakeClassifier, fakeLlm } from './testing/fake-llm.ts';
 
 const ACCESS_KEY = 'test-access-key';
 const AUTH = { authorization: `Bearer ${ACCESS_KEY}` };
@@ -17,7 +17,13 @@ beforeEach(() => {
   db = openDatabase(':memory:');
   dataDb = openDatabase(':memory:');
   createMetadataTables(dataDb);
-  app = buildApp({ db, dataDb, llm: fakeLlm(), accessKey: ACCESS_KEY });
+  app = buildApp({
+    db,
+    dataDb,
+    llm: fakeLlm(),
+    decisions: fakeClassifier(),
+    accessKey: ACCESS_KEY,
+  });
   // Stand-ins for the protected routes later issues add.
   app.get('/api/protected', async () => ({ ok: true }));
   app.post(

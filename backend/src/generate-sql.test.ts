@@ -282,6 +282,9 @@ describe('generateSql', () => {
       'Give every column of the result a short, readable name in the language of the question, with AS and double quotes',
     );
     expect(instructions).toContain('Keep the names unique, and never use SELECT *');
+    expect(instructions).toContain(
+      'redo an earlier answer, write the latest query of the conversation again, changed only as asked',
+    );
   });
 
   it('logs each step of each attempt with its duration and result', async () => {

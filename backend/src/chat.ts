@@ -7,7 +7,7 @@ import {
   type HistoryTurn,
   type Turn,
 } from './conversations.ts';
-import { LlmError, type LlmClient } from './llm.ts';
+import { LlmError, type DecisionClient, type LlmClient } from './llm.ts';
 import { answerQuestion, type Block, type PipelineError } from './pipeline.ts';
 import { elapsed } from './timing.ts';
 
@@ -36,13 +36,18 @@ export interface ChatDeps {
   /** The dataset (`data.db`), read-only. */
   dataDb: DatabaseSync;
   llm: LlmClient;
+  /** The Decisions API client, for the classification. */
+  decisions: DecisionClient;
 }
 
 /**
  * `POST /api/chat`: answers a question in a conversation and saves the turn, failed ones
  * included. A 502 or 500 carries a generic message; the detail goes to the log and the turn.
  */
-export function registerChatRoute(app: FastifyInstance, { db, dataDb, llm }: ChatDeps): void {
+export function registerChatRoute(
+  app: FastifyInstance,
+  { db, dataDb, llm, decisions }: ChatDeps,
+): void {
   app.post<{ Body: ChatBody }>(
     '/api/chat',
     { schema: { body: CHAT_BODY_SCHEMA } },
@@ -74,6 +79,7 @@ export function registerChatRoute(app: FastifyInstance, { db, dataDb, llm }: Cha
           question,
           dataDb,
           llm,
+          decisions,
           log: request.log,
           history,
         });
@@ -82,10 +88,12 @@ export function registerChatRoute(app: FastifyInstance, { db, dataDb, llm }: Cha
           : { blocks: [{ type: 'text', markdown: NO_ANSWER_MESSAGE }], suggestions: [] };
         turn = {
           question,
-          sql: result.sql,
+          // A text reply ran no SQL.
+          sql: result.ok && result.kind === 'reply' ? null : result.sql,
           narrative: result.ok ? result.narrative : null,
           response: body,
           error: result.ok ? null : `${result.kind}: ${result.message}`,
+          classification: result.classification,
         };
       } catch (error) {
         // answerQuestion throws only PipelineErrors, wrapping the original as the cause.
@@ -101,6 +109,7 @@ export function registerChatRoute(app: FastifyInstance, { db, dataDb, llm }: Cha
           narrative: null,
           response: null,
           error: (cause as Error).message,
+          classification: null,
         };
       }
 

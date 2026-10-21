@@ -5,7 +5,7 @@ import { readCatalog } from './catalog.ts';
 import { registerChatRoute } from './chat.ts';
 import { createConversationTables } from './conversations.ts';
 import { sqliteVersion } from './db.ts';
-import type { LlmClient } from './llm.ts';
+import type { DecisionClient, LlmClient } from './llm.ts';
 
 export interface AppOptions {
   /** App state (`app.db`). Its tables are created here if missing. */
@@ -14,6 +14,8 @@ export interface AppOptions {
   dataDb: DatabaseSync;
   /** The OpenAI client, or a fake one in tests. */
   llm: LlmClient;
+  /** The Decisions API client (classification), or a fake one in tests. */
+  decisions: DecisionClient;
   accessKey: string;
   /** Fastify's logger option: `true` in the server; tests may pass a stream to read lines. */
   logger?: FastifyServerOptions['logger'];
@@ -29,6 +31,7 @@ export function buildApp({
   db,
   dataDb,
   llm,
+  decisions,
   accessKey,
   logger = false,
 }: AppOptions): FastifyInstance {
@@ -55,7 +58,7 @@ export function buildApp({
   // Read on every request, so metadata edits show up without a restart.
   app.get('/api/catalog', async () => readCatalog(dataDb));
 
-  registerChatRoute(app, { db, dataDb, llm });
+  registerChatRoute(app, { db, dataDb, llm, decisions });
 
   return app;
 }

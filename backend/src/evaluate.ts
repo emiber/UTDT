@@ -121,6 +121,8 @@ export interface EvalDeps {
   /** Read-only connection to `data.db`. */
   dataDb: DatabaseSync;
   llm: LlmClient;
+  /** The Decisions API client the pipeline classifies with. */
+  decisions: DecisionClient;
   judge: DecisionClient;
   /** The schema context the bot sees, so the judge sees the same. */
   schemaContext: string;
@@ -147,8 +149,14 @@ export async function evaluateCase(golden: GoldenCase, deps: EvalDeps): Promise<
 
   let result: Awaited<ReturnType<typeof answerQuestion>>;
   try {
-    const { dataDb, llm } = deps;
-    result = await answerQuestion({ question: golden.question, dataDb, llm, log: QUIET });
+    const { dataDb, llm, decisions } = deps;
+    result = await answerQuestion({
+      question: golden.question,
+      dataDb,
+      llm,
+      decisions,
+      log: QUIET,
+    });
   } catch (error) {
     const { sql, cause } = error as PipelineError;
     return { ...base, sql, error: (cause as Error).message };
@@ -160,6 +168,10 @@ export async function evaluateCase(golden: GoldenCase, deps: EvalDeps): Promise<
       sql: result.sql,
       reason: `${result.kind}: ${result.message}`,
     };
+  }
+  // Golden questions are all data questions: a text reply means the classifier missed.
+  if (result.kind === 'reply') {
+    return { ...base, status: 'unanswered', reason: `classified as ${result.classification}` };
   }
 
   const answered: CaseResult = {

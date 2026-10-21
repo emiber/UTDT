@@ -30,6 +30,8 @@ export interface EvalCommandOptions {
   /** The real OpenAI clients by default; tests pass fakes. */
   createLlm?: (env: NodeJS.ProcessEnv) => LlmClient;
   createJudge?: (env: NodeJS.ProcessEnv) => DecisionClient;
+  /** The pipeline's classifier: a Decisions API client too. */
+  createDecisions?: (env: NodeJS.ProcessEnv) => DecisionClient;
 }
 
 /**
@@ -42,12 +44,14 @@ export async function runEvalCommand(options: EvalCommandOptions): Promise<numbe
   const { env, print, now = () => new Date() } = options;
   let llm: LlmClient;
   let judge: DecisionClient;
+  let decisions: DecisionClient;
   let cases: GoldenCase[];
   let dataDb: DatabaseSync;
   let schemaContext: string;
   try {
     llm = (options.createLlm ?? createLlmClient)(env);
     judge = (options.createJudge ?? createDecisionClient)(env);
+    decisions = (options.createDecisions ?? createDecisionClient)(env);
     cases = parseGolden(readGolden(options.goldenPath));
     dataDb = openReadOnlyDatabase(options.dataDbPath);
   } catch (error) {
@@ -66,7 +70,13 @@ export async function runEvalCommand(options: EvalCommandOptions): Promise<numbe
     const startedAt = now();
     const results: CaseResult[] = [];
     for (const golden of cases) {
-      const result = await evaluateCase(golden, { dataDb, llm, judge, schemaContext });
+      const result = await evaluateCase(golden, {
+        dataDb,
+        llm,
+        decisions,
+        judge,
+        schemaContext,
+      });
       results.push(result);
       print(formatCase(result));
     }

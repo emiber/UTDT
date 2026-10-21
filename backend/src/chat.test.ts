@@ -5,7 +5,14 @@ import { buildApp } from './app.ts';
 import { NO_ANSWER_MESSAGE } from './chat.ts';
 import { openDatabase } from './db.ts';
 import { openTestDataDb } from './testing/dataset.ts';
-import { fakeLlm, jsonResponse, refusalResponse, type FakeLlm } from './testing/fake-llm.ts';
+import {
+  fakeClassifier,
+  fakeLlm,
+  jsonResponse,
+  refusalResponse,
+  type FakeDecisions,
+  type FakeLlm,
+} from './testing/fake-llm.ts';
 
 const ACCESS_KEY = 'test-access-key';
 const AUTH = { authorization: `Bearer ${ACCESS_KEY}` };
@@ -16,8 +23,10 @@ let db: DatabaseSync;
 let dataDb: DatabaseSync;
 let app: FastifyInstance | undefined;
 let llm: FakeLlm;
+let decisions: FakeDecisions;
 
 beforeEach(() => {
+  decisions = fakeClassifier();
   db = openDatabase(':memory:');
   dataDb = openTestDataDb();
 });
@@ -32,7 +41,7 @@ afterEach(async () => {
 /** Builds the app with a fake LLM that gives these replies, in order. */
 function start(...replies: Parameters<typeof fakeLlm>) {
   llm = fakeLlm(...replies);
-  app = buildApp({ db, dataDb, llm, accessKey: ACCESS_KEY });
+  app = buildApp({ db, dataDb, llm, decisions, accessKey: ACCESS_KEY });
   return app;
 }
 
@@ -87,6 +96,7 @@ describe('POST /api/chat', () => {
         response: JSON.stringify({ blocks: body.blocks, suggestions: body.suggestions }),
         error: null,
         duration_ms: expect.any(Number),
+        classification: 'data_question',
       },
     ]);
   });
@@ -185,6 +195,7 @@ describe('POST /api/chat', () => {
       db,
       dataDb,
       llm,
+      decisions,
       accessKey: ACCESS_KEY,
       logger: { level: 'info', stream: { write: (line: string) => lines.push(line) } },
     });
@@ -290,6 +301,30 @@ describe('POST /api/chat', () => {
     expect(turns()).toHaveLength(0);
   });
 
+  it('answers a greeting with text only, saving the turn with its classification', async () => {
+    decisions = fakeClassifier('conversation');
+    const reply = {
+      narrative: '¡Hola! Puedo responder sobre artículos.',
+      suggestions: ['A?', 'B?', 'C?'],
+    };
+    start(jsonResponse(reply));
+
+    const res = await chat({ question: 'Hola!' });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      blocks: [{ type: 'text', markdown: reply.narrative }],
+      suggestions: reply.suggestions,
+    });
+    expect(turns()[0]).toMatchObject({
+      question: 'Hola!',
+      sql: null,
+      narrative: reply.narrative,
+      error: null,
+      classification: 'conversation',
+    });
+  });
+
   it('answers 404 for an unknown conversation, without calling OpenAI or saving', async () => {
     start();
 
@@ -380,6 +415,7 @@ describe('POST /api/chat', () => {
       db,
       dataDb,
       llm,
+      decisions,
       accessKey: ACCESS_KEY,
       logger: { level: 'info', stream: { write: (line: string) => lines.push(line) } },
     });
@@ -388,6 +424,7 @@ describe('POST /api/chat', () => {
 
     const steps = lines.map((line) => JSON.parse(line)).filter((entry) => entry.step);
     expect(steps.map((s) => s.step)).toEqual([
+      'classify',
       'generate_sql',
       'execute_sql',
       'sql',
