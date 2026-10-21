@@ -48,8 +48,9 @@ export function conversationExists(db: DatabaseSync, id: string): boolean {
   return db.prepare('SELECT 1 FROM conversations WHERE id = ?').get(id) !== undefined;
 }
 
-/** The pipeline step an LLM call belongs to: `answer` is the insights or the text reply. */
-export type LlmStep = 'classify' | 'sql' | 'answer';
+/** The pipeline steps an LLM call can belong to: `answer` is the insights or the text reply. */
+export const LLM_STEPS = ['classify', 'sql', 'answer'] as const;
+export type LlmStep = (typeof LLM_STEPS)[number];
 
 /** One call to the LLM in a turn, as `llm_calls` stores it. */
 export interface TurnLlmCall extends LlmCall {

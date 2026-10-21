@@ -10,6 +10,8 @@ import { registerChatRoute } from './chat.ts';
 import { createConversationTables } from './conversations.ts';
 import { sqliteVersion } from './db.ts';
 import type { DecisionClient, LlmClient } from './llm.ts';
+import type { Prices } from './prices.ts';
+import { registerUsageRoute } from './usage-route.ts';
 
 export interface AppOptions {
   /** App state (`app.db`). Its tables are created here if missing. */
@@ -21,6 +23,8 @@ export interface AppOptions {
   /** The Decisions API client (classification), or a fake one in tests. */
   decisions: DecisionClient;
   accessKey: string;
+  /** Model prices for the usage report's cost (OPENAI_PRICES); none means no cost. */
+  prices?: Prices;
   /** Fastify's logger option: `true` in the server; tests may pass a stream to read lines. */
   logger?: FastifyServerOptions['logger'];
 }
@@ -37,6 +41,7 @@ export function buildApp({
   llm,
   decisions,
   accessKey,
+  prices = new Map(),
   logger = false,
 }: AppOptions): FastifyInstance {
   // No type coercion, app-wide: a body field of the wrong type is a 400, not silently
@@ -78,6 +83,7 @@ export function buildApp({
   app.get('/api/catalog', async () => readCatalog(dataDb));
 
   registerChatRoute(app, { db, dataDb, llm, decisions });
+  registerUsageRoute(app, { db, prices });
 
   return app;
 }
