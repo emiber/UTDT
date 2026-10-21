@@ -25,8 +25,9 @@ describe('buildInsights', () => {
 
     const format = llm.requests[0].text?.format;
     expect(format).toMatchObject({ type: 'json_schema', name: 'insights', strict: true });
-    const schema = (format as unknown as { schema: { properties: Record<string, unknown> } })
-      .schema;
+    const { schema } = format as unknown as {
+      schema: { properties: Record<string, unknown>; required: string[] };
+    };
     // The language goes first, so the rest of the output follows it.
     expect(Object.keys(schema.properties)).toEqual([
       'language',
@@ -34,6 +35,8 @@ describe('buildInsights', () => {
       'suggestions',
       'chart',
     ]);
+    // Strict Structured Outputs require every property.
+    expect(schema.required).toEqual(Object.keys(schema.properties));
     expect(schema.properties.suggestions).toMatchObject({ minItems: 3, maxItems: 3 });
     // The chart spec only names columns: there's no field for values.
     const chart = schema.properties.chart as { anyOf: { properties?: object }[] };
@@ -65,6 +68,12 @@ describe('buildInsights', () => {
       "if the question asks for a chart and the result can't be charted",
     );
     expect(instructions).toContain('A single value (one row, one column) is shown without a table');
+  });
+
+  it('drops the language field from what it returns', async () => {
+    const llm = fakeLlm(jsonResponse({ language: 'Spanish', ...INSIGHTS, chart: null }));
+
+    expect(await buildInsights(input([['ink', 5]], llm))).toEqual({ ...INSIGHTS, chart: null });
   });
 
   it('returns the chart spec, or null when there is none', async () => {

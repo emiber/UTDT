@@ -177,7 +177,8 @@ Each step is its own issue. The design:
 5. **Build the insights** (Responses API, Structured Outputs; `buildInsights` in
    `backend/src/insights.ts`). The LLM receives the question, the SQL, the column list,
    the first 50 rows, the total row count and the earlier turns of the conversation (see
-   *Multi-turn*), and returns **only** the narrative (markdown), exactly 3 follow-up
+   *Multi-turn*), and returns **only** (after a leading `language` field, see below) the
+   narrative (markdown), exactly 3 follow-up
    suggestions, in the language of the question, and a chart spec or `null` (`type`:
    bar/line/pie/doughnut, `x` column, `series` columns, title). The prompt asks for `null`
    when the result can't be charted or a chart adds nothing (e.g. one or two rows), and for
@@ -188,12 +189,6 @@ Each step is its own issue. The design:
    column) goes without a table: the narrative already says it. So an answer is always
    text, plus a table and a chart when they add something.
 
-   **Language:** the insights and the text-only reply (step 1) each start their output with
-   a `language` field, the language of the current message, and write the rest in it. The
-   value isn't used. Without it, earlier turns in another language pulled the answer into
-   theirs: in a Spanish conversation, an English question got a Spanish answer 4 times out
-   of 4, even with a prompt rule against it.
-
    `buildChart` (`backend/src/chart.ts`) checks the spec against the result: the result has
    rows; `x` and each series name exactly one result column (a repeated name doesn't);
    `series` isn't empty and doesn't include `x`; every series value is a number or `null`;
@@ -201,6 +196,12 @@ Each step is its own issue. The design:
    in the log (its reason, not the rows): the answer comes out without a chart, and the
    insights call isn't retried. Rows keep their SQL order: nothing is grouped, sorted or
    cut.
+
+   **Language:** the insights and the text-only reply (step 1) each start their output with
+   a `language` field, the language of the current message, and write the rest in it. The
+   value isn't used. Without it, earlier turns in another language pulled the answer into
+   theirs: in a Spanish conversation, an English question got a Spanish answer, even with
+   a prompt rule against it.
 6. **Persist the turn** in `app.db` (question, SQL, narrative, response, error, timing,
    classification). Failed turns are saved too, so the turns are the query log. An older
    `app.db` gets the `classification` column added at startup.

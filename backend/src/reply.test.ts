@@ -31,9 +31,13 @@ describe('buildReply', () => {
       name: 'reply',
       strict: true,
     });
-    const schema = (request.text?.format as unknown as { schema: { properties: object } }).schema;
+    const { schema } = request.text?.format as unknown as {
+      schema: { properties: object; required: string[] };
+    };
     // The language goes first, so the rest of the output follows it.
     expect(Object.keys(schema.properties)).toEqual(['language', 'narrative', 'suggestions']);
+    // Strict Structured Outputs require every property.
+    expect(schema.required).toEqual(Object.keys(schema.properties));
     const prompt = String(request.input);
     expect(prompt).toContain('Table items: One row per item.');
     expect(prompt).toContain('Question: Units per item?');
@@ -44,6 +48,12 @@ describe('buildReply', () => {
     expect(instructions).toContain(
       'An English message gets an English reply, a Spanish one a Spanish reply, whatever the language of the earlier turns',
     );
+  });
+
+  it('drops the language field from what it returns', async () => {
+    const llm = fakeLlm(jsonResponse({ language: 'Spanish', ...REPLY }));
+
+    expect(await buildReply(input('conversation', llm))).toEqual(REPLY);
   });
 
   it.each([
