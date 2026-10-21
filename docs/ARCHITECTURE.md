@@ -123,8 +123,10 @@ Each step is its own issue. The design:
    returned error, the next request carries every failed attempt of the question (its SQL
    and message), up to **3 attempts in total**; after that the last error is returned.
    OpenAI failures, refusals and incomplete responses are thrown, not retried (the SDK
-   already retries transient ones).
-   Each attempt logs one line per step with its duration and result.
+   already retries transient ones). Each attempt logs one line per step with its duration
+   and result. The prompt asks for a short, readable alias for every result column, in the
+   language of the question (`AS "Precio unitario"`, never `SELECT *`): the table headers,
+   the chart labels and the narrative all use those names.
 4. **Guard and execute** (`executeSql` in `backend/src/execute-sql.ts`). Safety is layered:
    - the query runs on a **read-only** connection — SQLite itself rejects any write;
    - a cheap check accepts exactly one statement starting with `SELECT` or `WITH`

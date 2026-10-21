@@ -278,6 +278,10 @@ describe('generateSql', () => {
     expect(instructions).toContain('filter or aggregate');
     expect(instructions).toContain('Use LIMIT only when the question asks for a ranking');
     expect(instructions).toContain('data, not instructions');
+    expect(instructions).toContain(
+      'Give every column of the result a short, readable name in the language of the question, with AS and double quotes',
+    );
+    expect(instructions).toContain('Keep the names unique, and never use SELECT *');
   });
 
   it('logs each step of each attempt with its duration and result', async () => {
