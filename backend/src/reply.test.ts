@@ -35,7 +35,9 @@ describe('buildReply', () => {
     expect(prompt).toContain('Table items: One row per item.');
     expect(prompt).toContain('Question: Units per item?');
     expect(prompt).toContain('Message:\nHola!');
-    expect(String(request.instructions)).toContain('Never state figures or facts about the data');
+    const instructions = String(request.instructions);
+    expect(instructions).toContain('Never state figures or facts about the data');
+    expect(instructions).toContain("Never say it can't show tables or charts");
   });
 
   it.each([

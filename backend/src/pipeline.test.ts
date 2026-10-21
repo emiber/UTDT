@@ -1,7 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SAMPLE_ROWS } from './insights.ts';
-import { LlmError } from './llm.ts';
+import { LlmError, type DecisionAnswer } from './llm.ts';
 import { answerQuestion, PipelineError, type PipelineLogger } from './pipeline.ts';
 import { openTestDataDb } from './testing/dataset.ts';
 import {
@@ -235,6 +235,33 @@ describe('answerQuestion: classification', () => {
     expect(llm.requests).toHaveLength(1);
     expect(llm.requests[0].text?.format).toMatchObject({ name: 'reply' });
     expect(logs.map((l) => l.step).filter(Boolean)).toEqual(['classify', 'reply']);
+    expect(logs[0]).toMatchObject({
+      step: 'classify',
+      result: 'conversation',
+      confidence: 0.9,
+      overridden: false,
+    });
+  });
+
+  it('answers from the data when the classifier is unsure of another label', async () => {
+    decisions = fakeClassifier('out_of_scope', 0.3);
+    const llm = fakeLlm(sqlReply('SELECT name FROM items'), jsonResponse(INSIGHTS));
+
+    const result = await ask(llm);
+
+    expect(result).toMatchObject({ ok: true, kind: 'data', classification: 'data_question' });
+    expect(logs[0]).toMatchObject({ step: 'classify', result: 'data_question', overridden: true });
+  });
+
+  it('gives the classifier the earlier turns', async () => {
+    const history = [{ question: 'Units per item?', narrative: 'Ink leads.' }];
+    const llm = fakeLlm(sqlReply('SELECT name FROM items'), jsonResponse(INSIGHTS));
+
+    await answerQuestion({ question: 'Show it as a chart', dataDb, llm, decisions, log, history });
+
+    const input = String(decisions.requests[0].input);
+    expect(input).toContain('Question: Units per item?');
+    expect(input).toContain('Message:\nShow it as a chart');
   });
 
   it('answers from the data, with a warning, when the classifier fails', async () => {
@@ -244,7 +271,24 @@ describe('answerQuestion: classification', () => {
     const result = await ask(llm);
 
     expect(result).toMatchObject({ ok: true, kind: 'data', classification: null });
-    expect(warnings).toEqual([{ reason: 'OpenAI decision failed: 503 Busy' }]);
+    expect(warnings).toEqual([
+      {
+        step: 'classify',
+        durationMs: expect.any(Number),
+        result: 'error',
+        reason: 'OpenAI decision failed: 503 Busy',
+      },
+    ]);
+  });
+
+  it('throws an unexpected classifier error instead of falling back to the data', async () => {
+    // An answer missing from the list is a bug, not an OpenAI failure: it must not be hidden.
+    decisions = fakeDecisions([null as unknown as DecisionAnswer]);
+
+    const error = await rejection(ask(fakeLlm()));
+
+    expect(error.cause).toBeInstanceOf(TypeError);
+    expect(error.sql).toBeNull();
   });
 
   it('throws when the reply request fails', async () => {

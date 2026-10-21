@@ -119,13 +119,18 @@ Each step is its own issue. The design:
      available, a vague question gets the one question that would make it answerable, an
      off-topic one gets what can be asked. Three suggestions the data can answer. No SQL
      runs.
+   - A follow-up that asks to show, chart, filter or redo an earlier answer ("show it as a
+     chart", "and for last year?") is a data question, not conversation.
    - A label other than `data_question` with confidence under 0.5 counts as a data
      question: better to try the data than to refuse unsure.
+   - The reply prompt knows that data answers come with tables and charts, so it never
+     says the bot can't show them, and it doesn't offer exports.
    - If the Decisions API fails, a warning is logged and the message goes down the data
      path, as before the classifier existed.
 2. **Build the schema context** from the metadata tables (`buildSchemaContext` in
    `backend/src/schema-context.ts`, on top of the catalog): tables, columns and
-   relationships in load order, without indexes or rows.
+   relationships in load order, without indexes or rows. It's built once per message,
+   before the classification, which gets it too.
 3. **Generate SQL** (Responses API, Structured Outputs) from the question, the schema
    context and the last turns of the conversation (`generateSql` in
    `backend/src/generate-sql.ts`; see *Multi-turn*). The output is a strict `{ sql }`
@@ -163,7 +168,8 @@ Each step is its own issue. The design:
    (markdown), exactly 3 follow-up suggestions, in the language of the question, and a
    chart spec or `null` (`type`: bar/line/pie/doughnut, `x` column, `series` columns,
    title). The prompt asks for `null` when the result can't be charted or a chart adds
-   nothing (e.g. one or two rows). The **backend** builds the table and the chart data from
+   nothing (e.g. one or two rows), and for a chart whenever the question asks for one and
+   the result can be charted. The **backend** builds the table and the chart data from
    the real result rows — the LLM never re-types data, so it can't invent numbers, and it
    saves tokens. With 0 rows there's no table and no chart, and a single value (1 row × 1
    column) goes without a table: the narrative already says it. So an answer is always
@@ -294,9 +300,10 @@ deterministic.
     figures / minor inaccuracies / fully faithful), 0 to 2;
   - *the chart fits* — a `predicate` (a probability), asked only when there's a chart
     spec; otherwise it's *not applicable*.
-- A question the pipeline can't answer (every SQL attempt failed) is *without an answer*,
-  with the reason, and isn't judged. A refused criterion is *refused*. A pipeline or judge
-  failure is recorded on that question, and the run goes on.
+- A question the pipeline can't answer (every SQL attempt failed) or classifies as not a
+  data question (reason: `classified as <label>`) is *without an answer*, with the reason,
+  and isn't judged. A refused criterion is *refused*. A pipeline or judge failure is
+  recorded on that question, and the run goes on.
 - **Output:** one line per question, then a summary — the average per criterion over judged
   values only (scores over 2, the chart as an average probability) and the counts. No
   verdict, no thresholds: it exits 0 whenever the run finishes. The JSON report goes to
@@ -349,10 +356,13 @@ deterministic.
 ### Observability
 
 Fastify's built-in logger (pino), with one log line per pipeline step and its duration,
-failed steps included: `sql`, `insights` and `persist` for each chat request, plus SQL
-generation, which logs each attempt's generation (`ok` or `error`) and execution (`ok`,
-the error `kind`, or `error` when it throws), without the SQL or the question. The
-persisted turns in `app.db` are the query log. Nothing else for a POC.
+failed steps included: `classify` (the label, its confidence, and whether a low-confidence
+label was overridden; a failed classification is a warning with `result: 'error'`), then
+`reply` for a message that isn't a data question or `sql` and `insights` for one that is,
+and `persist` for each chat request, plus SQL generation, which logs each attempt's
+generation (`ok` or `error`) and execution (`ok`, the error `kind`, or `error` when it
+throws), without the SQL or the question. The persisted turns in `app.db` are the query
+log. Nothing else for a POC.
 
 ## Tech stack
 

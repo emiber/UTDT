@@ -105,19 +105,25 @@ export async function answerQuestion({
     const schemaContext = buildSchemaContext(dataDb);
     let classification: Classification | null = null;
     try {
-      ({ classification } = await classifyQuestion(decisions, {
-        question,
-        schemaContext,
-        history,
-      }));
+      const result = await classifyQuestion(decisions, { question, schemaContext, history });
+      ({ classification } = result);
       log.info(
-        { step, durationMs: elapsed(started), result: classification },
+        {
+          step,
+          durationMs: elapsed(started),
+          result: classification,
+          confidence: result.confidence,
+          overridden: result.overridden,
+        },
         'Pipeline step done',
       );
     } catch (error) {
       // The Decisions API is a beta: if it fails, behave as before it existed.
       if (!(error instanceof LlmError)) throw error;
-      log.warn({ reason: error.message }, 'Classification failed; answering from the data');
+      log.warn(
+        { step, durationMs: elapsed(started), result: 'error', reason: error.message },
+        'Classification failed; answering from the data',
+      );
     }
 
     if (classification && classification !== 'data_question') {

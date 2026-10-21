@@ -16,6 +16,7 @@ describe('classifyQuestion', () => {
     expect(await classifyQuestion(decisions, INPUT)).toEqual({
       classification: 'conversation',
       confidence: 0.9,
+      overridden: false,
     });
 
     const [request] = decisions.requests;
@@ -37,9 +38,9 @@ describe('classifyQuestion', () => {
     const sure = await classifyQuestion(fakeClassifier('out_of_scope', 0.5), INPUT);
     const unsureData = await classifyQuestion(fakeClassifier('data_question', 0.3), INPUT);
 
-    expect(unsure.classification).toBe('data_question');
-    expect(sure.classification).toBe('out_of_scope');
-    expect(unsureData.classification).toBe('data_question');
+    expect(unsure).toEqual({ classification: 'data_question', confidence: 0.4, overridden: true });
+    expect(sure).toEqual({ classification: 'out_of_scope', confidence: 0.5, overridden: false });
+    expect(unsureData).toMatchObject({ classification: 'data_question', overridden: false });
   });
 
   it.each([

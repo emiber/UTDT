@@ -82,8 +82,9 @@ needed.
 - **Requirements:** `npm run seed`, and a `.env` with a real `OPENAI_API_KEY`, `OPENAI_MODEL`
   and `OPENAI_DECISIONS_MODEL` (today the Decisions API only supports `gpt-6-luna`). If
   something is missing it says what and exits without calling OpenAI.
-- **It costs money:** each question is a full pipeline run plus one judge call. That's why it
-  runs by hand and isn't part of the quality gate.
+- **It costs money:** each question is a full pipeline run (a classification, then the SQL
+  and insights calls) plus one judge call. That's why it runs by hand and isn't part of the
+  quality gate.
 - **Output:** one line per question, a summary, and a JSON report in `data/eval/`
   (gitignored) with every answer and score.
 - **Reading the summary:** it shows values, not a verdict. *The SQL answers the question*
