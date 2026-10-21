@@ -2,7 +2,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createDecisionClient,
   createLlmClient,
+  createOpenAI,
   LlmError,
+  MAX_RETRIES,
+  REQUEST_TIMEOUT_MS,
   requestDecision,
   requestStructured,
   type DecisionAnswer,
@@ -36,6 +39,27 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
+/** A fetch that always fails with a 500 the SDK may retry at once. */
+function failingFetch() {
+  return vi.fn<typeof fetch>(async () =>
+    Response.json(
+      { error: { message: 'Busy' } },
+      { status: 500, headers: { 'retry-after-ms': '0' } },
+    ),
+  );
+}
+
+describe('createOpenAI', () => {
+  it('builds the SDK with a 30 s timeout per request and one retry', () => {
+    const openai = createOpenAI('sk-test-key');
+
+    expect(REQUEST_TIMEOUT_MS).toBe(30_000);
+    expect(MAX_RETRIES).toBe(1);
+    expect(openai.timeout).toBe(REQUEST_TIMEOUT_MS);
+    expect(openai.maxRetries).toBe(MAX_RETRIES);
+  });
+});
+
 describe('createLlmClient', () => {
   it.each([
     ['OPENAI_API_KEY', { OPENAI_MODEL: 'test-model' }],
@@ -63,6 +87,15 @@ describe('createLlmClient', () => {
     const [url, init] = fetchMock.mock.calls[0];
     expect(String(url)).toBe('https://api.openai.com/v1/responses');
     expect(new Headers(init?.headers).get('Authorization')).toBe('Bearer sk-test-key');
+  });
+
+  it('retries a failed request once, then throws an LlmError', async () => {
+    const fetchMock = failingFetch();
+    vi.stubGlobal('fetch', fetchMock);
+    vi.stubEnv('OPENAI_BASE_URL', 'https://api.openai.com/v1');
+
+    await expect(requestStructured(createLlmClient(ENV), REQUEST)).rejects.toThrow(LlmError);
+    expect(fetchMock).toHaveBeenCalledTimes(1 + MAX_RETRIES);
   });
 });
 
@@ -179,6 +212,19 @@ describe('createDecisionClient', () => {
     const [url, init] = fetchMock.mock.calls[0];
     expect(String(url)).toBe('https://api.openai.com/v1/decisions');
     expect(new Headers(init?.headers).get('Authorization')).toBe('Bearer sk-test-key');
+  });
+
+  it('retries a failed request once, then throws an LlmError', async () => {
+    const fetchMock = failingFetch();
+    vi.stubGlobal('fetch', fetchMock);
+    vi.stubEnv('OPENAI_BASE_URL', 'https://api.openai.com/v1');
+
+    await expect(
+      requestDecision(createDecisionClient(DECISION_ENV), 'Some input.', [
+        { type: 'predicate', name: 'p', instructions: 'Is it true?' },
+      ]),
+    ).rejects.toThrow(LlmError);
+    expect(fetchMock).toHaveBeenCalledTimes(1 + MAX_RETRIES);
   });
 });
 

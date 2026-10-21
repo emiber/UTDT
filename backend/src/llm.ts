@@ -20,11 +20,24 @@ export interface LlmClient {
   createResponse(body: ResponseCreateParamsNonStreaming): Promise<LlmResponse>;
 }
 
+/** How long one OpenAI request may take before the SDK cuts it. Real calls take 1-4 s. */
+export const REQUEST_TIMEOUT_MS = 30_000;
+/** How many times the SDK retries a failed or timed-out request. */
+export const MAX_RETRIES = 1;
+
+/**
+ * The SDK instance behind both clients. Its defaults (10 minutes per request, 2 retries)
+ * would leave a hung call hanging the chat; with these, a request gives up after about a minute.
+ */
+export function createOpenAI(apiKey: string): OpenAI {
+  return new OpenAI({ apiKey, timeout: REQUEST_TIMEOUT_MS, maxRetries: MAX_RETRIES });
+}
+
 /** Builds the OpenAI client from the environment. Throws naming a missing variable. */
 export function createLlmClient(env: NodeJS.ProcessEnv = process.env): LlmClient {
   const apiKey = requireVariable(env, 'OPENAI_API_KEY');
   const model = requireVariable(env, 'OPENAI_MODEL');
-  const openai = new OpenAI({ apiKey });
+  const openai = createOpenAI(apiKey);
   return { model, createResponse: (body) => openai.responses.create(body) };
 }
 
@@ -128,7 +141,7 @@ export interface DecisionClient {
 export function createDecisionClient(env: NodeJS.ProcessEnv = process.env): DecisionClient {
   const apiKey = requireVariable(env, 'OPENAI_API_KEY');
   const model = requireVariable(env, 'OPENAI_DECISIONS_MODEL');
-  const openai = new OpenAI({ apiKey });
+  const openai = createOpenAI(apiKey);
   return { model, createDecision: (body) => openai.decisions.create(body) };
 }
 

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, apiFetch, getCatalog, getHealth, postChat } from './api.ts';
+import { ApiError, apiFetch, CHAT_TIMEOUT_MS, getCatalog, getHealth, postChat } from './api.ts';
 import { auth, loadStoredKey, saveKey } from './auth.ts';
 
 function stubFetch(...responses: (Response | Error)[]) {
@@ -24,6 +24,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe('apiFetch', () => {
@@ -168,6 +169,19 @@ describe('postChat', () => {
     expect(JSON.parse(String(init.body))).toEqual({ question: 'Hi?', conversationId: 'c1' });
     expect(sentHeaders(fetchMock).get('Content-Type')).toBe('application/json');
     expect(sentHeaders(fetchMock).get('Authorization')).toBe('Bearer the-key');
+  });
+
+  it(`gives up after ${CHAT_TIMEOUT_MS / 60_000} minutes, past the backend's worst case`, async () => {
+    const timeout = vi.spyOn(AbortSignal, 'timeout');
+    const fetchMock = stubFetch(Response.json(answer));
+
+    await postChat({ question: 'Hi?' });
+
+    // 5 OpenAI calls in series × 2 attempts × 30 s.
+    expect(CHAT_TIMEOUT_MS).toBeGreaterThan(5 * 2 * 30_000);
+    expect(timeout).toHaveBeenCalledWith(CHAT_TIMEOUT_MS);
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(init.signal).toBe(timeout.mock.results[0].value);
   });
 
   it('rejects with the status on an error, or with the network error', async () => {

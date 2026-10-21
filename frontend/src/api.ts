@@ -90,7 +90,17 @@ export interface ChatResponse {
   suggestions: string[];
 }
 
-/** Asks a question; without a `conversationId` the backend starts a new conversation. */
+/**
+ * How long the UI waits for an answer before giving up. A safety net, not the normal wait:
+ * it's above the backend's worst case (5 OpenAI calls in series × 2 attempts × 30 s =
+ * 300 s), so it never cuts an answer that can still arrive.
+ */
+export const CHAT_TIMEOUT_MS = 360_000;
+
+/**
+ * Asks a question; without a `conversationId` the backend starts a new conversation. Past
+ * CHAT_TIMEOUT_MS it rejects with a `TimeoutError` DOMException.
+ */
 export async function postChat(body: {
   question: string;
   conversationId?: string;
@@ -99,6 +109,7 @@ export async function postChat(body: {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(CHAT_TIMEOUT_MS),
   });
   return (await res.json()) as ChatResponse;
 }

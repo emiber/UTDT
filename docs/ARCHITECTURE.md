@@ -281,8 +281,15 @@ work.
   Structured Outputs request and returns the parsed object. Every failure (API or network
   errors after the SDK's retries, a refusal, an incomplete response, output that isn't a
   JSON object) is thrown as an `LlmError`, which the chat endpoint maps to a `502`; raw SDK
-  errors never escape. Each request carries its whole
-  context, so the response doesn't need to be stored (`store: false`). Pipeline functions
+  errors never escape. Each request carries its whole context, so the response doesn't
+  need to be stored (`store: false`).
+- **Timeouts:** both clients share one SDK instance setup (`createOpenAI`): 30 s per
+  request (`REQUEST_TIMEOUT_MS`) and one retry (`MAX_RETRIES`), instead of the SDK's 10
+  minutes and 2 retries. A request that hangs gives up after about a minute, as an
+  `LlmError`. A chat request makes at most 5 calls in series (the classification, up to 3
+  SQL attempts and the insights), so the backend's worst case is 5 × 2 × 30 s = 300 s. The
+  frontend waits 6 minutes (see *Frontend*). The SQL itself has no timeout (see *Query
+  timeout* in the deferred decisions). Pipeline functions
   receive the client as a parameter. **Tests never hit the network**: they pass the fake
   client in `backend/src/testing/fake-llm.ts`.
 - Prompts are LiquidJS templates in `backend/src/prompts/*.liquid`, apart from the code,
@@ -353,6 +360,11 @@ deterministic.
   - Errors show in the thread in place of the answer. A `404` (the backend no longer knows
     the conversation) drops the conversation id, so the next question starts a new one;
     other errors keep it. A `401` goes back to the key screen (`apiFetch`).
+  - `postChat` gives up after 6 minutes (`CHAT_TIMEOUT_MS`, an `AbortSignal.timeout`), and
+    the thread says *Could not get an answer: the request took too long.* It's a safety
+    net above the backend's worst case (300 s, see *LLM layer*), so it never cuts an answer
+    that can still arrive. The backend isn't told: it finishes and saves the turn, which
+    the next question, in the same conversation, gets as history.
   - The thread and the conversation id live only in memory: a reload starts a new
     conversation.
 - Plain components and composables: no router (two screens, switched by auth state),

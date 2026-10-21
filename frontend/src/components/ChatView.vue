@@ -6,6 +6,8 @@ import ResponseBlocks from './ResponseBlocks.vue';
 /** Shown in place of the answer when the backend no longer knows the conversation. */
 const GONE_MESSAGE =
   'This conversation is no longer available. Your next question will start a new one.';
+/** Shown when the answer took longer than CHAT_TIMEOUT_MS. */
+const TIMEOUT_MESSAGE = 'Could not get an answer: the request took too long.';
 
 interface Turn {
   question: string;
@@ -53,6 +55,8 @@ async function ask(text: string) {
     if (error instanceof ApiError && error.status === 404) {
       conversationId = null;
       turn.error = GONE_MESSAGE;
+    } else if ((error as Error).name === 'TimeoutError') {
+      turn.error = TIMEOUT_MESSAGE;
     } else {
       turn.error = `Could not get an answer: ${(error as Error).message}`;
     }
