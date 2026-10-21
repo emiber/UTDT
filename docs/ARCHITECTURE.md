@@ -139,8 +139,9 @@ Each step is its own issue. The design:
    classification, which gets it too.
 3. **Generate SQL** (Responses API, Structured Outputs) from the question, the schema
    context and the last turns of the conversation (`generateSql` in
-   `backend/src/generate-sql.ts`; see *Multi-turn*). The output is a strict `{ sql }`
-   object, passed to step 4 as is. It runs a generate → execute → retry loop: on a
+   `backend/src/generate-sql.ts`; see *Multi-turn*). The output is a strict
+   `{ language, sql }` object (see *Language* in step 5); only `sql` goes on to step 4, as
+   is. It runs a generate → execute → retry loop: on a
    returned error, the next request carries every failed attempt of the question (its SQL
    and message), up to **3 attempts in total**; after that the last error is returned.
    OpenAI failures, refusals and incomplete responses are thrown, not retried (the SDK
@@ -197,11 +198,12 @@ Each step is its own issue. The design:
    insights call isn't retried. Rows keep their SQL order: nothing is grouped, sorted or
    cut.
 
-   **Language:** the insights and the text-only reply (step 1) each start their output with
-   a `language` field, the language of the current message, and write the rest in it. The
+   **Language:** the SQL (step 3), the insights and the text-only reply (step 1) each start
+   their output with a `language` field, the language of the current message, and write
+   the rest in it: the column aliases, the narrative, the suggestions, the chart title. The
    value isn't used. Without it, earlier turns in another language pulled the answer into
-   theirs: in a Spanish conversation, an English question got a Spanish answer, even with
-   a prompt rule against it.
+   theirs: in a Spanish conversation, an English question got Spanish column names and a
+   Spanish answer, even with a prompt rule against it.
 6. **Persist the turn** in `app.db` (question, SQL, narrative, response, error, timing,
    classification). Failed turns are saved too, so the turns are the query log. An older
    `app.db` gets the `classification` column added at startup.
