@@ -1,5 +1,6 @@
 import { enableAutoUnmount, flushPromises, mount, type VueWrapper } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { defineComponent, h, KeepAlive } from 'vue';
 import { loadStoredKey, saveKey } from '../auth.ts';
 import ChatView from './ChatView.vue';
 
@@ -248,5 +249,70 @@ describe('ChatView', () => {
     expect(second.findAll('.chat__turn')).toHaveLength(0);
     await ask(second, 'Again?');
     expect(sentBody(fetchMock, 1)).toEqual({ question: 'Again?' });
+  });
+});
+
+describe('ChatView kept alive, as the router keeps it while on /usage', () => {
+  // eslint-disable-next-line vue/one-component-per-file -- test stand-ins, not app components
+  const Away = defineComponent({ render: () => h('p', 'Usage') });
+  // The chat while `here`, another page otherwise, under KeepAlive like in App.vue.
+  // eslint-disable-next-line vue/one-component-per-file -- test stand-ins, not app components
+  const Host = defineComponent({
+    props: { here: { type: Boolean, default: true } },
+    setup: (props) => () => h(KeepAlive, null, [props.here ? h(ChatView) : h(Away)]),
+  });
+
+  /** Fakes the thread's scroll: `top` is what it reads, `sets` what was asked of it. */
+  function fakeScroll(wrapper: VueWrapper) {
+    const scroller = wrapper.find('.chat__scroll').element;
+    const state = { top: 0, sets: [] as number[] };
+    Object.defineProperty(scroller, 'scrollHeight', { value: 900 });
+    Object.defineProperty(scroller, 'scrollTop', {
+      get: () => state.top,
+      set: (top: number) => state.sets.push(top),
+    });
+    vi.spyOn(HTMLElement.prototype, 'offsetTop', 'get').mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      return [...scroller.querySelectorAll('.chat__turn')].indexOf(this) * 300;
+    });
+    return { scroller, state };
+  }
+
+  it('comes back to where the thread was', async () => {
+    stubChat(answer());
+    const wrapper = mount(Host);
+    await ask(wrapper, 'First?');
+    const { scroller, state } = fakeScroll(wrapper);
+    state.top = 450;
+    scroller.dispatchEvent(new Event('scroll'));
+
+    await wrapper.setProps({ here: false });
+    // Off the page, the browser drops the scroll position.
+    state.top = 0;
+    await wrapper.setProps({ here: true });
+    await flushPromises();
+
+    expect(state.sets).toEqual([450]);
+  });
+
+  it('shows an answer that arrived while away once it is back', async () => {
+    let respond: (res: Response) => void = () => {};
+    stubChat(new Promise<Response>((resolve) => (respond = resolve)));
+    const wrapper = mount(Host);
+    const { state } = fakeScroll(wrapper);
+    await ask(wrapper, 'First?');
+    expect(state.sets).toEqual([900]);
+
+    await wrapper.setProps({ here: false });
+    respond(answer());
+    await flushPromises();
+    expect(state.sets).toEqual([900]);
+
+    await wrapper.setProps({ here: true });
+    await flushPromises();
+
+    expect(state.sets).toEqual([900, -16]);
+    expect(wrapper.find('.chat__turn').text()).toContain('Ink sold');
   });
 });

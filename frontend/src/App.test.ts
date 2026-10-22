@@ -1,6 +1,8 @@
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createMemoryHistory } from 'vue-router';
 import App from './App.vue';
+import { createAppRouter } from './router.ts';
 
 // The auth state is shared, so an App left mounted would react to the next test.
 enableAutoUnmount(afterEach);
@@ -20,6 +22,38 @@ async function healthyBackend(url: string): Promise<Response> {
     : Response.json({ status: 'ok', sqliteVersion: '3.50.0' });
 }
 
+/** Mounts the app with its routes, on `path`, as the browser would open it. */
+async function mountApp(path = '/chat') {
+  const router = createAppRouter(createMemoryHistory());
+  await router.push(path);
+  await router.isReady();
+  const wrapper = mount(App, { global: { plugins: [router] } });
+  return { wrapper, router };
+}
+
+/** A healthy backend that also has an empty usage report. */
+async function usageBackend(url: string): Promise<Response> {
+  if (!url.startsWith('/api/usage')) return healthyBackend(url);
+  return Response.json({
+    models: [],
+    unpricedModels: [],
+    totals: {
+      calls: 0,
+      turns: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      costUsd: null,
+      avgMs: null,
+      maxMs: null,
+      failedCalls: 0,
+      sqlRetries: 0,
+    },
+    series: [],
+    breakdown: [],
+    topTurns: [],
+  });
+}
+
 beforeEach(() => {
   sessionStorage.clear();
 });
@@ -29,10 +63,10 @@ afterEach(() => {
 });
 
 describe('App without a stored key', () => {
-  it('shows the key screen and calls no API', () => {
+  it('shows the key screen and calls no API', async () => {
     const fetchMock = stubFetch(() => new Promise<Response>(() => {}));
 
-    const wrapper = mount(App);
+    const { wrapper } = await mountApp();
 
     expect(wrapper.find('form.access-key').exists()).toBe(true);
     expect(wrapper.find('.status').exists()).toBe(false);
@@ -41,7 +75,7 @@ describe('App without a stored key', () => {
 
   it('switches to the main screen once a key is entered, sending it', async () => {
     const fetchMock = stubFetch(healthyBackend);
-    const wrapper = mount(App);
+    const { wrapper } = await mountApp();
 
     await wrapper.find('input').setValue('entered-key');
     await wrapper.find('form').trigger('submit');
@@ -56,15 +90,29 @@ describe('App without a stored key', () => {
   });
 });
 
+describe('App without a stored key, on /usage', () => {
+  it('asks for the key, then shows the usage report', async () => {
+    stubFetch(usageBackend);
+    const { wrapper } = await mountApp('/usage');
+    expect(wrapper.find('form.access-key').exists()).toBe(true);
+
+    await wrapper.find('input').setValue('entered-key');
+    await wrapper.find('form').trigger('submit');
+    await flushPromises();
+
+    expect(wrapper.find('.usage').exists()).toBe(true);
+  });
+});
+
 describe('App with a stored key', () => {
   beforeEach(() => {
     sessionStorage.setItem(STORAGE_KEY, 'stored-key');
   });
 
-  it('opens straight on the main screen', () => {
+  it('opens straight on the main screen', async () => {
     stubFetch(() => new Promise<Response>(() => {}));
 
-    const wrapper = mount(App);
+    const { wrapper } = await mountApp();
 
     expect(wrapper.find('form.access-key').exists()).toBe(false);
     expect(wrapper.find('.status').text()).toBe('Checking backend…');
@@ -73,7 +121,7 @@ describe('App with a stored key', () => {
   it('shows the backend status and SQLite version', async () => {
     stubFetch(healthyBackend);
 
-    const wrapper = mount(App);
+    const { wrapper } = await mountApp();
     await flushPromises();
 
     expect(wrapper.find('.status--ok').text()).toBe('Backend ok · SQLite 3.50.0');
@@ -82,7 +130,7 @@ describe('App with a stored key', () => {
   it('shows the error and keeps the key when the backend fails', async () => {
     stubFetch(async () => new Response(null, { status: 503 }));
 
-    const wrapper = mount(App);
+    const { wrapper } = await mountApp();
     await flushPromises();
 
     expect(wrapper.find('.status--error').text()).toBe('Backend unreachable: HTTP 503');
@@ -92,7 +140,7 @@ describe('App with a stored key', () => {
   it('requests the catalog on mount, in a closed "Available data" section', async () => {
     const fetchMock = stubFetch(healthyBackend);
 
-    const wrapper = mount(App);
+    const { wrapper } = await mountApp();
     await flushPromises();
 
     expect(fetchMock.mock.calls.map(([url]) => url)).toContain('/api/catalog');
@@ -105,7 +153,7 @@ describe('App with a stored key', () => {
   it('shows a header with the status and "Available data", and the chat below it', async () => {
     const fetchMock = stubFetch(healthyBackend);
 
-    const wrapper = mount(App);
+    const { wrapper } = await mountApp();
     await flushPromises();
 
     expect(wrapper.findAll('.app > *').map((el) => el.classes()[0])).toEqual([
@@ -118,56 +166,57 @@ describe('App with a stored key', () => {
     expect(fetchMock.mock.calls.map(([url]) => url)).not.toContain('/api/chat');
   });
 
-  it('switches to the usage report and back without losing the chat', async () => {
-    const empty = {
-      models: [],
-      unpricedModels: [],
-      totals: {
-        calls: 0,
-        turns: 0,
-        inputTokens: 0,
-        outputTokens: 0,
-        costUsd: null,
-        avgMs: null,
-        maxMs: null,
-        failedCalls: 0,
-        sqlRetries: 0,
-      },
-      series: [],
-      breakdown: [],
-      topTurns: [],
-    };
-    const fetchMock = stubFetch(async (url) =>
-      url.startsWith('/api/usage') ? Response.json(empty) : healthyBackend(url),
-    );
-    const wrapper = mount(App);
+  it('navigates between the chat and the usage report, keeping the chat', async () => {
+    const fetchMock = stubFetch(usageBackend);
+    const { wrapper, router } = await mountApp();
     await flushPromises();
     await wrapper.find('.chat input').setValue('A draft question');
-    const toggle = () => wrapper.find('button.app__view');
+    const link = (name: string) => wrapper.find(`.app__nav a[href="/${name}"]`);
+    expect(link('chat').attributes('aria-current')).toBe('page');
 
-    await toggle().trigger('click');
+    await link('usage').trigger('click');
+    await flushPromises();
+
+    expect(router.currentRoute.value.path).toBe('/usage');
+    expect(wrapper.find('.usage').exists()).toBe(true);
+    expect(wrapper.find('.chat').exists()).toBe(false);
+    expect(link('usage').attributes('aria-current')).toBe('page');
+    expect(link('chat').attributes('aria-current')).toBeUndefined();
+    expect(fetchMock.mock.calls.some(([url]) => String(url).startsWith('/api/usage'))).toBe(true);
+
+    await link('chat').trigger('click');
+    await flushPromises();
+
+    expect(router.currentRoute.value.path).toBe('/chat');
+    expect(wrapper.find('.usage').exists()).toBe(false);
+    // Kept alive, not remounted: what was typed is still there.
+    expect(wrapper.find<HTMLInputElement>('.chat input').element.value).toBe('A draft question');
+  });
+
+  it.each([['/'], ['/nowhere'], ['/chat/extra']])('sends %s to the chat', async (path) => {
+    stubFetch(healthyBackend);
+
+    const { wrapper, router } = await mountApp(path);
+
+    expect(router.currentRoute.value.path).toBe('/chat');
+    expect(wrapper.find('.chat').exists()).toBe(true);
+  });
+
+  it('opens the usage report straight from /usage', async () => {
+    stubFetch(usageBackend);
+
+    const { wrapper } = await mountApp('/usage');
     await flushPromises();
 
     expect(wrapper.find('.usage').exists()).toBe(true);
-    // v-show: hidden with display: none, still mounted.
-    expect(wrapper.find('.chat').attributes('style')).toContain('display: none');
-    expect(toggle().text()).toBe('Back to chat');
-    expect(fetchMock.mock.calls.some(([url]) => String(url).startsWith('/api/usage'))).toBe(true);
-
-    await toggle().trigger('click');
-
-    expect(wrapper.find('.usage').exists()).toBe(false);
-    expect(wrapper.find('.chat').attributes('style') ?? '').not.toContain('display: none');
-    expect(toggle().text()).toBe('Usage');
-    // The chat was hidden, not remounted: what was typed is still there.
-    expect(wrapper.find<HTMLInputElement>('.chat input').element.value).toBe('A draft question');
+    expect(wrapper.find('.chat').exists()).toBe(false);
   });
 
   it('goes back to the key screen, with no chat error, when a question gets a 401', async () => {
     stubFetch(async (url) =>
       url === '/api/chat' ? new Response(null, { status: 401 }) : healthyBackend(url),
     );
-    const wrapper = mount(App);
+    const { wrapper } = await mountApp();
     await flushPromises();
 
     await wrapper.find('.chat input').setValue('Names?');
@@ -182,7 +231,7 @@ describe('App with a stored key', () => {
   it('goes back to the key screen with a message when the key is rejected', async () => {
     stubFetch(async () => new Response(null, { status: 401 }));
 
-    const wrapper = mount(App);
+    const { wrapper } = await mountApp();
     await flushPromises();
 
     expect(wrapper.find('form.access-key').exists()).toBe(true);

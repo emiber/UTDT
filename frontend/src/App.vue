@@ -1,19 +1,13 @@
 <script setup lang="ts">
-import { ref } from 'vue';
 import { auth, loadStoredKey } from './auth.ts';
 import AccessKeyForm from './components/AccessKeyForm.vue';
 import BackendStatus from './components/BackendStatus.vue';
 import BrandMark from './components/BrandMark.vue';
-import ChatView from './components/ChatView.vue';
 import DataCatalog from './components/DataCatalog.vue';
-import UsageView from './components/UsageView.vue';
 
-// Two screens, switched by auth state: the key screen until there's a key, then the app.
+// The key screen until there's a key, then the app, whatever the route: once the key is
+// entered, the requested route shows (e.g. /usage).
 loadStoredKey();
-
-// Inside the app, the chat or the usage report. The chat stays mounted while hidden: its
-// thread lives only in memory, and remounting it would lose the conversation.
-const view = ref<'chat' | 'usage'>('chat');
 </script>
 
 <template>
@@ -29,19 +23,20 @@ const view = ref<'chat' | 'usage'>('chat');
         </div>
         <div class="app__tools">
           <BackendStatus />
-          <button
-            type="button"
-            class="app__view"
-            @click="view = view === 'chat' ? 'usage' : 'chat'"
-          >
-            {{ view === 'chat' ? 'Usage' : 'Back to chat' }}
-          </button>
+          <nav class="app__nav" aria-label="Main">
+            <RouterLink to="/chat">Chat</RouterLink>
+            <RouterLink to="/usage">Usage</RouterLink>
+          </nav>
           <DataCatalog />
         </div>
       </div>
     </header>
-    <ChatView v-show="view === 'chat'" />
-    <UsageView v-if="view === 'usage'" />
+    <RouterView v-slot="{ Component }">
+      <!-- The chat stays alive on /usage: its thread lives only in memory. -->
+      <KeepAlive include="ChatView">
+        <component :is="Component" />
+      </KeepAlive>
+    </RouterView>
   </div>
   <main v-else class="login">
     <div class="login__card">
@@ -89,22 +84,31 @@ const view = ref<'chat' | 'usage'>('chat');
     gap: 0.75rem;
   }
 
-  // Same look as the Available data button.
-  &__view {
-    padding: 0.4rem 0.85rem;
+  // Two links in one pill, the current route highlighted.
+  &__nav {
+    display: flex;
+    padding: 0.2rem;
     border: 1px solid $color-border;
     border-radius: $radius-pill;
     background: $color-surface;
     box-shadow: $shadow-sm;
-    font: inherit;
-    font-size: 0.85rem;
-    font-weight: 600;
-    color: $color-text;
-    cursor: pointer;
 
-    &:hover {
-      border-color: $color-primary;
-      color: $color-primary;
+    a {
+      padding: 0.25rem 0.8rem;
+      border-radius: $radius-pill;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: $color-muted;
+      text-decoration: none;
+
+      &:hover {
+        color: $color-primary;
+      }
+
+      &[aria-current='page'] {
+        background: $color-primary-soft;
+        color: $color-primary;
+      }
     }
   }
 }
