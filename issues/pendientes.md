@@ -17,6 +17,7 @@ Ordenados por prioridad sugerida.
   - correr los dos proyectos en serie;
   - subir el timeout de arranque de los workers.
 - **Prioridad:** media. Es lo único que hace fallar el gate sin motivo.
+- **Issue:** #27 (2026-10-22).
 
 ### 2. El set golden no evalúa la clasificación ni las conversaciones
 - **Qué pasa:** `backend/eval/golden.json` solo tiene preguntas de datos sueltas, sin historial. No mide si la clasificación de #10 acierta, ni los seguimientos ("No veo el gráfico", "¿y en 2024?"), ni el idioma en conversaciones mezcladas.
@@ -55,10 +56,11 @@ Ordenados por prioridad sugerida.
 - **Origen:** #17.
 - **Prioridad:** baja. Solo importa si se cambia de modelo.
 
-### 7. Correr `npm audit`
-- **Qué pasa:** al instalar `vue-router` (#26) el audit de npm se cortó por timeout de red (`ETIMEDOUT`) y no se pudo verificar. El usuario aprobó mergear igual (2026-10-22).
-- **Qué hacer:** correr `npm audit` cuando haya red y revisar si reporta algo.
-- **Prioridad:** media. Es rápido, y es la única dependencia nueva sin auditar.
+### 7. `npm run prices` no modela todos los cargos de OpenAI
+- **Qué pasa:** el comando toma los precios Standard de contexto corto. No suma el 10% extra de los endpoints regionales (data residency), no aplica los precios de contexto largo (más de 272K tokens de entrada) y no descuenta la entrada cacheada, porque la app no cuenta esos tokens. El costo del reporte de uso es una estimación.
+- **Idea:** si alguno pasa a importar, guardar los tokens cacheados en `llm_calls` y sumar ese precio, o aplicar el recargo regional.
+- **Origen:** la review de `npm run prices` (2026-10-21).
+- **Prioridad:** baja. Con la demo local, sin data residency y con prompts cortos, no cambia nada.
 
 ### 8. Menores
 - `generateSql` vuelve a armar el contexto de esquema que el pipeline ya armó para la clasificación. Se podría recibir como parámetro. El costo es mínimo. Origen: #10.
@@ -95,5 +97,5 @@ Están en `docs/ARCHITECTURE.md`, en la sección *Deferred decisions*, con el mo
 - un timeout de las consultas a SQLite (worker thread);
 - prompts estándar, botones de feedback y descarga CSV;
 - respuestas en streaming;
-- un kit de UI, router, librería de estado e i18n;
+- un kit de UI, librería de estado e i18n (el router entró con #26);
 - Docker y deploy.
