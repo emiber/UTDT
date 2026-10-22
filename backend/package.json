@@ -8,6 +8,7 @@
     "start": "node --env-file-if-exists=../.env src/server.ts",
     "seed": "node src/seed-cli.ts",
     "eval": "node --env-file-if-exists=../.env src/eval-cli.ts",
+    "prices": "node src/prices-cli.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

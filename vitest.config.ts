@@ -17,6 +17,7 @@ export default defineConfig({
         'backend/src/server.ts',
         'backend/src/seed-cli.ts',
         'backend/src/eval-cli.ts',
+        'backend/src/prices-cli.ts',
         'frontend/src/main.ts',
       ],
       reporter: ['text', 'html'],
