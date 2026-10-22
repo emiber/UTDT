@@ -57,9 +57,20 @@ only `gpt-6-luna`).
 
 `OPENAI_PRICES` is optional: the price of each model, so the usage report can estimate
 the cost. It's comma-separated `model=input/output` entries in USD per million tokens, for
-example `OPENAI_PRICES=model-a=0.25/2,model-b=1.25/10`; use OpenAI's current prices.
-Without it the report shows tokens and times but no cost; a malformed value stops the
-backend at startup, naming the variable.
+example `OPENAI_PRICES=gpt-5.4-mini=0.75/4.5,gpt-6-luna=0.1/0`. Without it the report shows
+tokens and times but no cost; a malformed value stops the backend at startup, naming the
+variable. To fill it in or refresh it with OpenAI's current prices, run:
+
+```bash
+npm run prices
+```
+
+It reads [OpenAI's pricing page](https://developers.openai.com/api/docs/pricing) and
+rewrites only the `OPENAI_PRICES` line of your `.env`. It sets the Standard prices of
+`OPENAI_MODEL`, `OPENAI_DECISIONS_MODEL` and any model already in the list. The Decisions
+model gets an output price of 0, because the Decisions API charges input tokens only. If
+the page doesn't list a model, the command warns and leaves that model's price as it was.
+Restart the backend afterwards so it picks up the new prices.
 
 `npm run seed` loads a small, fictitious sales dataset and the metadata that describes it
 to the bot (see *Data* in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)). It's **required
@@ -128,8 +139,9 @@ backend/src/    Fastify app (app.ts), entry points (server.ts, seed-cli.ts), acc
                 with retries (generate-sql.ts), insights (insights.ts), charts (chart.ts),
                 the pipeline (pipeline.ts), the chat route (chat.ts), conversations, turns
                 and their LLM calls (conversations.ts), the usage report (usage.ts,
-                usage-route.ts, prices.ts), offline evaluation (evaluate.ts,
-                eval-command.ts, eval-cli.ts), test helpers (testing/)
+                usage-route.ts, prices.ts), price refresh (update-prices.ts, prices-cli.ts),
+                offline evaluation (evaluate.ts, eval-command.ts, eval-cli.ts), test helpers
+                (testing/)
 backend/eval/   golden questions for `npm run eval`
 frontend/src/   Vue app (App.vue), routes (router.ts), API client (api.ts), access-key state
                 (auth.ts), components (components/: key screen, backend status, data

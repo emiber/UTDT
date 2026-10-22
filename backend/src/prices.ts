@@ -35,6 +35,11 @@ export function readPrices(env: NodeJS.ProcessEnv = process.env): Prices {
   return prices;
 }
 
+/** The OPENAI_PRICES value for some prices, in the format readPrices reads. */
+export function formatPrices(prices: Prices): string {
+  return [...prices].map(([model, { input, output }]) => `${model}=${input}/${output}`).join(',');
+}
+
 /** The estimated cost of some tokens of a model, or null when the model has no price. */
 export function costUsd(
   prices: Prices,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { costUsd, readPrices } from './prices.ts';
+import { costUsd, formatPrices, readPrices } from './prices.ts';
 
 describe('readPrices', () => {
   it('reads model=input/output entries, in USD per million tokens', () => {
@@ -29,6 +29,15 @@ describe('readPrices', () => {
     expect(() => readPrices({ OPENAI_PRICES: 'model-a=1/2,model-a=3/4' })).toThrow(
       'OPENAI_PRICES lists model-a twice.',
     );
+  });
+});
+
+describe('formatPrices', () => {
+  it('writes the prices back in the format readPrices reads', () => {
+    const value = formatPrices(readPrices({ OPENAI_PRICES: 'model-a=0.075/4.5,model-b=0.1/0' }));
+
+    expect(value).toBe('model-a=0.075/4.5,model-b=0.1/0');
+    expect(formatPrices(new Map())).toBe('');
   });
 });
 
