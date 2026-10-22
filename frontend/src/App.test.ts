@@ -118,6 +118,51 @@ describe('App with a stored key', () => {
     expect(fetchMock.mock.calls.map(([url]) => url)).not.toContain('/api/chat');
   });
 
+  it('switches to the usage report and back without losing the chat', async () => {
+    const empty = {
+      models: [],
+      unpricedModels: [],
+      totals: {
+        calls: 0,
+        turns: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        costUsd: null,
+        avgMs: null,
+        maxMs: null,
+        failedCalls: 0,
+        sqlRetries: 0,
+      },
+      series: [],
+      breakdown: [],
+      topTurns: [],
+    };
+    const fetchMock = stubFetch(async (url) =>
+      url.startsWith('/api/usage') ? Response.json(empty) : healthyBackend(url),
+    );
+    const wrapper = mount(App);
+    await flushPromises();
+    await wrapper.find('.chat input').setValue('A draft question');
+    const toggle = () => wrapper.find('button.app__view');
+
+    await toggle().trigger('click');
+    await flushPromises();
+
+    expect(wrapper.find('.usage').exists()).toBe(true);
+    // v-show: hidden with display: none, still mounted.
+    expect(wrapper.find('.chat').attributes('style')).toContain('display: none');
+    expect(toggle().text()).toBe('Back to chat');
+    expect(fetchMock.mock.calls.some(([url]) => String(url).startsWith('/api/usage'))).toBe(true);
+
+    await toggle().trigger('click');
+
+    expect(wrapper.find('.usage').exists()).toBe(false);
+    expect(wrapper.find('.chat').attributes('style') ?? '').not.toContain('display: none');
+    expect(toggle().text()).toBe('Usage');
+    // The chat was hidden, not remounted: what was typed is still there.
+    expect(wrapper.find<HTMLInputElement>('.chat input').element.value).toBe('A draft question');
+  });
+
   it('goes back to the key screen, with no chat error, when a question gets a 401', async () => {
     stubFetch(async (url) =>
       url === '/api/chat' ? new Response(null, { status: 401 }) : healthyBackend(url),

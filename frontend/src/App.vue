@@ -1,13 +1,19 @@
 <script setup lang="ts">
+import { ref } from 'vue';
 import { auth, loadStoredKey } from './auth.ts';
 import AccessKeyForm from './components/AccessKeyForm.vue';
 import BackendStatus from './components/BackendStatus.vue';
 import BrandMark from './components/BrandMark.vue';
 import ChatView from './components/ChatView.vue';
 import DataCatalog from './components/DataCatalog.vue';
+import UsageView from './components/UsageView.vue';
 
 // Two screens, switched by auth state: the key screen until there's a key, then the app.
 loadStoredKey();
+
+// Inside the app, the chat or the usage report. The chat stays mounted while hidden: its
+// thread lives only in memory, and remounting it would lose the conversation.
+const view = ref<'chat' | 'usage'>('chat');
 </script>
 
 <template>
@@ -23,11 +29,19 @@ loadStoredKey();
         </div>
         <div class="app__tools">
           <BackendStatus />
+          <button
+            type="button"
+            class="app__view"
+            @click="view = view === 'chat' ? 'usage' : 'chat'"
+          >
+            {{ view === 'chat' ? 'Usage' : 'Back to chat' }}
+          </button>
           <DataCatalog />
         </div>
       </div>
     </header>
-    <ChatView />
+    <ChatView v-show="view === 'chat'" />
+    <UsageView v-if="view === 'usage'" />
   </div>
   <main v-else class="login">
     <div class="login__card">
@@ -73,6 +87,25 @@ loadStoredKey();
     display: flex;
     align-items: center;
     gap: 0.75rem;
+  }
+
+  // Same look as the Available data button.
+  &__view {
+    padding: 0.4rem 0.85rem;
+    border: 1px solid $color-border;
+    border-radius: $radius-pill;
+    background: $color-surface;
+    box-shadow: $shadow-sm;
+    font: inherit;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: $color-text;
+    cursor: pointer;
+
+    &:hover {
+      border-color: $color-primary;
+      color: $color-primary;
+    }
   }
 }
 

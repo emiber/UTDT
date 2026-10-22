@@ -83,6 +83,7 @@ only purpose is to exercise the pipeline.
 | `GET` | `/api/health` | none | Liveness check; reports the SQLite version of `app.db` (scaffold) |
 | `GET` | `/api/catalog` | access key | What the bot can answer about: declared tables with their columns and indexes, and their relationships (see *Catalog* above). A read error is a generic `500` |
 | `POST` | `/api/chat` | access key | `{ conversationId?, question }` → `{ conversationId, turnId, blocks, suggestions }`: runs the pipeline below and saves the turn (see *Chat endpoint*) |
+| `GET` | `/api/usage` | access key | `?from&to&granularity&tz[&model][&step]` → the LLM usage report of a period: totals, series, breakdown, top turns (see *Usage report*) |
 
 The backend listens on `127.0.0.1:3000`; the Vite dev server (port 5173) proxies `/api` there.
 
@@ -363,10 +364,11 @@ deterministic.
 
 - Access-key screen first: a centered card that asks for the `APP_ACCESS_KEY` value from
   `.env` before showing anything else. Then the main screen, which fills the window:
-  - a header with the brand, the backend health status (a pill) and an `Available data`
-    button. It's a native `<details>`, closed by default, that opens the catalog in a
-    dropdown panel with its own scroll. The catalog is requested on mount, even while the
-    section is closed;
+  - a header with the brand, the backend health status (a pill), a `Usage` button that
+    switches between the chat and the usage report (see *Usage report*), and an
+    `Available data` button. It's a native `<details>`, closed by default, that opens the
+    catalog in a dropdown panel with its own scroll. The catalog is requested on mount,
+    even while the section is closed;
   - the conversation thread, the only part that scrolls, with a welcome message until the
     first question;
   - the question input, fixed at the bottom.
@@ -417,8 +419,39 @@ label was overridden; a failed classification is a warning with `result: 'error'
 and `persist` for each chat request, plus SQL generation, which logs each attempt's
 generation (`ok` or `error`) and execution (`ok`, the error `kind`, or `error` when it
 throws), without the SQL or the question. The persisted turns in `app.db` are the query
-log, and `llm_calls` has the time and tokens of every call to the LLM (see step 6).
-Nothing else for a POC.
+log, and `llm_calls` has the time and tokens of every call to the LLM (see step 6), which
+the usage report sums up. Nothing else for a POC.
+
+### Usage report
+
+How much the LLM is used, how long it takes and what it costs, from `llm_calls` and its
+turns. Fixed queries only (`buildUsageReport` in `backend/src/usage.ts`, route in
+`usage-route.ts`): the LLM never writes this SQL, and the usage tables stay out of the
+chatbot's reach, so the numbers are exact and no one can ask the bot for other people's
+conversations.
+
+- **`GET /api/usage`** takes `from` and `to` (local days, inclusive), `granularity`
+  (`hour`, `day`, `week` from Monday, or `month`), `tz` (the browser's offset from UTC, in
+  minutes) and optional `model` and `step` filters. A turn's local time is its UTC time
+  plus `tz`, so a turn at 23:30 falls on its local day; one offset covers the whole period
+  (no daylight saving changes inside it). Invalid values and periods of more than 1,000
+  intervals (`MAX_BUCKETS`) are a `400`.
+- **It returns** the period's totals (calls, turns, input and output tokens, estimated
+  cost, average and maximum time per call, failed calls, SQL retries), the series (every
+  interval, empty ones at zero, with tokens per step), the breakdown by step and model,
+  the 10 turns with the most tokens (with their question), every model in `llm_calls`
+  (for the filter) and the models without a price.
+- **Estimated cost:** `OPENAI_PRICES` (optional, see *Configuration*) gives each model's
+  price in USD per million input and output tokens. A call costs its tokens times its
+  model's price; calls of a model without a price add nothing, and the report names those
+  models. A group with no priced call has no cost (`null`). Sums are rounded to 1e-8 USD.
+  `npm run eval` calls aren't included: the eval doesn't write to `app.db`.
+- **The screen** (`UsageView.vue`): filters (from, to, granularity, model, step; by
+  default the last 7 days, by day), cards with the totals, a bar chart of tokens per
+  interval and step, and tables for the series, the breakdown and the top turns, drawn
+  with `ResponseBlocks.vue` like the chat's answers. Every filter change asks again; a
+  late answer to an older request is dropped. The chat stays mounted while hidden
+  (`v-show`), so switching keeps the conversation.
 
 ## Tech stack
 
@@ -471,7 +504,10 @@ Root `.env` (gitignored; placeholders in `.env.example`), loaded by Node's
 (and `npm run eval`) refuses to start, with an error naming it. `APP_ACCESS_KEY` is the
 app's shared key (auth); `OPENAI_API_KEY` and `OPENAI_MODEL` (a model with Structured
 Outputs in the Responses API) are for the LLM; `OPENAI_DECISIONS_MODEL` is the Decisions
-API model, for the classification and the judge. Each issue adds the variables it uses.
+API model, for the classification and the judge. `OPENAI_PRICES` is optional: the model
+prices for the usage report's estimated cost (`model=input/output`, in USD per million
+tokens, comma-separated); without it the report has no cost, and a malformed value stops
+the backend at startup. Each issue adds the variables it uses.
 
 Fixed for now, and not configurable: the database paths (`data/app.db`, `data/data.db`,
 relative to the repo root), the backend port (3000), the golden file and report paths, and
