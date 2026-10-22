@@ -14,7 +14,8 @@ get a narrative, a table and, when it helps, a chart of real data, with follow-u
 suggestions you can click. A greeting, a vague question or an off-topic one gets a short
 text reply instead, with no query run. Follow-ups like "and for last year?" use the last
 turns of the conversation, which is saved in `data/app.db`; reloading the page starts a
-new one.
+new one. The `Usage` button shows how much the LLM is used: calls, tokens, time and an
+estimated cost, by hour, day, week or month, filtered by model and step.
 Features are built one small issue at a time; see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 for the design and the decisions behind it.
 
@@ -52,6 +53,12 @@ naming the missing one. The key is used for every OpenAI call. `OPENAI_MODEL` mu
 support Structured Outputs in the Responses API (e.g. `gpt-5.4-mini`), and
 `OPENAI_DECISIONS_MODEL` is the Decisions API model that classifies each question (today
 only `gpt-6-luna`).
+
+`OPENAI_PRICES` is optional: the price of each model, so the usage report can estimate
+the cost. It's comma-separated `model=input/output` entries in USD per million tokens, for
+example `OPENAI_PRICES=model-a=0.25/2,model-b=1.25/10`; use OpenAI's current prices.
+Without it the report shows tokens and times but no cost; a malformed value stops the
+backend at startup, naming the variable.
 
 `npm run seed` loads a small, fictitious sales dataset and the metadata that describes it
 to the bot (see *Data* in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)). It's **required
@@ -119,12 +126,13 @@ backend/src/    Fastify app (app.ts), entry points (server.ts, seed-cli.ts), acc
                 classification (classify.ts), text-only replies (reply.ts), SQL generation
                 with retries (generate-sql.ts), insights (insights.ts), charts (chart.ts),
                 the pipeline (pipeline.ts), the chat route (chat.ts), conversations, turns
-                and their LLM calls (conversations.ts), offline evaluation (evaluate.ts,
+                and their LLM calls (conversations.ts), the usage report (usage.ts,
+                usage-route.ts, prices.ts), offline evaluation (evaluate.ts,
                 eval-command.ts, eval-cli.ts), test helpers (testing/)
 backend/eval/   golden questions for `npm run eval`
 frontend/src/   Vue app (App.vue), API client (api.ts), access-key state (auth.ts),
                 components (components/: key screen, backend status, data catalog, chat
-                view, its block renderer and the chart), styles (styles/)
+                view, its block renderer and the chart, usage report), styles (styles/)
 data/           SQLite files, generated and gitignored
 docs/           ARCHITECTURE.md: design, stack, quality gate, deferred decisions
 issues/         local issue tracker (Markdown files): pending ones here, closed ones in

@@ -113,3 +113,67 @@ export async function postChat(body: {
   });
   return (await res.json()) as ChatResponse;
 }
+
+export const GRANULARITIES = ['hour', 'day', 'week', 'month'] as const;
+export type Granularity = (typeof GRANULARITIES)[number];
+
+/** The pipeline steps an LLM call belongs to: `answer` is the insights or the text reply. */
+export const LLM_STEPS = ['classify', 'sql', 'answer'] as const;
+export type LlmStep = (typeof LLM_STEPS)[number];
+
+export interface UsageFilters {
+  /** First and last local day, inclusive, as YYYY-MM-DD. */
+  from: string;
+  to: string;
+  granularity: Granularity;
+  model?: string;
+  step?: LlmStep;
+}
+
+interface UsageAmounts {
+  calls: number;
+  inputTokens: number;
+  outputTokens: number;
+  /** null when none of the calls has a price. */
+  costUsd: number | null;
+}
+
+interface UsageTimings {
+  avgMs: number | null;
+  maxMs: number | null;
+  failedCalls: number;
+}
+
+/** The LLM usage report, as `GET /api/usage` returns it. */
+export interface UsageReport {
+  models: string[];
+  unpricedModels: string[];
+  totals: UsageAmounts & UsageTimings & { turns: number; sqlRetries: number };
+  series: (UsageAmounts & {
+    bucket: string;
+    turns: number;
+    tokensByStep: Record<LlmStep, number>;
+  })[];
+  breakdown: (UsageAmounts & UsageTimings & { step: LlmStep; model: string })[];
+  topTurns: (UsageAmounts & {
+    turnId: number;
+    createdAt: string;
+    question: string;
+    durationMs: number;
+  })[];
+}
+
+/** The LLM usage report of a period, with days and hours in the browser's time zone. */
+export async function getUsage(filters: UsageFilters): Promise<UsageReport> {
+  const params = new URLSearchParams({
+    from: filters.from,
+    to: filters.to,
+    granularity: filters.granularity,
+    // getTimezoneOffset is UTC minus local time; the API wants local minus UTC.
+    tz: String(-new Date().getTimezoneOffset()),
+  });
+  if (filters.model) params.set('model', filters.model);
+  if (filters.step) params.set('step', filters.step);
+  const res = await apiFetch(`/api/usage?${params}`);
+  return (await res.json()) as UsageReport;
+}

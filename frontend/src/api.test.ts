@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, apiFetch, CHAT_TIMEOUT_MS, getCatalog, getHealth, postChat } from './api.ts';
+import {
+  ApiError,
+  apiFetch,
+  CHAT_TIMEOUT_MS,
+  getCatalog,
+  getHealth,
+  getUsage,
+  postChat,
+} from './api.ts';
 import { auth, loadStoredKey, saveKey } from './auth.ts';
 
 function stubFetch(...responses: (Response | Error)[]) {
@@ -189,5 +197,40 @@ describe('postChat', () => {
 
     await expect(postChat({ question: 'Hi?' })).rejects.toMatchObject({ status: 404 });
     await expect(postChat({ question: 'Hi?' })).rejects.toThrow('Failed to fetch');
+  });
+});
+
+describe('getUsage', () => {
+  const period = { from: '2026-10-15', to: '2026-10-21', granularity: 'day' } as const;
+
+  it('asks for the period with the browser offset, sending the access key', async () => {
+    const report = { models: [] };
+    const fetchMock = stubFetch(Response.json(report));
+
+    await expect(getUsage(period)).resolves.toEqual(report);
+
+    const url = new URL(String(fetchMock.mock.calls[0][0]), 'http://x');
+    expect(url.pathname).toBe('/api/usage');
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      ...period,
+      tz: String(-new Date().getTimezoneOffset()),
+    });
+    expect(sentHeaders(fetchMock).get('Authorization')).toBe('Bearer the-key');
+  });
+
+  it('sends the model and step only when they are set', async () => {
+    const fetchMock = stubFetch(Response.json({}));
+
+    await getUsage({ ...period, model: 'gpt-a', step: 'sql' });
+
+    const url = new URL(String(fetchMock.mock.calls[0][0]), 'http://x');
+    expect(url.searchParams.get('model')).toBe('gpt-a');
+    expect(url.searchParams.get('step')).toBe('sql');
+  });
+
+  it('rejects with the status on an error', async () => {
+    stubFetch(new Response(null, { status: 400 }));
+
+    await expect(getUsage(period)).rejects.toMatchObject({ status: 400 });
   });
 });

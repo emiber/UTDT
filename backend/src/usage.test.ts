@@ -145,6 +145,12 @@ describe('buildUsageReport', () => {
     expect(series.find((s) => s.turns > 0)).toMatchObject({ bucket: first, turns });
   });
 
+  it('crosses into the next year by month', () => {
+    const { series } = report({ granularity: 'month', from: '2026-11-15', to: '2027-01-10' });
+
+    expect(series.map((s) => s.bucket)).toEqual(['2026-11', '2026-12', '2027-01']);
+  });
+
   it('starts a week on the Monday before the period', () => {
     const { series } = report({ granularity: 'week', from: '2026-10-21', to: '2026-10-27' });
 
@@ -186,6 +192,17 @@ describe('buildUsageReport', () => {
         maxMs: 1500,
         failedCalls: 0,
       },
+    ]);
+  });
+
+  it('orders the breakdown by step, then by model', () => {
+    turn('2026-10-21T12:00:00.000Z', 'Other model', [call('sql', 'gpt-b', 500, 10, 1)]);
+
+    expect(report().breakdown.map((r) => `${r.step} ${r.model}`)).toEqual([
+      'classify gpt-dec',
+      'sql gpt-a',
+      'sql gpt-b',
+      'answer gpt-a',
     ]);
   });
 

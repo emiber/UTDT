@@ -54,7 +54,7 @@ beforeEach(() => {
 
 afterEach(async () => {
   await app.close();
-  db.close();
+  if (db.isOpen) db.close();
   dataDb.close();
 });
 
@@ -81,6 +81,15 @@ describe('GET /api/usage', () => {
     });
     expect(report.totals).toMatchObject({ calls: 1, turns: 1, costUsd: 0.0007 });
     expect(report.series).toHaveLength(7);
+  });
+
+  it('answers a generic 500 when the report fails', async () => {
+    db.close();
+
+    const res = await get(QUERY);
+
+    expect(res.statusCode).toBe(500);
+    expect(res.json().message).toBe('Something went wrong on the server.');
   });
 
   it.each([

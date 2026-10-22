@@ -214,7 +214,11 @@ export function buildUsageReport(
       },
     ]),
   );
-  const breakdown = new Map<string, UsageBreakdownRow & { totalMs: number }>();
+  type BreakdownSums = Omit<UsageBreakdownRow, 'avgMs' | 'maxMs'> & {
+    totalMs: number;
+    maxMs: number;
+  };
+  const breakdown = new Map<string, BreakdownSums>();
   for (const g of groups) {
     const groupCost = cost(g);
     addAmounts(totals, g, groupCost);
@@ -233,13 +237,12 @@ export function buildUsageReport(
       model: g.model,
       ...emptyAmounts(),
       totalMs: 0,
-      avgMs: null,
       maxMs: 0,
       failedCalls: 0,
     };
     addAmounts(row, g, groupCost);
     row.totalMs += g.totalMs;
-    row.maxMs = Math.max(row.maxMs ?? 0, g.maxMs);
+    row.maxMs = Math.max(row.maxMs, g.maxMs);
     row.failedCalls += g.failedCalls;
     breakdown.set(key, row);
   }
@@ -271,10 +274,7 @@ export function buildUsageReport(
         (a, b) =>
           LLM_STEPS.indexOf(a.step) - LLM_STEPS.indexOf(b.step) || a.model.localeCompare(b.model),
       )
-      .map(({ totalMs: ms, maxMs: max, ...row }) => ({
-        ...row,
-        ...timings(row.calls, ms, max ?? 0),
-      })),
+      .map(({ totalMs: ms, maxMs: max, ...row }) => ({ ...row, ...timings(row.calls, ms, max) })),
     topTurns: [...turns.values()]
       .sort((a, b) => tokens(b) - tokens(a) || b.turnId - a.turnId)
       .slice(0, TOP_TURNS),
