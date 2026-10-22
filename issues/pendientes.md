@@ -55,7 +55,12 @@ Ordenados por prioridad sugerida.
 - **Origen:** #17.
 - **Prioridad:** baja. Solo importa si se cambia de modelo.
 
-### 7. Menores
+### 7. Correr `npm audit`
+- **Qué pasa:** al instalar `vue-router` (#26) el audit de npm se cortó por timeout de red (`ETIMEDOUT`) y no se pudo verificar. El usuario aprobó mergear igual (2026-10-22).
+- **Qué hacer:** correr `npm audit` cuando haya red y revisar si reporta algo.
+- **Prioridad:** media. Es rápido, y es la única dependencia nueva sin auditar.
+
+### 8. Menores
 - `generateSql` vuelve a armar el contexto de esquema que el pipeline ya armó para la clasificación. Se podría recibir como parámetro. El costo es mínimo. Origen: #10.
 - El corte de `fetch` por timeout del navegador se verificó en Chrome, Edge y Node, no en Firefox ni Safari. Origen: #17.
 
