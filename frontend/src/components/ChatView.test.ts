@@ -288,8 +288,10 @@ describe('ChatView kept alive, as the router keeps it while on /usage', () => {
     scroller.dispatchEvent(new Event('scroll'));
 
     await wrapper.setProps({ here: false });
-    // Off the page, the browser drops the scroll position.
+    // Off the page, the browser drops the scroll position; a stray scroll event then
+    // must not overwrite the saved place.
     state.top = 0;
+    scroller.dispatchEvent(new Event('scroll'));
     await wrapper.setProps({ here: true });
     await flushPromises();
 
@@ -305,14 +307,30 @@ describe('ChatView kept alive, as the router keeps it while on /usage', () => {
     expect(state.sets).toEqual([900]);
 
     await wrapper.setProps({ here: false });
+    const focus = vi.spyOn(HTMLElement.prototype, 'focus');
     respond(answer());
     await flushPromises();
     expect(state.sets).toEqual([900]);
+    expect(focus).not.toHaveBeenCalled();
 
     await wrapper.setProps({ here: true });
     await flushPromises();
 
     expect(state.sets).toEqual([900, -16]);
     expect(wrapper.find('.chat__turn').text()).toContain('Ink sold');
+    expect(focus).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves the focus alone on a plain return', async () => {
+    stubChat(answer());
+    const wrapper = mount(Host);
+    await ask(wrapper, 'First?');
+    const focus = vi.spyOn(HTMLElement.prototype, 'focus');
+
+    await wrapper.setProps({ here: false });
+    await wrapper.setProps({ here: true });
+    await flushPromises();
+
+    expect(focus).not.toHaveBeenCalled();
   });
 });

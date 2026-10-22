@@ -11,8 +11,8 @@ export function createAppRouter(history: RouterHistory = createWebHistory()) {
     history,
     routes: [
       { path: '/', redirect: '/chat' },
-      { path: '/chat', name: 'chat', component: ChatView },
-      { path: '/usage', name: 'usage', component: UsageView },
+      { path: '/chat', component: ChatView },
+      { path: '/usage', component: UsageView },
       { path: '/:unknown(.*)*', redirect: '/chat' },
     ],
   });

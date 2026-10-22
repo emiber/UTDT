@@ -104,9 +104,10 @@ onActivated(async () => {
   if (!away) return;
   away = false;
   await nextTick();
+  // A plain return leaves the focus where it is (e.g. on the Chat link); a new answer
+  // gives it back to the input, as when it arrives on the page.
   if (answeredWhileAway === null) {
     scrollTo(savedTop);
-    input.value?.focus({ preventScroll: true });
   } else {
     showTurn(answeredWhileAway);
     answeredWhileAway = null;
