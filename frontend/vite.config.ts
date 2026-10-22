@@ -10,5 +10,7 @@ export default defineConfig({
   test: {
     name: 'frontend',
     environment: 'jsdom',
+    // At most 4 test files at once, the same in both projects (see the root vitest.config.ts).
+    maxWorkers: 4,
   },
 });
