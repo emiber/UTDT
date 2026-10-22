@@ -6,20 +6,7 @@ Esto no es un issue. Es la lista de lo que quedó abierto al cerrar el epic #1 (
 
 Ordenados por prioridad sugerida.
 
-### 1. Los tests del frontend fallan a veces al arrancar
-- **Qué pasa:** con la máquina cargada, los workers de Vitest del frontend no llegan a arrancar ("Failed to start forks worker"), y el gate falla sin que haya un error en el código. Pasó 3 veces el 2026-10-21; al repetir pasó siempre.
-- **Antecedentes:**
-  - #18 bajó los workers a 4 (`maxWorkers` en `vitest.config.ts`).
-  - El `testTimeout` de 20 s del backend (`backend/vitest.config.ts`, #8) es un parche de la misma familia.
-- **Ideas:**
-  - medir qué tarda en el arranque en frío (el entorno jsdom, los imports);
-  - probar el pool `threads` en lugar de `forks`;
-  - correr los dos proyectos en serie;
-  - subir el timeout de arranque de los workers.
-- **Prioridad:** media. Es lo único que hace fallar el gate sin motivo.
-- **Issue:** #27 (2026-10-22).
-
-### 2. El set golden no evalúa la clasificación ni las conversaciones
+### 1. El set golden no evalúa la clasificación ni las conversaciones
 - **Qué pasa:** `backend/eval/golden.json` solo tiene preguntas de datos sueltas, sin historial. No mide si la clasificación de #10 acierta, ni los seguimientos ("No veo el gráfico", "¿y en 2024?"), ni el idioma en conversaciones mezcladas.
 - **Antecedentes:** los problemas de #10 (pedidos de gráfico tomados como charla) y los de #22 y #23 (el idioma de la conversación pisando el del mensaje) se encontraron a mano. Un eval así los habría detectado solo.
 - **Ideas:**
@@ -30,7 +17,7 @@ Ordenados por prioridad sugerida.
 - **Origen:** diferido en #12 y #10.
 - **Prioridad:** media.
 
-### 3. Un gráfico descartado no se explica
+### 2. Un gráfico descartado no se explica
 - **Qué pasa:** si el LLM propone un gráfico que `buildChart` descarta (`backend/src/chart.ts`, warning "Chart dropped" en `pipeline.ts`), la respuesta sale sin gráfico. Si la persona lo pidió, el texto no dice por qué. Pasa poco: la spec casi siempre encaja.
 - **Ideas:**
   - si la pregunta pedía un gráfico, sumar una frase fija al texto;
@@ -38,31 +25,31 @@ Ordenados por prioridad sugerida.
 - **Origen:** #10.
 - **Prioridad:** baja.
 
-### 4. El backend sigue trabajando cuando la UI corta por timeout
+### 3. El backend sigue trabajando cuando la UI corta por timeout
 - **Qué pasa:** a los 6 minutos `postChat` se rinde. El backend no se entera: termina el pipeline, gasta las llamadas a OpenAI y guarda el turno.
 - **Idea:** cuando se cierra el request, cortar las llamadas al SDK de OpenAI con un `AbortSignal`.
 - **Origen:** #17.
 - **Prioridad:** baja. Es un caso raro: cada llamada ya se corta a los 30 s.
 
-### 5. El tamaño total de una respuesta solo lo acota el tope de filas
+### 4. El tamaño total de una respuesta solo lo acota el tope de filas
 - **Qué pasa:** cada valor tiene un tope de 1.000.000 de bytes (#15), pero 500 filas con varias columnas grandes todavía pueden sumar cientos de MB.
 - **Idea:** llevar la cuenta de los bytes mientras `executeSql` lee las filas, y cortar con un error `row_limit` o uno nuevo.
 - **Origen:** #15, que lo dejó fuera de alcance.
 - **Prioridad:** baja. El dataset demo no se acerca.
 
-### 6. El timeout de OpenAI es fijo
+### 5. El timeout de OpenAI es fijo
 - **Qué pasa:** cada llamada se corta a los 30 s (`REQUEST_TIMEOUT_MS` en `backend/src/llm.ts`). Con un modelo más lento en `OPENAI_MODEL`, por ejemplo uno de razonamiento, cada llamada que pase de 30 s sería un 502.
 - **Idea:** pasarlo a una variable de `.env`, o subirlo si se cambia de modelo.
 - **Origen:** #17.
 - **Prioridad:** baja. Solo importa si se cambia de modelo.
 
-### 7. `npm run prices` no modela todos los cargos de OpenAI
+### 6. `npm run prices` no modela todos los cargos de OpenAI
 - **Qué pasa:** el comando toma los precios Standard de contexto corto. No suma el 10% extra de los endpoints regionales (data residency), no aplica los precios de contexto largo (más de 272K tokens de entrada) y no descuenta la entrada cacheada, porque la app no cuenta esos tokens. El costo del reporte de uso es una estimación.
 - **Idea:** si alguno pasa a importar, guardar los tokens cacheados en `llm_calls` y sumar ese precio, o aplicar el recargo regional.
 - **Origen:** la review de `npm run prices` (2026-10-21).
 - **Prioridad:** baja. Con la demo local, sin data residency y con prompts cortos, no cambia nada.
 
-### 8. Menores
+### 7. Menores
 - `generateSql` vuelve a armar el contexto de esquema que el pipeline ya armó para la clasificación. Se podría recibir como parámetro. El costo es mínimo. Origen: #10.
 - El corte de `fetch` por timeout del navegador se verificó en Chrome, Edge y Node, no en Firefox ni Safari. Origen: #17.
 
@@ -84,6 +71,10 @@ Están implementadas y documentadas en cada issue. Conviene validarlas.
 - **Modelos en `.env`:** `OPENAI_MODEL=gpt-5.4-mini` y `OPENAI_DECISIONS_MODEL=gpt-6-luna`.
 
 ## Acciones tuyas
+- **Excluir el repo del escaneo en tiempo real de Windows Defender**, o mover los proyectos a un Dev Drive de Windows. Seguramente lo tenga que hacer IT, porque la m�quina es corporativa.
+  - **Por qu�:** #27 hizo el gate m�s r�pido y le dio margen al arranque de los workers, pero sigue fallando m�s o menos una vez cada 8 a 10 corridas, igual que antes. Los fallos vienen de trabas de toda la m�quina que coinciden con el antivirus. En la validaci�n de #27 (2026-10-22), una de 10 rondas con dos gates a la vez fall�, con `MsMpEng` al 214% de CPU de promedio y picos de 589%. En las dem�s rondas estuvo entre 78% y 140%. La CPU total (39%) y la memoria libre (m�s de 3,9 GB) fueron las mismas.
+  - **C�mo se ve:** pasa sobre todo en la primera corrida despu�s de unos minutos sin actividad, o justo despu�s de un `npm ci`. Un worker del frontend no arranca ("Timeout waiting for worker to respond") o un test pasa su timeout. Repetir el gate alcanza.
+  - **Mientras tanto:** no hace falta nada; es raro y se resuelve repitiendo.
 - Tu `APP_ACCESS_KEY` tiene 3 caracteres. Para la demo local alcanza. Si la demo sale de tu máquina, generá una nueva con el comando del `README.md`.
 
 ## Decisiones diferidas (ya documentadas)
