@@ -76,3 +76,6 @@ Inferido para implementar esas decisiones:
 ## Context
 - Pasó 3 veces el 2026-10-21, y una más ese día en la rama de `npm run prices`: 6 archivos del frontend no arrancaron (entre ellos `ChatView.test.ts` y `UsageView.test.ts`) y la cobertura cayó al 83%.
 - Antes de eso quedó registrado en las verificaciones de #3, #6, #12, #13, #23, #25 y #26, siempre en el frontend y siempre resuelto al repetir.
+
+## Notes
+- 2026-10-22: **El criterio de 10 rondas seguidas no se cumplió.** La causa encontrada en el repo fue que el `maxWorkers: 4` de #18 estaba en la config raíz, donde Vitest lo ignora: cada proyecto usaba 27 workers. Pasarlo a cada proyecto bajó los arranques de 20-60 s a 2-6 s y dejó el gate más rápido, pero no bajó la frecuencia de fallos: 2 en 17 corridas antes, 4 en 25 después. Los fallos que quedan son trabas de toda la máquina, de alrededor de un minuto. En la única que se midió, el antivirus estaba al doble de su CPU habitual. Se frenó y se consultó, como dice *Expected behavior*. El usuario eligió mergear el arreglo igual (no probar más candidatos) y anotar en `issues/pendientes.md` la acción sobre el antivirus, que es de la máquina y no del repo.

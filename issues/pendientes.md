@@ -71,9 +71,9 @@ Est√°n implementadas y documentadas en cada issue. Conviene validarlas.
 - **Modelos en `.env`:** `OPENAI_MODEL=gpt-5.4-mini` y `OPENAI_DECISIONS_MODEL=gpt-6-luna`.
 
 ## Acciones tuyas
-- **Excluir el repo del escaneo en tiempo real de Windows Defender**, o mover los proyectos a un Dev Drive de Windows. Seguramente lo tenga que hacer IT, porque la m·quina es corporativa.
-  - **Por quÈ:** #27 hizo el gate m·s r·pido y le dio margen al arranque de los workers, pero sigue fallando m·s o menos una vez cada 8 a 10 corridas, igual que antes. Los fallos vienen de trabas de toda la m·quina que coinciden con el antivirus. En la validaciÛn de #27 (2026-10-22), una de 10 rondas con dos gates a la vez fallÛ, con `MsMpEng` al 214% de CPU de promedio y picos de 589%. En las dem·s rondas estuvo entre 78% y 140%. La CPU total (39%) y la memoria libre (m·s de 3,9 GB) fueron las mismas.
-  - **CÛmo se ve:** pasa sobre todo en la primera corrida despuÈs de unos minutos sin actividad, o justo despuÈs de un `npm ci`. Un worker del frontend no arranca ("Timeout waiting for worker to respond") o un test pasa su timeout. Repetir el gate alcanza.
+- **Excluir el repo del escaneo en tiempo real de Windows Defender**, o mover los proyectos a un Dev Drive de Windows. Seguramente lo tenga que hacer IT, porque la m√°quina es corporativa.
+  - **Por qu√©:** #27 hizo el gate m√°s r√°pido y le dio margen al arranque de los workers, pero no baj√≥ la frecuencia de fallos: 2 en 17 corridas antes y 4 en 25 despu√©s. Los fallos vienen de trabas de toda la m√°quina, de alrededor de un minuto. La √∫nica ronda en la que se midi√≥ coincidi√≥ con el antivirus: en la validaci√≥n de #27 (2026-10-22) fall√≥ una de 10 rondas con dos gates a la vez, con `MsMpEng` al 214% de CPU de promedio y picos de 589%. En las dem√°s rondas estuvo entre 78% y 140%. La CPU total (39%) y la memoria libre (m√°s de 3,9 GB) fueron las mismas. Es un indicio, no una prueba.
+  - **C√≥mo se ve:** pasa sobre todo en la primera corrida despu√©s de unos minutos sin actividad, o justo despu√©s de un `npm ci`. Un worker del frontend no arranca ("Timeout waiting for worker to respond") o un test pasa su timeout. Repetir el gate alcanza.
   - **Mientras tanto:** no hace falta nada; es raro y se resuelve repitiendo.
 - Tu `APP_ACCESS_KEY` tiene 3 caracteres. Para la demo local alcanza. Si la demo sale de tu m√°quina, gener√° una nueva con el comando del `README.md`.
 

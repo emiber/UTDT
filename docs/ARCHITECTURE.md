@@ -513,18 +513,19 @@ only what the scaffold's code uses. `openai` and `liquidjs` came with SQL genera
     root value. #18 put it in the root config, so until #27 each project ran its default
     of one worker per CPU (27 on a 28-CPU machine). Vitest also rejects projects with
     different `maxWorkers` in the same group.
-  - **Why a limit:** a worker must answer within Vitest's fixed 60 s start timeout, and
-    for the frontend that time includes setting up jsdom. With 27 forks at once (with
-    coverage), the main process fell behind and jsdom's setup took up to 40 s, so
-    some frontend forks failed with "Timeout waiting for worker to respond" (#27).
+  - **Why a limit:** a worker must answer within Vitest's fixed 60 s start timeout
+    ("Timeout waiting for worker to respond"), and for the frontend that time includes
+    setting up jsdom. With 27 forks at once (with coverage), the main process fell
+    behind: backend workers took 20-30 s to start, and jsdom's setup up to 40 s.
   - **Measured with 4:** a worker usually starts in 2-6 s, also with two gates at once,
     and the gate takes about 60-65 s (median of 83.8 s before).
-  - **What's left:** the gate still fails about once every 8-10 runs, as often as before
-    #27. A machine-wide stall holds every process for about a minute, so a frontend
-    worker misses the 60 s start or a test times out. In #27 the stalls came with
-    Windows Defender at twice its usual CPU, often on the first run after a few idle
-    minutes or right after `npm ci`. Running the gate again passes; the fix is outside
-    the repo (see `issues/pendientes.md`).
+  - **What's left:** the limit didn't lower how often the gate fails: 2 failed runs out
+    of 17 before #27, 4 out of 25 after. The failures come from machine-wide stalls of
+    about a minute, so a frontend worker misses the 60 s start or a test times out. In
+    the one stall measured, Windows Defender ran at twice its usual CPU while total CPU
+    and free memory stayed as in good runs; stalls came most often on the first run
+    after a few idle minutes or right after `npm ci`. Running the gate again passes. The
+    likely fix is outside the repo (see `issues/pendientes.md`).
 - **Lint command:** `npm run lint` (ESLint + `prettier --check` + type check of both packages)
 - **Test-with-coverage command:** `npm run test:coverage`
 - These two commands are the whole gate: the project is local-only, so there's no CI. `/work-issue` runs them before every PR, and anyone checking a branch runs the same ones.
