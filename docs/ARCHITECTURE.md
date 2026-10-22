@@ -362,11 +362,15 @@ deterministic.
 
 ### Frontend (Vue 3)
 
-- Access-key screen first: a centered card that asks for the `APP_ACCESS_KEY` value from
-  `.env` before showing anything else. Then the main screen, which fills the window:
-  - a header with the brand, the backend health status (a pill), a `Usage` button that
-    switches between the chat and the usage report (see *Usage report*), and an
-    `Available data` button. It's a native `<details>`, closed by default, that opens the
+- Two routes (`router.ts`, vue-router with the browser history): `/chat` and `/usage` (the
+  usage report, see *Usage report*); `/` and any unknown path redirect to `/chat`. In
+  development Vite serves `index.html` for any path, so a reload on `/usage` works.
+- Access-key screen first, on any route: a centered card that asks for the `APP_ACCESS_KEY`
+  value from `.env` before showing anything else; then the requested route shows. The main
+  screen fills the window:
+  - a header with the brand, the backend health status (a pill), the `Chat` and `Usage`
+    links (the current one marked, `aria-current="page"`), and an `Available data`
+    button. It's a native `<details>`, closed by default, that opens the
     catalog in a dropdown panel with its own scroll. The catalog is requested on mount,
     even while the section is closed;
   - the conversation thread, the only part that scrolls, with a welcome message until the
@@ -399,8 +403,8 @@ deterministic.
     a new conversation.
   - The thread and the conversation id live only in memory: a reload starts a new
     conversation.
-- Plain components and composables: no router (two screens, switched by auth state),
-  no state library, no UI kit. Styles in SCSS, with the design tokens (colors, radii,
+- Plain components and composables: vue-router for the two routes, no state library, no
+  UI kit. Styles in SCSS, with the design tokens (colors, radii,
   shadows, spacing) in `styles/_tokens.scss`: slate neutrals with an indigo accent. The
   font is Inter, served locally by `@fontsource-variable/inter` (no request to a font
   CDN); charts use it too.
@@ -450,8 +454,12 @@ conversations.
   default the last 7 days, by day), cards with the totals, a bar chart of tokens per
   interval and step, and tables for the series, the breakdown and the top turns, drawn
   with `ResponseBlocks.vue` like the chat's answers. Every filter change asks again; a
-  late answer to an older request is dropped. The chat stays mounted while hidden
-  (`v-show`), so switching keeps the conversation.
+  late answer to an older request is dropped. Each visit to `/usage` starts from the
+  default filters.
+- **Back to the chat:** the router keeps the chat alive while on `/usage` (`KeepAlive`),
+  so the conversation and what was typed stay. Off the page the thread loses its scroll,
+  so `ChatView` tracks its place on every scroll and restores it on the way back; an
+  answer that arrived meanwhile is shown instead (it couldn't scroll while away).
 
 ## Tech stack
 
@@ -463,7 +471,7 @@ conversations.
 | Backend | Fastify | JSON-schema validation, logger, and `app.inject()` for tests are all built in |
 | Database | SQLite via `node:sqlite` (built-in) | No dependency and no native compilation (Windows-safe). `readOnly` connections give a hard write guard |
 | LLM | OpenAI API: Responses + Decisions, via `openai` SDK | Responses for generation with Structured Outputs; Decisions for classification and judging. The Decisions API isn't on Azure, so everything goes to the OpenAI API with one key |
-| Frontend | Vue 3 + Vite | User's choice; Vite is the standard Vue toolchain |
+| Frontend | Vue 3 + Vite, vue-router | User's choice; Vite is the standard Vue toolchain, and vue-router its official router (the chat and the usage report each have a URL) |
 | Styles | SCSS (`sass`, pure JS) | User's preference. Vite supports it natively; the pure-JS package avoids native binaries |
 | Font | Inter, via `@fontsource-variable/inter` | The user asked for a nicer font. Self-hosted: the app is local, so it works offline and sends nothing to a third party |
 | Prompt templates | LiquidJS (`liquidjs`) | The user asked for something like Jinja2 for prompts: LiquidJS has the same base syntax (`{{ }}`, `{% if %}`, `{% for %}`), is pure JS, and doesn't escape HTML by default |
@@ -530,6 +538,6 @@ config only when there's a reason.
 | Standard prompts with pre-validated SQL, feedback buttons, CSV download | Features from the reference project. Not needed to prove the concept |
 | Streaming responses | Adds complexity on both ends. Fine to wait for the full answer in a POC |
 | UI kit (e.g. PrimeVue DataTable) | Plain HTML tables are enough. Revisit if tables need sorting, paging or export |
-| Router, state library, i18n | Two screens, little shared state, English-only UI |
+| State library, i18n | Little shared state, English-only UI. (A router came with the usage report's own URL, in #26.) |
 | Docker / docker-compose | SQLite is a file and nothing else needs a container. Docker isn't installed either |
 | Deployment | Local-only |

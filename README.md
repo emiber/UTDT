@@ -14,8 +14,9 @@ get a narrative, a table and, when it helps, a chart of real data, with follow-u
 suggestions you can click. A greeting, a vague question or an off-topic one gets a short
 text reply instead, with no query run. Follow-ups like "and for last year?" use the last
 turns of the conversation, which is saved in `data/app.db`; reloading the page starts a
-new one. The `Usage` button shows how much the LLM is used: calls, tokens, time and an
-estimated cost, by hour, day, week or month, filtered by model and step.
+new one. The chat is at `/chat`; `/usage` shows how much the LLM is used: calls, tokens,
+time and an estimated cost, by hour, day, week or month, filtered by model and step. The
+links in the header switch between them, and the chat keeps its conversation.
 Features are built one small issue at a time; see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 for the design and the decisions behind it.
 
@@ -130,9 +131,10 @@ backend/src/    Fastify app (app.ts), entry points (server.ts, seed-cli.ts), acc
                 usage-route.ts, prices.ts), offline evaluation (evaluate.ts,
                 eval-command.ts, eval-cli.ts), test helpers (testing/)
 backend/eval/   golden questions for `npm run eval`
-frontend/src/   Vue app (App.vue), API client (api.ts), access-key state (auth.ts),
-                components (components/: key screen, backend status, data catalog, chat
-                view, its block renderer and the chart, usage report), styles (styles/)
+frontend/src/   Vue app (App.vue), routes (router.ts), API client (api.ts), access-key state
+                (auth.ts), components (components/: key screen, backend status, data
+                catalog, chat view, its block renderer and the chart, usage report),
+                styles (styles/)
 data/           SQLite files, generated and gitignored
 docs/           ARCHITECTURE.md: design, stack, quality gate, deferred decisions
 issues/         local issue tracker (Markdown files): pending ones here, closed ones in

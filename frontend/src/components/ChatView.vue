@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, reactive, ref, useTemplateRef } from 'vue';
+import { computed, nextTick, onActivated, onDeactivated, reactive, ref, useTemplateRef } from 'vue';
 import { ApiError, postChat, type Block } from '../api.ts';
 import ResponseBlocks from './ResponseBlocks.vue';
 
@@ -63,6 +63,16 @@ async function ask(text: string) {
     turn.status = 'error';
   }
   await nextTick();
+  // Off the page nothing can scroll: the answer shows when the chat is back.
+  if (away) {
+    answeredWhileAway = index;
+    return;
+  }
+  showTurn(index);
+}
+
+/** Scrolls to where a turn starts and gives the focus back to the input. */
+function showTurn(index: number) {
   // A long answer (a big table) starts where the question is, not at its bottom.
   const turnEl = turnEls.value?.[index];
   if (turnEl) scrollTo(turnEl.offsetTop - 16);
@@ -74,6 +84,36 @@ function scrollTo(top: number) {
   if (scroller.value) scroller.value.scrollTop = top;
 }
 
+// The router keeps the chat alive while on /usage (KeepAlive), but off the page its thread
+// loses its scroll. The place is tracked on every scroll, since by the time the chat is
+// deactivated it's already detached, and restored on the way back; an answer that arrived
+// meanwhile is shown instead.
+let away = false;
+let savedTop = 0;
+let answeredWhileAway: number | null = null;
+
+function rememberScroll() {
+  if (!away && scroller.value) savedTop = scroller.value.scrollTop;
+}
+
+onDeactivated(() => {
+  away = true;
+});
+
+onActivated(async () => {
+  if (!away) return;
+  away = false;
+  await nextTick();
+  // A plain return leaves the focus where it is (e.g. on the Chat link); a new answer
+  // gives it back to the input, as when it arrives on the page.
+  if (answeredWhileAway === null) {
+    scrollTo(savedTop);
+  } else {
+    showTurn(answeredWhileAway);
+    answeredWhileAway = null;
+  }
+});
+
 function send() {
   if (!canSend.value) return;
   const text = draft.value;
@@ -84,7 +124,7 @@ function send() {
 
 <template>
   <main class="chat">
-    <div ref="scroller" class="chat__scroll">
+    <div ref="scroller" class="chat__scroll" @scroll="rememberScroll">
       <div v-if="!thread.length" class="chat__empty">
         <h2>What do you want to know?</h2>
         <p>
