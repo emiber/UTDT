@@ -506,10 +506,28 @@ only what the scaffold's code uses. `openai` and `liquidjs` came with SQL genera
   that just call tested functions) and type-only files.
 - **Measured by:** Vitest with `@vitest/coverage-v8`. A root Vitest config runs both
   workspaces as projects and reports one combined coverage. The run fails if any metric
-  is under the threshold. It runs with `maxWorkers: 4`: by default Vitest starts one worker
-  per CPU, and forking dozens at once (jsdom + coverage) on Windows overran its fixed 60 s
-  worker start timeout ("Timeout waiting for worker to respond"). Four was also the
-  fastest setting measured (about 50 s for the whole gate).
+  is under the threshold.
+- **Workers:** at most 4 test files at once in total (`maxWorkers: 4`), set in each
+  project's config (`backend/vitest.config.ts`, `frontend/vite.config.ts`) with the same
+  value. Both projects have the same `sequence.groupOrder`, so they share one pool.
+  - **Why per project:** Vitest's pool reads the limit from the projects and ignores a
+    root value. #18 put it in the root config, so until #27 the pool ran at the default
+    of one worker per CPU: 27 at once on a 28-CPU machine. Vitest rejects projects with
+    different `maxWorkers` in the same group, so the two values can't drift apart.
+  - **Why a limit:** a worker must answer within Vitest's fixed 60 s start timeout
+    ("Timeout waiting for worker to respond"), and for the frontend that time includes
+    setting up jsdom. With 27 forks at once (with coverage), the main process likely
+    fell behind: backend workers took 20-30 s to start, and the frontend's jsdom setup up
+    to 40 s, even with a single gate.
+  - **Measured with 4:** a worker usually starts in 2-6 s, also with two gates at once.
+    A single gate takes a median of 65 s (83.8 s before).
+  - **What's left:** no measurable change in how often the gate fails: 4 of 33 gate
+    runs before #27, 6 of 46 after. The failures seen were machine-wide stalls of about
+    a minute, so a frontend worker misses the 60 s start or a test times out. The one
+    stall measured is consistent with Windows Defender: it ran at twice its usual CPU,
+    while total CPU and free memory stayed as in good runs. Stalls came most often on
+    the first run after a few idle minutes or right after `npm ci`. Running the gate
+    again passes; the likely fix is outside the repo (see `issues/pendientes.md`).
 - **Lint command:** `npm run lint` (ESLint + `prettier --check` + type check of both packages)
 - **Test-with-coverage command:** `npm run test:coverage`
 - These two commands are the whole gate: the project is local-only, so there's no CI. `/work-issue` runs them before every PR, and anyone checking a branch runs the same ones.

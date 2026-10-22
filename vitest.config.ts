@@ -4,10 +4,9 @@ import { defineConfig } from 'vitest/config';
 // The thresholds are the project's Quality gate (see docs/ARCHITECTURE.md).
 export default defineConfig({
   test: {
+    // The worker limit (maxWorkers) lives in each project's config, not here: Vitest's pool
+    // reads it per project and ignores a root value (see docs/ARCHITECTURE.md, Quality gate).
     projects: ['backend', 'frontend'],
-    // A few workers, not one per CPU: forking dozens at once (jsdom + coverage) on Windows
-    // overran Vitest's fixed 60 s worker start timeout. 4 was also the fastest, measured.
-    maxWorkers: 4,
     coverage: {
       provider: 'v8',
       include: ['backend/src/**/*.ts', 'frontend/src/**/*.{ts,vue}'],
