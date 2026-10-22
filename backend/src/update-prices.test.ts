@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -109,6 +109,15 @@ describe('updatePrices', () => {
     expect(update.missing).toEqual(['gpt-old']);
   });
 
+  it('keeps the output price when the chat and Decisions models are the same', () => {
+    const update = updatePrices(
+      { OPENAI_MODEL: 'gpt-6-luna', OPENAI_DECISIONS_MODEL: 'gpt-6-luna' },
+      page,
+    );
+
+    expect([...update.prices]).toEqual([['gpt-6-luna', { input: 0.1, output: 0.5 }]]);
+  });
+
   it('leaves out a model the page lacks and that had no price', () => {
     const update = updatePrices({ OPENAI_MODEL: ' gpt-new ', OPENAI_DECISIONS_MODEL: '' }, page);
 
@@ -198,8 +207,8 @@ describe('runPricesCommand', () => {
     expect(readFileSync(envPath, 'utf8')).toBe('OPENAI_MODEL=gpt-new\nOPENAI_PRICES=gpt-old=3/4\n');
     expect(lines).toEqual([
       'OPENAI_PRICES=gpt-old=3/4',
-      `gpt-new isn't on ${PRICING_URL}: it has no price. Add it by hand if needed.`,
-      `gpt-old isn't on ${PRICING_URL}: it keeps its current price. Add it by hand if needed.`,
+      `gpt-new has no Standard price on ${PRICING_URL}: it has no price. Add it by hand if needed.`,
+      `gpt-old has no Standard price on ${PRICING_URL}: it keeps its current price. Add it by hand if needed.`,
       `Updated ${envPath}. Restart the backend to use the new prices.`,
     ]);
   });
@@ -220,6 +229,35 @@ describe('runPricesCommand', () => {
       `The prices could not be updated: ${envPath} has no OPENAI_MODEL, OPENAI_DECISIONS_MODEL or OPENAI_PRICES.`,
     ]);
     expect(requested).toEqual([]);
+  });
+
+  it('fails with the reason when the download fails', async () => {
+    writeFileSync(envPath, 'OPENAI_MODEL=gpt-5.4-mini\n');
+
+    const code = await runPricesCommand({
+      envPath,
+      print: (line) => lines.push(line),
+      fetch: async () => {
+        throw new TypeError('fetch failed', { cause: new Error('getaddrinfo ENOTFOUND') });
+      },
+    });
+
+    expect(code).toBe(1);
+    expect(lines).toEqual([
+      'The prices could not be updated: fetch failed (getaddrinfo ENOTFOUND)',
+    ]);
+  });
+
+  it('fails when the .env cannot be written', async () => {
+    writeFileSync(envPath, 'OPENAI_MODEL=gpt-5.4-mini\n');
+    chmodSync(envPath, 0o444);
+
+    expect(await run()).toBe(1);
+
+    expect(lines).toEqual([
+      expect.stringMatching(/^The prices could not be updated: E(PERM|ACCES)/),
+    ]);
+    chmodSync(envPath, 0o644);
   });
 
   it.each([

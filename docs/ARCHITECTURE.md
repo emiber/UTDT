@@ -456,7 +456,8 @@ conversations.
   (the tables under its first *Standard pricing data* heading) and rewrites only the
   `OPENAI_PRICES` line of the root `.env`. It prices `OPENAI_MODEL`,
   `OPENAI_DECISIONS_MODEL` and every model already listed; the Decisions model gets an
-  output price of 0, because the Decisions API charges input tokens only. A model the
+  output price of 0, because the Decisions API charges input tokens only (unless it's also
+  `OPENAI_MODEL`: prices go by model id, and the chat's output does cost). A model the
   page doesn't list keeps its price and gets a warning. If the page can't be read or its
   layout changes, it writes nothing and exits with 1. The backend reads the new prices on
   its next start.

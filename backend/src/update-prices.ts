@@ -64,26 +64,27 @@ export interface PriceUpdate {
 /**
  * The new OPENAI_PRICES: a price for OPENAI_MODEL, OPENAI_DECISIONS_MODEL and every model
  * already listed, from the page. The Decisions model has no output price: the Decisions API
- * charges input tokens only, at the model's Standard input price today. Throws if the
- * current OPENAI_PRICES is malformed.
+ * charges input tokens only, at the model's Standard input price today. If OPENAI_MODEL is
+ * the same model, it keeps its output price: prices go by model id, and the chat's output
+ * tokens do cost. Throws if the current OPENAI_PRICES is malformed.
  */
 export function updatePrices(
   env: Record<string, string | undefined>,
   page: Map<string, ModelPrice>,
 ): PriceUpdate {
   const current = readPrices(env);
+  const chatModel = env.OPENAI_MODEL?.trim();
   const decisionsModel = env.OPENAI_DECISIONS_MODEL?.trim();
+  const inputOnly = decisionsModel !== chatModel ? decisionsModel : undefined;
   const models = new Set(
-    [env.OPENAI_MODEL?.trim(), decisionsModel, ...current.keys()].filter(
-      (model): model is string => !!model,
-    ),
+    [chatModel, decisionsModel, ...current.keys()].filter((model): model is string => !!model),
   );
   const prices = new Map<string, ModelPrice>();
   const missing: string[] = [];
   for (const model of models) {
     const price = page.get(model);
     if (price) {
-      prices.set(model, model === decisionsModel ? { input: price.input, output: 0 } : price);
+      prices.set(model, model === inputOnly ? { input: price.input, output: 0 } : price);
       continue;
     }
     missing.push(model);
@@ -92,6 +93,9 @@ export function updatePrices(
   }
   return { prices, missing };
 }
+
+/** How long the pricing page may take to download. */
+const TIMEOUT_MS = 30_000;
 
 /** The .env text with `name=value`: replaces the variable's line, or appends one. */
 export function setEnvLine(text: string, name: string, value: string): string {
@@ -111,33 +115,36 @@ export interface PricesCommandOptions {
 /**
  * `npm run prices`. Reads the models from the .env, downloads the pricing page and
  * rewrites the OPENAI_PRICES line, leaving the rest of the file as it was. Returns 1,
- * saying why and writing nothing, if the .env, the page or the current prices can't be
- * read, or there is no model to price; otherwise 0, warning about models the page lacks.
+ * saying why, if the .env can't be read or written, the page or the current prices can't
+ * be read, or there is no model to price; otherwise 0, warning about models the page lacks.
  */
 export async function runPricesCommand(options: PricesCommandOptions): Promise<number> {
   const { envPath, print, fetch: download = fetch } = options;
-  let text: string;
   let update: PriceUpdate;
+  let value: string;
   try {
-    text = readFileSync(envPath, 'utf8');
+    const text = readFileSync(envPath, 'utf8');
     const env = parseEnv(text) as Record<string, string>;
     if (!env.OPENAI_MODEL && !env.OPENAI_DECISIONS_MODEL && !env.OPENAI_PRICES) {
       throw new Error(`${envPath} has no OPENAI_MODEL, OPENAI_DECISIONS_MODEL or OPENAI_PRICES.`);
     }
-    const response = await download(PRICING_URL);
+    const response = await download(PRICING_URL, { signal: AbortSignal.timeout(TIMEOUT_MS) });
     if (!response.ok) throw new Error(`${PRICING_URL} answered ${response.status}.`);
     update = updatePrices(env, parsePricingPage(await response.text()));
+    value = formatPrices(update.prices);
+    writeFileSync(envPath, setEnvLine(text, 'OPENAI_PRICES', value));
   } catch (error) {
-    print(`The prices could not be updated: ${(error as Error).message}`);
+    // fetch says only "fetch failed"; the reason (DNS, offline, ...) is in its cause.
+    const { message, cause } = error as Error;
+    const reason = cause instanceof Error ? ` (${cause.message})` : '';
+    print(`The prices could not be updated: ${message}${reason}`);
     return 1;
   }
 
-  const value = formatPrices(update.prices);
-  writeFileSync(envPath, setEnvLine(text, 'OPENAI_PRICES', value));
   print(`OPENAI_PRICES=${value}`);
   for (const model of update.missing) {
     const kept = update.prices.has(model) ? 'it keeps its current price' : 'it has no price';
-    print(`${model} isn't on ${PRICING_URL}: ${kept}. Add it by hand if needed.`);
+    print(`${model} has no Standard price on ${PRICING_URL}: ${kept}. Add it by hand if needed.`);
   }
   print(`Updated ${envPath}. Restart the backend to use the new prices.`);
   return 0;
