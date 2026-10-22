@@ -32,7 +32,6 @@ const view = ref<'chat' | 'usage'>('chat');
           <button
             type="button"
             class="app__view"
-            :aria-pressed="view === 'usage'"
             @click="view = view === 'chat' ? 'usage' : 'chat'"
           >
             {{ view === 'chat' ? 'Usage' : 'Back to chat' }}
@@ -103,8 +102,7 @@ const view = ref<'chat' | 'usage'>('chat');
     color: $color-text;
     cursor: pointer;
 
-    &:hover,
-    &[aria-pressed='true'] {
+    &:hover {
       border-color: $color-primary;
       color: $color-primary;
     }

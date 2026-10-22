@@ -151,6 +151,36 @@ describe('buildUsageReport', () => {
     expect(series.map((s) => s.bucket)).toEqual(['2026-11', '2026-12', '2027-01']);
   });
 
+  it('puts a Sunday-night turn in the week that began the previous Monday', () => {
+    // 23:30 on Sunday 2026-10-25 in UTC-3, already Monday in UTC.
+    turn('2026-10-26T02:30:00.000Z', 'Late on Sunday', [call('classify', 'gpt-dec', 100, 10, 0)]);
+
+    const { series } = report({ granularity: 'week' });
+
+    expect(series.map((s) => [s.bucket, s.turns])).toEqual([
+      ['2026-10-19', 3],
+      ['2026-10-26', 1],
+    ]);
+  });
+
+  it.each([
+    ['day', '2026-12-31', '2027-01-01', ['2027-01-01', 1], ['2026-12-31', 1]],
+    ['hour', '2026-12-31', '2027-01-01', ['2027-01-01 01:00', 1], ['2026-12-31 16:00', 1]],
+    ['week', '2026-12-31', '2027-01-04', ['2026-12-28', 1], ['2026-12-28', 1]],
+    ['month', '2026-12-01', '2027-01-31', ['2027-01', 1], ['2026-12', 1]],
+  ] as const)(
+    'crosses into the new year by %s with a positive offset',
+    (granularity, from, to, east, utc) => {
+      // 16:00 UTC on Dec 31 is 01:00 on Jan 1 in UTC+9.
+      turn('2026-12-31T16:00:00.000Z', 'New year', [call('classify', 'gpt-dec', 100, 10, 0)]);
+      const busy = (tz: number) =>
+        report({ granularity, from, to, tz }).series.filter((s) => s.turns > 0);
+
+      expect(busy(540).map((s) => [s.bucket, s.turns])).toEqual([east]);
+      expect(busy(0).map((s) => [s.bucket, s.turns])).toEqual([utc]);
+    },
+  );
+
   it('starts a week on the Monday before the period', () => {
     const { series } = report({ granularity: 'week', from: '2026-10-21', to: '2026-10-27' });
 

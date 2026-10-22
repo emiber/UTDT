@@ -339,8 +339,11 @@ function listBuckets({ from, to, granularity, tz }: UsageFilters): string[] {
     buckets.push(bucket);
   };
   if (granularity === 'month') {
-    for (let month = from.slice(0, 7); month <= to.slice(0, 7); month = nextMonth(month))
-      add(month);
+    // Months as numbers: `YYYY-MM` strings would stop comparing right after year 9999.
+    const monthIndex = (day: string) => Number(day.slice(0, 4)) * 12 + Number(day.slice(5, 7)) - 1;
+    for (let m = monthIndex(from); m <= monthIndex(to); m++) {
+      add(`${Math.floor(m / 12)}-${String((m % 12) + 1).padStart(2, '0')}`);
+    }
     return buckets;
   }
   // A week starts on the Monday on or before `from`.
@@ -355,9 +358,4 @@ function listBuckets({ from, to, granularity, tz }: UsageFilters): string[] {
     for (let hour = 0; hour < 24; hour++) add(`${isoDay(day)} ${String(hour).padStart(2, '0')}:00`);
   }
   return buckets;
-}
-
-function nextMonth(month: string): string {
-  const [year, m] = month.split('-').map(Number);
-  return m === 12 ? `${year + 1}-01` : `${year}-${String(m + 1).padStart(2, '0')}`;
 }

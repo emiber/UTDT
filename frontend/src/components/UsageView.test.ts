@@ -188,7 +188,7 @@ describe('UsageView', () => {
   });
 
   it.each([
-    [400, 'Too many intervals for this period'],
+    [400, 'The period was not accepted'],
     [500, 'Could not load the usage report: HTTP 500'],
   ])('explains a %s', async (status, message) => {
     stubUsage(new Response(null, { status }));
@@ -197,6 +197,15 @@ describe('UsageView', () => {
     await flushPromises();
 
     expect(wrapper.find('[role="alert"]').text()).toContain(message);
+  });
+
+  it('shows a tiny cost as under a hundredth of a cent, not as zero', async () => {
+    stubUsage(Response.json({ ...REPORT, totals: { ...REPORT.totals, costUsd: 0.00002 } }));
+
+    const wrapper = mount(UsageView);
+    await flushPromises();
+
+    expect(wrapper.findAll('.usage__card')[4].text()).toBe('Est. cost<$0.0001');
   });
 
   it('says so when the period has no calls', async () => {

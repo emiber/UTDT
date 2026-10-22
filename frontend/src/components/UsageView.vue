@@ -55,15 +55,19 @@ async function load() {
     report.value = null;
     error.value =
       e instanceof ApiError && e.status === 400
-        ? 'Too many intervals for this period: shorten it or pick a coarser granularity.'
+        ? 'The period was not accepted: shorten it or pick a coarser granularity.'
         : `Could not load the usage report: ${(e as Error).message}`;
   }
 }
 watch(filters, load, { immediate: true });
 
 const number = (n: number) => n.toLocaleString('en-US');
-const usd = (cost: number | null) =>
-  cost === null ? '—' : `$${cost.toFixed(cost > 0 && cost < 0.01 ? 4 : 2)}`;
+const usd = (cost: number | null) => {
+  if (cost === null) return '—';
+  // A tiny priced cost must not read as zero.
+  if (cost > 0 && cost < 0.0001) return '<$0.0001';
+  return `$${cost.toFixed(cost < 0.01 ? 4 : 2)}`;
+};
 const time = (ms: number | null) =>
   ms === null ? '—' : ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`;
 /** Table cells keep costs as numbers, so they line up right; 6 decimals is under a cent. */
