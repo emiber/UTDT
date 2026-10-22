@@ -450,6 +450,16 @@ conversations.
   model's price; calls of a model without a price add nothing, and the report names those
   models. A group with no priced call has no cost (`null`). Sums are rounded to 1e-8 USD.
   `npm run eval` calls aren't included: the eval doesn't write to `app.db`.
+- **Refreshing the prices:** `npm run prices` (`backend/src/update-prices.ts`, run by
+  hand) downloads OpenAI's pricing page in its Markdown version
+  (`developers.openai.com/api/docs/pricing.md`), reads the Standard, short context prices
+  (the tables under its first *Standard pricing data* heading) and rewrites only the
+  `OPENAI_PRICES` line of the root `.env`. It prices `OPENAI_MODEL`,
+  `OPENAI_DECISIONS_MODEL` and every model already listed; the Decisions model gets an
+  output price of 0, because the Decisions API charges input tokens only. A model the
+  page doesn't list keeps its price and gets a warning. If the page can't be read or its
+  layout changes, it writes nothing and exits with 1. The backend reads the new prices on
+  its next start.
 - **The screen** (`UsageView.vue`): filters (from, to, granularity, model, step; by
   default the last 7 days, by day), cards with the totals, a bar chart of tokens per
   interval and step, and tables for the series, the breakdown and the top turns, drawn
@@ -515,7 +525,8 @@ Outputs in the Responses API) are for the LLM; `OPENAI_DECISIONS_MODEL` is the D
 API model, for the classification and the judge. `OPENAI_PRICES` is optional: the model
 prices for the usage report's estimated cost (`model=input/output`, in USD per million
 tokens, comma-separated); without it the report has no cost, and a malformed value stops
-the backend at startup. Each issue adds the variables it uses.
+the backend at startup. `npm run prices` fills it in from OpenAI's pricing page (see
+*Usage report*). Each issue adds the variables it uses.
 
 Fixed for now, and not configurable: the database paths (`data/app.db`, `data/data.db`,
 relative to the repo root), the backend port (3000), the golden file and report paths, and
