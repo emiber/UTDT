@@ -7,15 +7,7 @@ Esto no es un issue. Es la lista de lo que quedó abierto al cerrar el epic #1 (
 Ordenados por prioridad sugerida.
 
 ### 1. El set golden no evalúa la clasificación ni las conversaciones
-- **Qué pasa:** `backend/eval/golden.json` solo tiene preguntas de datos sueltas, sin historial. No mide si la clasificación de #10 acierta, ni los seguimientos ("No veo el gráfico", "¿y en 2024?"), ni el idioma en conversaciones mezcladas.
-- **Antecedentes:** los problemas de #10 (pedidos de gráfico tomados como charla) y los de #22 y #23 (el idioma de la conversación pisando el del mensaje) se encontraron a mano. Un eval así los habría detectado solo.
-- **Ideas:**
-  - agregar al golden la etiqueta esperada de cada pregunta;
-  - sumar preguntas que no son de datos ("Hola", "¿Cuál es la capital de Francia?");
-  - sumar casos de varios turnos, con su historial.
-  - Hoy el judge solo puntúa el SQL, la narrativa y el gráfico.
-- **Origen:** diferido en #12 y #10.
-- **Prioridad:** media.
+Pasó a #28 (2026-10-22).
 
 ### 2. Un gráfico descartado no se explica
 - **Qué pasa:** si el LLM propone un gráfico que `buildChart` descarta (`backend/src/chart.ts`, warning "Chart dropped" en `pipeline.ts`), la respuesta sale sin gráfico. Si la persona lo pidió, el texto no dice por qué. Pasa poco: la spec casi siempre encaja.
