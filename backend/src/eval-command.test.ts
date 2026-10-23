@@ -83,12 +83,16 @@ function run(overrides: Partial<EvalCommandOptions> = {}) {
   });
 }
 
+const sqlReply = (sql: string) => jsonResponse({ queries: [{ title: 'Items', sql }] });
+const insightsReply = (narrative: string) =>
+  jsonResponse({ sections: [{ narrative, chart: null }], suggestions: ['A?', 'B?', 'C?'] });
+
 describe('runEvalCommand', () => {
   it('judges each question, prints the lines and the summary, writes the report and returns 0', async () => {
-    const bad = jsonResponse({ sql: 'SELECT nope FROM items' });
+    const bad = sqlReply('SELECT nope FROM items');
     llm = fakeLlm(
-      jsonResponse({ sql: 'SELECT name, qty FROM items' }),
-      jsonResponse({ narrative: 'Ink leads.', suggestions: ['A?', 'B?', 'C?'], chart: null }),
+      sqlReply('SELECT name, qty FROM items'),
+      insightsReply('Ink leads.'),
       bad,
       bad,
       bad,
@@ -118,9 +122,8 @@ describe('runEvalCommand', () => {
       id: 'units',
       question: 'Units per item?',
       sql: 'SELECT name, qty FROM items',
-      rowCount: 2,
+      queries: [{ title: 'Items', sql: 'SELECT name, qty FROM items', rowCount: 2, chart: null }],
       narrative: 'Ink leads.',
-      chart: null,
       criteria: {
         sql: { status: 'judged', answer: score(2) },
         chart: { status: 'not_applicable' },
@@ -132,11 +135,46 @@ describe('runEvalCommand', () => {
     });
   });
 
+  it('writes every query of an answer with several results in the report', async () => {
+    writeGolden([{ id: 'both', question: 'Units per item and the small ones, separately?' }]);
+    llm = fakeLlm(
+      jsonResponse({
+        queries: [
+          { title: 'Units', sql: 'SELECT name, qty FROM items' },
+          { title: 'Small', sql: 'SELECT name, qty FROM items WHERE qty < 4' },
+        ],
+      }),
+      jsonResponse({
+        sections: [
+          { narrative: 'Ink leads.', chart: null },
+          { narrative: 'Only pen.', chart: null },
+        ],
+        suggestions: ['A?', 'B?', 'C?'],
+      }),
+    );
+    judge = fakeDecisions([score(2), score(2)]);
+
+    expect(await run()).toBe(0);
+
+    const [file] = readdirSync(path.join(dir, 'reports'));
+    const report = JSON.parse(readFileSync(path.join(dir, 'reports', file), 'utf8'));
+    expect(report.results[0]).toMatchObject({
+      id: 'both',
+      status: 'answered',
+      sql: 'SELECT name, qty FROM items\n\nSELECT name, qty FROM items WHERE qty < 4',
+      queries: [
+        { title: 'Units', sql: 'SELECT name, qty FROM items', rowCount: 2, chart: null },
+        { title: 'Small', sql: 'SELECT name, qty FROM items WHERE qty < 4', rowCount: 1 },
+      ],
+      narrative: '### Units\n\nInk leads.\n\n### Small\n\nOnly pen.',
+    });
+  });
+
   it('still returns 0 when questions fail, recording each error', async () => {
     llm = fakeLlm(
       new Error('500 Server error'),
-      jsonResponse({ sql: 'SELECT name FROM items' }),
-      jsonResponse({ narrative: 'Two.', suggestions: ['A?', 'B?', 'C?'], chart: null }),
+      sqlReply('SELECT name FROM items'),
+      insightsReply('Two.'),
     );
     judge = fakeDecisions(new Error('503 Busy'));
 
@@ -149,10 +187,10 @@ describe('runEvalCommand', () => {
 
   it('keeps going when the judge returns an answer of an unexpected shape', async () => {
     llm = fakeLlm(
-      jsonResponse({ sql: 'SELECT name FROM items' }),
-      jsonResponse({ narrative: 'Two.', suggestions: ['A?', 'B?', 'C?'], chart: null }),
-      jsonResponse({ sql: 'SELECT qty FROM items' }),
-      jsonResponse({ narrative: 'Eight.', suggestions: ['A?', 'B?', 'C?'], chart: null }),
+      sqlReply('SELECT name FROM items'),
+      insightsReply('Two.'),
+      sqlReply('SELECT qty FROM items'),
+      insightsReply('Eight.'),
     );
     const choice = { type: 'choice', name: null, choice: 'x', confidence: 1, probabilities: [] };
     judge = fakeDecisions([choice as DecisionAnswer, score(2)], [score(2), score(2)]);

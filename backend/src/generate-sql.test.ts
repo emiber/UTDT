@@ -5,7 +5,13 @@ import type { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { openDatabase, openReadOnlyDatabase } from './db.ts';
 import { MAX_ROWS } from './execute-sql.ts';
-import { generateSql, MAX_ATTEMPTS, type StepLogger } from './generate-sql.ts';
+import {
+  generateSql,
+  joinSql,
+  MAX_ATTEMPTS,
+  MAX_QUERIES,
+  type StepLogger,
+} from './generate-sql.ts';
 import { LlmError } from './llm.ts';
 import { createMetadataTables, insertMetadata } from './metadata.ts';
 import { fakeLlm, incompleteResponse, jsonResponse, refusalResponse } from './testing/fake-llm.ts';
@@ -16,8 +22,10 @@ let logs: Record<string, unknown>[];
 let log: StepLogger;
 
 const OK_SQL = 'SELECT name, qty FROM items ORDER BY id';
+const OTHER_SQL = 'SELECT id FROM items ORDER BY id';
 // Like the real output: the language comes first, and generateSql must ignore it.
-const sqlReply = (sql: unknown) => jsonResponse({ language: 'English', sql });
+const queriesReply = (...queries: unknown[]) => jsonResponse({ language: 'English', queries });
+const sqlReply = (sql: unknown, title = 'Items') => queriesReply({ title, sql });
 
 beforeEach(() => {
   tempDir = mkdtempSync(path.join(tmpdir(), 'utdt-gen-'));
@@ -62,10 +70,16 @@ describe('generateSql', () => {
     expect(result).toEqual({
       ok: true,
       sql: OK_SQL,
-      columns: ['name', 'qty'],
-      rows: [
-        ['pen', 3],
-        ['ink', 5],
+      queries: [
+        {
+          title: 'Items',
+          sql: OK_SQL,
+          columns: ['name', 'qty'],
+          rows: [
+            ['pen', 3],
+            ['ink', 5],
+          ],
+        },
       ],
     });
     expect(llm.requests).toHaveLength(1);
@@ -79,18 +93,35 @@ describe('generateSql', () => {
       name: 'sql_query',
       strict: true,
       schema: expect.objectContaining({
-        // The language goes first, so the column aliases follow it.
+        // The language goes first, so the titles and the column aliases follow it.
         properties: {
           language: expect.objectContaining({ type: 'string' }),
-          sql: expect.objectContaining({ type: 'string' }),
+          queries: expect.objectContaining({
+            type: 'array',
+            minItems: 1,
+            maxItems: MAX_QUERIES,
+            items: expect.objectContaining({
+              type: 'object',
+              properties: {
+                title: expect.objectContaining({ type: 'string' }),
+                sql: expect.objectContaining({ type: 'string' }),
+              },
+              required: ['title', 'sql'],
+              additionalProperties: false,
+            }),
+          }),
         },
-        required: ['language', 'sql'],
+        required: ['language', 'queries'],
         additionalProperties: false,
       }),
     });
     const { properties } = (request.text?.format as unknown as { schema: { properties: object } })
       .schema;
-    expect(Object.keys(properties)).toEqual(['language', 'sql']);
+    expect(Object.keys(properties)).toEqual(['language', 'queries']);
+  });
+
+  it('asks for at most five queries', () => {
+    expect(MAX_QUERIES).toBe(5);
   });
 
   it('treats an empty result as a success, without retrying', async () => {
@@ -99,8 +130,14 @@ describe('generateSql', () => {
     expect(await ask(llm)).toEqual({
       ok: true,
       sql: 'SELECT name FROM items WHERE qty > 100',
-      columns: ['name'],
-      rows: [],
+      queries: [
+        {
+          title: 'Items',
+          sql: 'SELECT name FROM items WHERE qty > 100',
+          columns: ['name'],
+          rows: [],
+        },
+      ],
     });
     expect(llm.requests).toHaveLength(1);
   });
@@ -170,6 +207,25 @@ describe('generateSql', () => {
     ['the model refuses', refusalResponse('No.'), 'refused'],
     ['the response is incomplete', incompleteResponse('max_output_tokens'), 'incomplete'],
     ['the output has no SQL string', sqlReply(42), 'no SQL string'],
+    ['the output has no queries', queriesReply(), 'no valid queries'],
+    [
+      `the output has more than ${MAX_QUERIES} queries`,
+      queriesReply(...Array.from({ length: MAX_QUERIES + 1 }, () => ({ title: 'T', sql: OK_SQL }))),
+      'no valid queries',
+    ],
+    [
+      'the queries are not a list',
+      jsonResponse({ language: 'English', queries: { title: 'T', sql: OK_SQL } }),
+      'no valid queries',
+    ],
+    ['a query has no title', queriesReply({ sql: OK_SQL }), 'no title'],
+    ['a query has a blank title', sqlReply(OK_SQL, '  '), 'no title'],
+    [
+      'one of two queries has no SQL',
+      queriesReply({ title: 'A', sql: OK_SQL }, { title: 'B' }),
+      'no SQL string',
+    ],
+    ['a query is null', queriesReply(null), 'no SQL string'],
   ])('throws without retrying when %s', async (_case, reply, message) => {
     const llm = fakeLlm(reply);
 
@@ -216,6 +272,7 @@ describe('generateSql', () => {
     expect(logs.at(-1)).toEqual({
       step: 'execute_sql',
       attempt: 1,
+      query: 1,
       durationMs: expect.any(Number),
       result: 'error',
     });
@@ -301,6 +358,17 @@ describe('generateSql', () => {
     expect(instructions).toContain(
       'exactly one read-only statement that starts with SELECT or WITH',
     );
+    expect(instructions).toContain('Write one query by default');
+    expect(instructions).toContain(
+      `Write several (at most ${MAX_QUERIES}, one per result) only when the message asks for separate results that don't fit in one table`,
+    );
+    expect(instructions).toContain(
+      'A comparison or a breakdown that fits in one table is still one query',
+    );
+    expect(instructions).toContain(
+      'Never join different lists into one table with UNION or UNION ALL: write one query for each',
+    );
+    expect(instructions).toContain('Give each query a short title in the language of the question');
     expect(instructions).toContain('Use only the tables and columns described in the schema');
     expect(instructions).toContain(`at most ${MAX_ROWS} rows`);
     expect(instructions).toContain('filter or aggregate');
@@ -311,7 +379,7 @@ describe('generateSql', () => {
     );
     expect(instructions).toContain('Keep the names unique, and never use SELECT *');
     expect(instructions).toContain(
-      'redo an earlier answer, write the latest query of the conversation again, changed only as asked',
+      'redo an earlier answer, write the latest queries of the conversation again (only the one it names, if it names one), changed only as asked',
     );
   });
 
@@ -323,9 +391,175 @@ describe('generateSql', () => {
     const duration = expect.any(Number);
     expect(logs).toEqual([
       { step: 'generate_sql', attempt: 1, durationMs: duration, result: 'ok' },
-      { step: 'execute_sql', attempt: 1, durationMs: duration, result: 'sql' },
+      { step: 'execute_sql', attempt: 1, query: 1, durationMs: duration, result: 'sql' },
       { step: 'generate_sql', attempt: 2, durationMs: duration, result: 'ok' },
-      { step: 'execute_sql', attempt: 2, durationMs: duration, result: 'ok' },
+      { step: 'execute_sql', attempt: 2, query: 1, durationMs: duration, result: 'ok' },
     ]);
+  });
+});
+
+describe('generateSql with several queries', () => {
+  const TWO = queriesReply({ title: 'Items', sql: OK_SQL }, { title: 'Ids', sql: OTHER_SQL });
+
+  it('runs every query and returns each result with its title, in order', async () => {
+    const llm = fakeLlm(TWO);
+
+    const result = await ask(llm);
+
+    expect(result).toEqual({
+      ok: true,
+      sql: `${OK_SQL}\n\n${OTHER_SQL}`,
+      queries: [
+        {
+          title: 'Items',
+          sql: OK_SQL,
+          columns: ['name', 'qty'],
+          rows: [
+            ['pen', 3],
+            ['ink', 5],
+          ],
+        },
+        { title: 'Ids', sql: OTHER_SQL, columns: ['id'], rows: [[1], [2]] },
+      ],
+    });
+    expect(llm.requests).toHaveLength(1);
+  });
+
+  it('applies the guards and the row limit to each query on its own', async () => {
+    const llm = fakeLlm(
+      queriesReply({ title: 'Ok', sql: OK_SQL }, { title: 'Big', sql: 'SELECT n FROM numbers' }),
+      TWO,
+    );
+
+    expect(await ask(llm)).toMatchObject({ ok: true });
+
+    expect(llm.requests[1].input).toContain(`more than ${MAX_ROWS} rows`);
+  });
+
+  it('writes the whole set again when one query fails, sending only the failed one', async () => {
+    const bad = 'SELECT nope FROM items';
+    const llm = fakeLlm(
+      queriesReply({ title: 'Items', sql: OK_SQL }, { title: 'Bad', sql: bad }),
+      TWO,
+    );
+
+    const result = await ask(llm);
+
+    expect(result).toMatchObject({ ok: true, sql: `${OK_SQL}\n\n${OTHER_SQL}` });
+    expect(llm.requests).toHaveLength(2);
+    const retry = String(llm.requests[1].input);
+    expect(retry).toContain('Write the queries again, all of them');
+    expect(retry).toMatch(/Attempt 1:\nSQL: SELECT nope FROM items\nError: no such column: nope$/);
+    expect(retry).not.toContain(`SQL: ${OK_SQL}`);
+  });
+
+  it('sends every failed query of an attempt, in order', async () => {
+    const llm = fakeLlm(
+      queriesReply(
+        { title: 'A', sql: 'SELECT first FROM items' },
+        { title: 'B', sql: 'DELETE FROM items' },
+      ),
+      TWO,
+    );
+
+    await ask(llm);
+
+    expect(String(llm.requests[1].input)).toMatch(
+      /Attempt 1:\nSQL: SELECT first FROM items\nError: no such column: first\nSQL: DELETE FROM items\nError: [^\n]*SELECT or WITH[^\n]*$/,
+    );
+  });
+
+  it('runs every query of an attempt even after one fails', async () => {
+    const llm = fakeLlm(
+      queriesReply(
+        { title: 'A', sql: 'SELECT nope FROM items' },
+        { title: 'B', sql: OK_SQL },
+        { title: 'C', sql: 'SELECT also_nope FROM items' },
+      ),
+      TWO,
+    );
+
+    await ask(llm);
+
+    const executed = logs.filter((l) => l.step === 'execute_sql' && l.attempt === 1);
+    expect(executed.map((l) => [l.query, l.result])).toEqual([
+      [1, 'sql'],
+      [2, 'ok'],
+      [3, 'sql'],
+    ]);
+    const retry = String(llm.requests[1].input);
+    expect(retry).toContain('Error: no such column: nope');
+    expect(retry).toContain('Error: no such column: also_nope');
+  });
+
+  it(`returns the first failed query's error after ${MAX_ATTEMPTS} attempts, with every query's SQL`, async () => {
+    const attempt = (n: number) =>
+      queriesReply(
+        { title: 'Ok', sql: OK_SQL },
+        { title: 'First', sql: `SELECT first${n} FROM items` },
+        { title: 'Second', sql: `SELECT second${n} FROM items` },
+      );
+    const llm = fakeLlm(attempt(1), attempt(2), attempt(3));
+
+    const result = await ask(llm);
+
+    expect(result).toEqual({
+      ok: false,
+      sql: `${OK_SQL}\n\nSELECT first3 FROM items\n\nSELECT second3 FROM items`,
+      kind: 'sql',
+      message: 'no such column: first3',
+    });
+    expect(llm.requests).toHaveLength(MAX_ATTEMPTS);
+  });
+
+  it('gives the kind of the first failed query', async () => {
+    const attempt = queriesReply(
+      { title: 'Bad', sql: 'DELETE FROM items' },
+      { title: 'Big', sql: 'SELECT n FROM numbers' },
+    );
+    const llm = fakeLlm(attempt, attempt, attempt);
+
+    expect(await ask(llm)).toMatchObject({ ok: false, kind: 'guard' });
+  });
+
+  it('calls onSql with every query joined, before running them', async () => {
+    const seen: string[] = [];
+    const llm = fakeLlm(TWO);
+
+    await generateSql({ question: 'Both?', db, llm, log, onSql: (sql) => seen.push(sql) });
+
+    expect(seen).toEqual([`${OK_SQL}\n\n${OTHER_SQL}`]);
+  });
+
+  it('logs one execution per query, numbered', async () => {
+    await ask(fakeLlm(TWO));
+
+    const duration = expect.any(Number);
+    expect(logs).toEqual([
+      { step: 'generate_sql', attempt: 1, durationMs: duration, result: 'ok' },
+      { step: 'execute_sql', attempt: 1, query: 1, durationMs: duration, result: 'ok' },
+      { step: 'execute_sql', attempt: 1, query: 2, durationMs: duration, result: 'ok' },
+    ]);
+  });
+
+  it('accepts exactly the most queries allowed', async () => {
+    const queries = Array.from({ length: MAX_QUERIES }, (_, i) => ({
+      title: `Part ${i + 1}`,
+      sql: OK_SQL,
+    }));
+
+    const result = await ask(fakeLlm(queriesReply(...queries)));
+
+    expect(result.ok && result.queries.map((q) => q.title)).toEqual(queries.map((q) => q.title));
+  });
+});
+
+describe('joinSql', () => {
+  it('is the SQL itself for one query', () => {
+    expect(joinSql([{ sql: '\n  SELECT 1;  ' }])).toBe('\n  SELECT 1;  ');
+  });
+
+  it('puts a blank line between queries', () => {
+    expect(joinSql([{ sql: 'SELECT 1' }, { sql: 'SELECT 2' }])).toBe('SELECT 1\n\nSELECT 2');
   });
 });

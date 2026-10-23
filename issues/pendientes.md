@@ -24,9 +24,9 @@ Pasó a #28 (2026-10-22).
 - **Prioridad:** baja. Es un caso raro: cada llamada ya se corta a los 30 s.
 
 ### 4. El tamaño total de una respuesta solo lo acota el tope de filas
-- **Qué pasa:** cada valor tiene un tope de 1.000.000 de bytes (#15), pero 500 filas con varias columnas grandes todavía pueden sumar cientos de MB.
-- **Idea:** llevar la cuenta de los bytes mientras `executeSql` lee las filas, y cortar con un error `row_limit` o uno nuevo.
-- **Origen:** #15, que lo dejó fuera de alcance.
+- **Qué pasa:** cada valor tiene un tope de 1.000.000 de bytes (#15), pero 500 filas con varias columnas grandes todavía pueden sumar cientos de MB. Desde #30 el tope de filas es por consulta y un turno puede traer hasta 5, o sea 2.500 filas, y hasta 15 consultas de `node:sqlite` seguidas si fallan los 3 intentos.
+- **Idea:** llevar la cuenta de los bytes mientras `executeSql` lee las filas, y cortar con un error `row_limit` o uno nuevo. Si se hiciera, convendría que la cuenta sea del turno entero y no de cada consulta.
+- **Origen:** #15, que lo dejó fuera de alcance. #30 lo agrandó un poco.
 - **Prioridad:** baja. El dataset demo no se acerca.
 
 ### 5. El timeout de OpenAI es fijo

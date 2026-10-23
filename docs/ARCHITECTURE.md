@@ -141,17 +141,30 @@ Each step is its own issue. The design:
 3. **Generate SQL** (Responses API, Structured Outputs) from the question, the schema
    context and the last turns of the conversation (`generateSql` in
    `backend/src/generate-sql.ts`; see *Multi-turn*). The output is a strict
-   `{ language, sql }` object (see *Language* in step 5); only `sql` goes on to step 4, as
-   is. It runs a generate → execute → retry loop: on a
-   returned error, the next request carries every failed attempt of the question (its SQL
-   and message), up to **3 attempts in total**; after that the last error is returned.
-   OpenAI failures, refusals and incomplete responses are thrown, not retried (the SDK
-   already retries transient ones). Each attempt logs one line per step with its duration
-   and result. The prompt asks for a short, readable alias for every result column, in the
-   language of the question (`AS "Precio unitario"`, never `SELECT *`): the table headers,
-   the chart labels and the narrative all use those names. A follow-up that only asks to
-   show, chart, sort or redo an earlier answer gets the latest query of the conversation
-   again, changed only as asked.
+   `{ language, queries }` object (see *Language* in step 5), where `queries` has 1 to **5**
+   items, each `{ title, sql }`; only the queries go on to step 4, as they are.
+   - **Usually one query.** The prompt asks for several only when the message asks for
+     separate results that don't fit in one table ("the top 5 customers and, separately,
+     the top 3 products"), one query per result. A comparison or a breakdown that fits in
+     one table is still one query, and different lists are never joined into one table
+     with `UNION`: that is what the bot did before it could write several queries. Each
+     title is short and in the language of the question.
+   - **The retry loop:** generate → execute → retry. Every query of an attempt runs through
+     step 4, so the next request hears about all the ones that failed. If any query
+     returns an error, the whole set is written again, with the SQL and message of every
+     query that failed in every failed attempt, up to **3 attempts in total**; after that
+     the first failed query of the last attempt is returned (its `kind` and message; the
+     SQL is every query's). There are no partial answers.
+   - OpenAI failures, refusals, incomplete responses and a malformed set (no queries,
+     more than 5, one without SQL or without a title) are thrown, not retried (the SDK
+     already retries transient ones). Each attempt logs one line per step with its
+     duration and result, with one numbered `execute_sql` line per query.
+
+   The prompt asks for a short, readable alias for every result column, in the language of
+   the question (`AS "Precio unitario"`, never `SELECT *`): the table headers, the chart
+   labels and the narrative all use those names. A follow-up that only asks to show,
+   chart, sort or redo an earlier answer gets the latest queries of the conversation again
+   (only the one it names, if it names one), changed only as asked.
 4. **Guard and execute** (`executeSql` in `backend/src/execute-sql.ts`). Safety is layered:
    - the query runs on a **read-only** connection — SQLite itself rejects any write;
    - a cheap check accepts exactly one statement starting with `SELECT` or `WITH`
@@ -169,7 +182,9 @@ Each step is its own issue. The design:
      returns `NULL` instead). Without it, a value of hundreds of MB (e.g.
      `hex(zeroblob(300000000))`) stays under SQLite's own 1 GB limit and crashes the Node
      process. The cap is per value: the total size of a response is bounded only by the
-     row cap.
+     row cap, which is per query: a turn can come back with up to 5 × 500 rows.
+
+   Every query of a turn goes through these checks on its own.
 
    Rows come back as lists aligned with the column names, so duplicate names keep both
    values. Errors a rewritten query can fix are **returned** with a `kind` (`guard`,
@@ -177,19 +192,29 @@ Each step is its own issue. The design:
    locked, corrupt or non-database file, a hot journal, I/O errors) is thrown. On a
    returned error the LLM retries with the message as feedback (step 3).
 5. **Build the insights** (Responses API, Structured Outputs; `buildInsights` in
-   `backend/src/insights.ts`). The LLM receives the question, the SQL, the column list,
-   the first 50 rows, the total row count and the earlier turns of the conversation (see
-   *Multi-turn*), and returns **only** (after a leading `language` field, see below) the
-   narrative (markdown), exactly 3 follow-up
-   suggestions, in the language of the question, and a chart spec or `null` (`type`:
-   bar/line/pie/doughnut, `x` column, `series` columns, title). The prompt asks for `null`
-   when the result can't be charted or a chart adds nothing (e.g. one or two rows), and for
-   a chart whenever the question asks for one and the result can be charted; when it
-   can't, the narrative says so. The **backend** builds the table and the chart data from
-   the real result rows — the LLM never re-types data, so it can't invent numbers, and it
-   saves tokens. With 0 rows there's no table and no chart, and a single value (1 row × 1
+   `backend/src/insights.ts`). The LLM receives the question, the earlier turns of the
+   conversation (see *Multi-turn*) and, for each result, its SQL, the column list, the
+   first 50 rows and the total row count (plus its title when there are several results).
+   It returns **only** (after a leading `language` field, see below) a **section per
+   result**, in the same order — a narrative (markdown) and a chart spec or `null`
+   (`type`: bar/line/pie/doughnut, `x` column, `series` columns, title) — and exactly 3
+   follow-up suggestions for the whole answer, all in the language of the question. The
+   schema fixes the number of sections to the number of results, and the code checks it
+   again: a different number is an `LlmError`. The prompt asks for `null` when a result
+   can't be charted or a chart adds nothing (e.g. one or two rows), and for a chart
+   whenever the question asks for one and the result can be charted; when it can't, the
+   narrative says so. The **backend** builds the table and the chart data from the real
+   result rows — the LLM never re-types data, so it can't invent numbers, and it saves
+   tokens. With 0 rows there's no table and no chart, and a single value (1 row × 1
    column) goes without a table: the narrative already says it. So an answer is always
    text, plus a table and a chart when they add something.
+
+   **Several results:** each query's result is a section of the answer, in order: a text
+   block, its table and its chart, all built from that result's own columns and rows. A
+   chart that doesn't fit is dropped alone, and a section with no rows keeps only its text.
+   With two or more results each text block starts with `### <title>` (the title on one
+   line); with one result there's no heading, so those answers are as they always were.
+   The frontend draws the blocks in order, so it needed no change.
 
    `buildChart` (`backend/src/chart.ts`) checks the spec against the result: the result has
    rows; `x` and each series name exactly one result column (a repeated name doesn't);
@@ -201,14 +226,18 @@ Each step is its own issue. The design:
 
    **Language:** the SQL (step 3), the insights and the text-only reply (step 1) each start
    their output with a `language` field, the language of the current message, and write
-   the rest in it: the column aliases, the narrative, the suggestions, the chart title. The
+   the rest in it: the query titles, the column aliases, the narratives, the suggestions,
+   the chart titles. The
    value isn't used. Without it, earlier turns in another language pulled the answer into
    theirs: in a Spanish conversation, an English question got Spanish column names and a
    Spanish answer, even with a prompt rule against it.
 6. **Persist the turn** in `app.db` (question, SQL, narrative, response, error, timing,
    classification). Failed turns are saved too, so the turns are the query log. An older
    `app.db` gets the `classification` column and the `llm_calls` table added at startup,
-   keeping its turns.
+   keeping its turns. A turn with several results keeps every query's SQL in `sql`, one
+   after the other with a blank line between them, and every text block (headings
+   included) in `narrative`; the history sends both to the next turn, so a follow-up sees
+   the whole answer. The schema doesn't change.
 
    With the turn, in the same transaction, go its calls to the LLM, one row each in
    `llm_calls`: `turn_id`, `step` (`classify`, `sql`, or `answer` for the insights or the
@@ -230,8 +259,9 @@ Each step is its own issue. The design:
 Steps 1–5 run in `answerQuestion` (`backend/src/pipeline.ts`), with no HTTP or `app.db`,
 so the offline evaluation can reuse it. Its result is a data answer (`kind: 'data'`), a
 text reply (`kind: 'reply'`) or the reason every SQL attempt failed, each with the
-classification. A data answer also carries the checked chart spec (or `null`), which the
-HTTP response leaves out. When every SQL attempt fails it returns why
+classification. A data answer also carries each result with its title, SQL, columns, rows
+and checked chart spec (or `null`), which the HTTP response leaves out. When every SQL
+attempt fails it returns why
 (without insights); anything it throws is a `PipelineError` whose `cause` is the original
 error (an `LlmError` for OpenAI failures) and which keeps the final SQL, if any.
 
@@ -251,8 +281,8 @@ type Block =
 ```
 
 Table rows are lists aligned with `columns`, in `SELECT` order, so repeated column names
-keep their values; `NULL` is `null`. The chart block comes last, after the table. Its
-`labels` and `datasets` are Chart.js's `data` shape; the frontend adds the colors.
+keep their values; `NULL` is `null`. A result's chart block comes right after its table.
+Its `labels` and `datasets` are Chart.js's `data` shape; the frontend adds the colors.
 
 **Chat endpoint** (`POST /api/chat`, `backend/src/chat.ts`):
 
@@ -262,8 +292,10 @@ keep their values; `NULL` is `null`. The chart block comes last, after the table
   hand. An unknown `conversationId` is a `404`. Neither calls OpenAI or saves anything.
 - Without a `conversationId` it starts a new conversation (the backend makes the id).
 - `200`: `blocks` = `[text, table]` (`[text]` with 0 rows or a single value), plus a
-  `chart` block last when the LLM's spec fits the result, and 3 `suggestions`. A message
-  that isn't a data question: `[text]` and 3 suggestions. When every SQL attempt fails:
+  `chart` block after the table when the LLM's spec fits the result, and 3 `suggestions`.
+  A message that asks for separate results repeats that group once per result, in order:
+  `[text, table, chart, text, table]` for two. A message that isn't a data question:
+  `[text]` and 3 suggestions. When every SQL attempt fails:
   `200` with one fixed English `text` block and no suggestions.
 - `502` when an OpenAI call fails (API, network, refusal, incomplete output) and `500` on
   an unexpected error, both with a generic message in Fastify's error format; the detail
@@ -273,7 +305,8 @@ keep their values; `NULL` is `null`. The chart block comes last, after the table
   and saves nothing: those are the only failures after body validation that leave no turn.
 
 **Multi-turn:** each conversation keeps its turns in `app.db`; the last 5 turns
-(question, SQL, narrative — not the data rows, chart or suggestions) go to the
+(question, SQL, narrative — every query and text of the turn, but not the data rows, chart
+or suggestions) go to the
 classification, SQL, insights and reply steps, so follow-ups like "and for last year?"
 work.
 
@@ -341,14 +374,18 @@ deterministic.
   `OPENAI_DECISIONS_MODEL`, the golden file and `data/data.db`. A problem prints why and
   exits 1, with no report.
 - **The judge** gets one request per answered question, with the answer as content (never
-  as instructions): the question, the schema context, the SQL, every result row, the
-  narrative and the chart spec. Three criteria:
+  as instructions): the question, the schema context and, for each query of the answer
+  (under its title when there are several), its SQL, every result row, its chart spec and
+  its narrative, without the `### title` heading the backend adds: the judge scored a
+  correct narrative lower with those headings in it. An answer with several results is
+  judged as a whole, in one request, with the same three criteria:
   - *the SQL answers the question* — a `score` on 3 levels (does not answer / partially /
-    fully), 0 to 2;
+    fully), 0 to 2. A question that asks for separate results needs a query for each: the
+    rubric says different lists mixed in one table don't count as answering it;
   - *the narrative is faithful to the data* — a `score` on 3 levels (contradicts or invents
     figures / minor inaccuracies / fully faithful), 0 to 2;
-  - *the chart fits* — a `predicate` (a probability), asked only when there's a chart
-    spec; otherwise it's *not applicable*.
+  - *the chart fits* — a `predicate` (a probability), asked only when at least one result
+    has a chart spec; otherwise it's *not applicable*.
 - A question the pipeline can't answer (every SQL attempt failed) or classifies as not a
   data question (reason: `classified as <label>`) is *without an answer*, with the reason,
   and isn't judged. A refused criterion is *refused*. A pipeline or judge failure is
@@ -357,7 +394,8 @@ deterministic.
   values only (scores over 2, the chart as an average probability) and the counts. No
   verdict, no thresholds: it exits 0 whenever the run finishes. The JSON report goes to
   `data/eval/eval-<timestamp>.json` (gitignored), with the models used, the summary, and
-  per question the SQL, row count, narrative, chart spec and each criterion's answer as the
+  per question the SQL (every query's, one after the other), the narrative, each query's
+  title, SQL, row count and chart spec (`queries`), and each criterion's answer as the
   Decisions API returned it.
 
 ### Frontend (Vue 3)

@@ -14,8 +14,19 @@ import {
   type FakeDecisions,
 } from './testing/fake-llm.ts';
 
-const INSIGHTS = { narrative: 'Ink sold the most.', suggestions: ['A?', 'B?', 'C?'] };
-const sqlReply = (sql: string) => jsonResponse({ sql });
+const SUGGESTIONS = ['A?', 'B?', 'C?'];
+const INSIGHTS = {
+  sections: [{ narrative: 'Ink sold the most.', chart: null }],
+  suggestions: SUGGESTIONS,
+};
+// What the LLM answers for several results: a section each, in order.
+const sectionsReply = (...sections: { narrative: string; chart?: unknown }[]) =>
+  jsonResponse({
+    sections: sections.map(({ narrative, chart = null }) => ({ narrative, chart })),
+    suggestions: SUGGESTIONS,
+  });
+const queriesReply = (...queries: { title: string; sql: string }[]) => jsonResponse({ queries });
+const sqlReply = (sql: string) => queriesReply({ title: 'Items', sql });
 
 let dataDb: DatabaseSync;
 let logs: Record<string, unknown>[];
@@ -56,14 +67,21 @@ describe('answerQuestion', () => {
       kind: 'data',
       classification: 'data_question',
       sql: 'SELECT name, qty FROM items ORDER BY id',
-      columns: ['name', 'qty'],
-      rows: [
-        ['pen', 3],
-        ['ink', 5],
-      ],
       narrative: 'Ink sold the most.',
-      suggestions: ['A?', 'B?', 'C?'],
-      chart: null,
+      results: [
+        {
+          title: 'Items',
+          sql: 'SELECT name, qty FROM items ORDER BY id',
+          columns: ['name', 'qty'],
+          rows: [
+            ['pen', 3],
+            ['ink', 5],
+          ],
+          narrative: 'Ink sold the most.',
+          chart: null,
+        },
+      ],
+      suggestions: SUGGESTIONS,
       blocks: [
         { type: 'text', markdown: 'Ink sold the most.' },
         {
@@ -172,7 +190,7 @@ describe('answerQuestion', () => {
     const SQL = 'SELECT name, qty FROM items ORDER BY id';
     const SPEC = { type: 'bar', x: 'name', series: ['qty'], title: 'Units' };
     const withChart = (chart: unknown, sql = SQL) =>
-      fakeLlm(sqlReply(sql), jsonResponse({ ...INSIGHTS, chart }));
+      fakeLlm(sqlReply(sql), sectionsReply({ narrative: 'Ink sold the most.', chart }));
 
     it('adds the chart block after the table and returns the spec', async () => {
       const result = await ask(withChart(SPEC));
@@ -185,7 +203,7 @@ describe('answerQuestion', () => {
         labels: ['pen', 'ink'],
         datasets: [{ label: 'qty', data: [3, 5] }],
       });
-      expect(result.ok && result.kind === 'data' && result.chart).toEqual(SPEC);
+      expect(result.ok && result.kind === 'data' && result.results[0].chart).toEqual(SPEC);
       expect(warnings).toEqual([]);
     });
 
@@ -193,7 +211,7 @@ describe('answerQuestion', () => {
       const result = await ask(withChart(null));
 
       expect(result.ok && result.blocks.map((b) => b.type)).toEqual(['text', 'table']);
-      expect(result.ok && result.kind === 'data' && result.chart).toBeNull();
+      expect(result.ok && result.kind === 'data' && result.results[0].chart).toBeNull();
       expect(warnings).toEqual([]);
     });
 
@@ -201,7 +219,7 @@ describe('answerQuestion', () => {
       const result = await ask(withChart({ ...SPEC, series: ['nope'] }));
 
       expect(result.ok && result.blocks.map((b) => b.type)).toEqual(['text', 'table']);
-      expect(result.ok && result.kind === 'data' && result.chart).toBeNull();
+      expect(result.ok && result.kind === 'data' && result.results[0].chart).toBeNull();
       expect(warnings).toEqual([{ reason: 'column "nope" is not in the result' }]);
     });
 
@@ -405,5 +423,253 @@ describe('answerQuestion: LLM calls', () => {
       'sql 1 fake-model 100 20',
       'answer 1 fake-model null null',
     ]);
+  });
+});
+
+describe('answerQuestion: several results', () => {
+  const CUSTOMERS = 'SELECT name, qty FROM items ORDER BY id';
+  const PRODUCTS = 'SELECT name FROM items ORDER BY id';
+  const TWO = () =>
+    queriesReply({ title: 'Top items', sql: CUSTOMERS }, { title: 'Names', sql: PRODUCTS });
+  const SPEC = { type: 'bar', x: 'name', series: ['qty'], title: 'Units' };
+  const BAD_SPEC = { ...SPEC, series: ['nope'] };
+
+  it('answers with a section per result: heading and text, table, and chart', async () => {
+    const llm = fakeLlm(
+      TWO(),
+      sectionsReply({ narrative: 'Ink leads.', chart: SPEC }, { narrative: 'Two names.' }),
+    );
+
+    const result = await ask(llm);
+
+    expect(result.ok && result.blocks.map((b) => b.type)).toEqual([
+      'text',
+      'table',
+      'chart',
+      'text',
+      'table',
+    ]);
+    expect(result.ok && result.blocks[0]).toEqual({
+      type: 'text',
+      markdown: '### Top items\n\nInk leads.',
+    });
+    expect(result.ok && result.blocks[1]).toMatchObject({
+      type: 'table',
+      columns: ['name', 'qty'],
+    });
+    expect(result.ok && result.blocks[3]).toEqual({
+      type: 'text',
+      markdown: '### Names\n\nTwo names.',
+    });
+    expect(result.ok && result.blocks[4]).toMatchObject({ type: 'table', columns: ['name'] });
+  });
+
+  it('returns every result, the joined SQL and text for the turn, and the suggestions', async () => {
+    const llm = fakeLlm(
+      TWO(),
+      sectionsReply({ narrative: 'Ink leads.', chart: SPEC }, { narrative: 'Two names.' }),
+    );
+
+    const result = await ask(llm);
+
+    expect(result).toMatchObject({
+      ok: true,
+      kind: 'data',
+      sql: `${CUSTOMERS}\n\n${PRODUCTS}`,
+      narrative: '### Top items\n\nInk leads.\n\n### Names\n\nTwo names.',
+      suggestions: SUGGESTIONS,
+    });
+    expect(result.ok && result.kind === 'data' && result.results).toEqual([
+      {
+        title: 'Top items',
+        sql: CUSTOMERS,
+        columns: ['name', 'qty'],
+        rows: [
+          ['pen', 3],
+          ['ink', 5],
+        ],
+        narrative: 'Ink leads.',
+        chart: SPEC,
+      },
+      {
+        title: 'Names',
+        sql: PRODUCTS,
+        columns: ['name'],
+        rows: [['pen'], ['ink']],
+        narrative: 'Two names.',
+        chart: null,
+      },
+    ]);
+  });
+
+  it('checks each chart against its own result, dropping a bad one alone', async () => {
+    const llm = fakeLlm(
+      queriesReply({ title: 'First', sql: CUSTOMERS }, { title: 'Second', sql: CUSTOMERS }),
+      sectionsReply({ narrative: 'A.', chart: BAD_SPEC }, { narrative: 'B.', chart: SPEC }),
+    );
+
+    const result = await ask(llm);
+
+    expect(warnings).toEqual([{ reason: 'column "nope" is not in the result' }]);
+    expect(result.ok && result.blocks.map((b) => b.type)).toEqual([
+      'text',
+      'table',
+      'text',
+      'table',
+      'chart',
+    ]);
+    expect(result.ok && result.kind === 'data' && result.results.map((r) => r.chart)).toEqual([
+      null,
+      SPEC,
+    ]);
+  });
+
+  it('uses the columns of the right result for each chart', async () => {
+    // `qty` is a column of the first result only: the same spec fits one and not the other.
+    const llm = fakeLlm(
+      TWO(),
+      sectionsReply(
+        { narrative: 'A.', chart: SPEC },
+        {
+          narrative: 'B.',
+          chart: SPEC,
+        },
+      ),
+    );
+
+    const result = await ask(llm);
+
+    expect(result.ok && result.blocks.filter((b) => b.type === 'chart')).toHaveLength(1);
+    expect(warnings).toEqual([{ reason: 'column "qty" is not in the result' }]);
+  });
+
+  it('keeps the other sections when one result has no rows', async () => {
+    const llm = fakeLlm(
+      queriesReply(
+        { title: 'Nothing', sql: 'SELECT name, qty FROM items WHERE qty > 99' },
+        { title: 'Names', sql: PRODUCTS },
+      ),
+      sectionsReply({ narrative: 'No results.', chart: SPEC }, { narrative: 'Two names.' }),
+    );
+
+    const result = await ask(llm);
+
+    expect(result.ok && result.blocks.map((b) => b.type)).toEqual(['text', 'text', 'table']);
+    expect(result.ok && result.blocks[0]).toEqual({
+      type: 'text',
+      markdown: '### Nothing\n\nNo results.',
+    });
+    expect(warnings).toEqual([{ reason: 'the result has no rows' }]);
+  });
+
+  it('shows a single-value result without a table, in its own section', async () => {
+    const llm = fakeLlm(
+      queriesReply(
+        { title: 'Count', sql: 'SELECT count(*) AS n FROM items' },
+        { title: 'Names', sql: PRODUCTS },
+      ),
+      sectionsReply({ narrative: 'There are 2.' }, { narrative: 'Two names.' }),
+    );
+
+    const result = await ask(llm);
+
+    expect(result.ok && result.blocks.map((b) => b.type)).toEqual(['text', 'text', 'table']);
+  });
+
+  it('writes a title on one line, so it stays a heading', async () => {
+    const llm = fakeLlm(
+      queriesReply(
+        { title: 'Top\n  items\r\n of all', sql: CUSTOMERS },
+        { title: ' Names ', sql: PRODUCTS },
+      ),
+      sectionsReply({ narrative: 'A.' }, { narrative: 'B.' }),
+    );
+
+    const result = await ask(llm);
+
+    expect(result.ok && result.blocks[0]).toEqual({
+      type: 'text',
+      markdown: '### Top items of all\n\nA.',
+    });
+    expect(result.ok && result.blocks[2]).toEqual({ type: 'text', markdown: '### Names\n\nB.' });
+  });
+
+  it('puts no heading on a single result', async () => {
+    const llm = fakeLlm(
+      queriesReply({ title: 'Top items', sql: CUSTOMERS }),
+      sectionsReply({ narrative: 'Ink leads.' }),
+    );
+
+    const result = await ask(llm);
+
+    expect(result.ok && result.blocks[0]).toEqual({ type: 'text', markdown: 'Ink leads.' });
+    expect(result.ok && result.kind === 'data' && result.narrative).toBe('Ink leads.');
+  });
+
+  it('gives the insights every result, with its title', async () => {
+    const llm = fakeLlm(TWO(), sectionsReply({ narrative: 'A.' }, { narrative: 'B.' }));
+
+    await ask(llm);
+
+    expect(llm.requests).toHaveLength(2);
+    const prompt = String(llm.requests[1].input);
+    expect(prompt).toContain('Result 1: Top items');
+    expect(prompt).toContain('Result 2: Names');
+  });
+
+  it('makes the same calls as for a single result', async () => {
+    const calls: TurnLlmCall[] = [];
+    const llm = fakeLlm(TWO(), sectionsReply({ narrative: 'A.' }, { narrative: 'B.' }));
+
+    await answerQuestion({
+      question: 'Both?',
+      dataDb,
+      llm,
+      decisions,
+      log,
+      onLlmCall: (call) => calls.push(call),
+    });
+
+    expect(calls.map(({ step, attempt }) => `${step} ${attempt}`)).toEqual([
+      'classify 1',
+      'sql 1',
+      'answer 1',
+    ]);
+  });
+
+  it('tells why when every attempt fails on one of the queries', async () => {
+    const attempt = (n: number) =>
+      queriesReply(
+        { title: 'Ok', sql: PRODUCTS },
+        { title: 'Bad', sql: `SELECT bad${n} FROM items` },
+      );
+    const llm = fakeLlm(attempt(1), attempt(2), attempt(3));
+
+    expect(await ask(llm)).toEqual({
+      ok: false,
+      classification: 'data_question',
+      sql: `${PRODUCTS}\n\nSELECT bad3 FROM items`,
+      kind: 'sql',
+      message: 'no such column: bad3',
+    });
+    expect(llm.requests).toHaveLength(3);
+  });
+
+  it('throws with every query joined when the insights fail', async () => {
+    const llm = fakeLlm(TWO(), refusalResponse('No.'));
+
+    const error = await rejection(ask(llm));
+
+    expect(error.cause).toBeInstanceOf(LlmError);
+    expect(error.sql).toBe(`${CUSTOMERS}\n\n${PRODUCTS}`);
+  });
+
+  it('throws when the insights give fewer sections than results', async () => {
+    const llm = fakeLlm(TWO(), sectionsReply({ narrative: 'Only one.' }));
+
+    const error = await rejection(ask(llm));
+
+    expect(error.cause).toBeInstanceOf(LlmError);
+    expect(error.cause).toMatchObject({ message: 'The model returned no valid insights.' });
   });
 });

@@ -16,8 +16,16 @@ import {
 
 const ACCESS_KEY = 'test-access-key';
 const AUTH = { authorization: `Bearer ${ACCESS_KEY}` };
-const INSIGHTS = { narrative: 'Ink leads with 999 units.', suggestions: ['A?', 'B?', 'C?'] };
-const sqlReply = (sql: string) => jsonResponse({ sql });
+const SUGGESTIONS = ['A?', 'B?', 'C?'];
+const INSIGHTS = withChart(null);
+function withChart(chart: unknown) {
+  return {
+    sections: [{ narrative: 'Ink leads with 999 units.', chart }],
+    suggestions: SUGGESTIONS,
+  };
+}
+const queriesReply = (...queries: { title: string; sql: string }[]) => jsonResponse({ queries });
+const sqlReply = (sql: string) => queriesReply({ title: 'Items', sql });
 
 let db: DatabaseSync;
 let dataDb: DatabaseSync;
@@ -184,7 +192,7 @@ describe('POST /api/chat', () => {
     const chart = { type: 'bar', x: 'name', series: ['qty', 'id'], title: 'Units per item' };
     // A repeated x value stays a separate point: nothing is grouped.
     const sql = "SELECT name, qty, id FROM items UNION ALL SELECT 'pen', 1, 9";
-    start(sqlReply(sql), jsonResponse({ ...INSIGHTS, chart }));
+    start(sqlReply(sql), jsonResponse(withChart(chart)));
 
     const body = (await chat({ question: 'Units per item?' })).json();
 
@@ -207,7 +215,7 @@ describe('POST /api/chat', () => {
     ['a text series', { type: 'bar', x: 'qty', series: ['name'], title: 't' }],
     ['a pie with two series', { type: 'pie', x: 'name', series: ['qty', 'id'], title: 't' }],
   ])('answers 200 without a chart for %s, with one insights call', async (_case, chart) => {
-    start(sqlReply('SELECT id, name, qty FROM items'), jsonResponse({ ...INSIGHTS, chart }));
+    start(sqlReply('SELECT id, name, qty FROM items'), jsonResponse(withChart(chart)));
 
     const res = await chat({ question: 'Units?' });
 
@@ -220,7 +228,7 @@ describe('POST /api/chat', () => {
   it('logs a dropped chart as a warning with its reason, not the rows', async () => {
     const lines: string[] = [];
     const chart = { type: 'bar', x: 'day', series: ['qty'], title: 't' };
-    llm = fakeLlm(sqlReply('SELECT name, qty FROM items'), jsonResponse({ ...INSIGHTS, chart }));
+    llm = fakeLlm(sqlReply('SELECT name, qty FROM items'), jsonResponse(withChart(chart)));
     app = buildApp({
       db,
       dataDb,
@@ -244,10 +252,7 @@ describe('POST /api/chat', () => {
 
   it('answers an empty result with the text block only, even with a chart spec', async () => {
     const chart = { type: 'bar', x: 'name', series: ['qty'], title: 't' };
-    start(
-      sqlReply('SELECT name, qty FROM items WHERE qty > 99'),
-      jsonResponse({ ...INSIGHTS, chart }),
-    );
+    start(sqlReply('SELECT name, qty FROM items WHERE qty > 99'), jsonResponse(withChart(chart)));
 
     const body = (await chat({ question: 'Big items?' })).json();
 
@@ -260,10 +265,7 @@ describe('POST /api/chat', () => {
       start(
         sqlReply('SELECT name, qty FROM items ORDER BY id'),
         // A chart too, so the sentinel is in the first turn's saved table and chart blocks.
-        jsonResponse({
-          ...INSIGHTS,
-          chart: { type: 'bar', x: 'name', series: ['qty'], title: 't' },
-        }),
+        jsonResponse(withChart({ type: 'bar', x: 'name', series: ['qty'], title: 't' })),
         // The second turn's own rows leave the sentinel out: only the first turn has it.
         sqlReply('SELECT name FROM items WHERE qty < 10'),
         jsonResponse(INSIGHTS),
@@ -535,5 +537,107 @@ describe('POST /api/chat', () => {
     start();
 
     expect(turns()).toHaveLength(1);
+  });
+});
+
+describe('POST /api/chat: separate results', () => {
+  const FIRST = 'SELECT name, qty FROM items ORDER BY id';
+  const SECOND = 'SELECT name, qty FROM items WHERE qty < 4';
+  const two = () =>
+    queriesReply({ title: 'Units per item', sql: FIRST }, { title: 'Small items', sql: SECOND });
+  const sections = () =>
+    jsonResponse({
+      sections: [
+        {
+          narrative: 'Ink leads.',
+          chart: { type: 'bar', x: 'name', series: ['qty'], title: 'Units' },
+        },
+        { narrative: 'Only pen is small.', chart: null },
+      ],
+      suggestions: SUGGESTIONS,
+    });
+
+  it('answers with a section per result, in order, and still 200 with the same fields', async () => {
+    start(two(), sections());
+
+    const res = await chat({ question: 'Units per item and, separately, the small ones?' });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(Object.keys(body)).toEqual(['conversationId', 'turnId', 'blocks', 'suggestions']);
+    expect(body.blocks.map((b: { type: string }) => b.type)).toEqual([
+      'text',
+      'table',
+      'chart',
+      'text',
+      'table',
+    ]);
+    expect(body.blocks[0]).toEqual({
+      type: 'text',
+      markdown: '### Units per item\n\nInk leads.',
+    });
+    expect(body.blocks[3]).toEqual({
+      type: 'text',
+      markdown: '### Small items\n\nOnly pen is small.',
+    });
+    expect(body.suggestions).toEqual(SUGGESTIONS);
+    // The same calls as for one result: classify, one SQL call, one insights call.
+    expect(llm.requests).toHaveLength(2);
+  });
+
+  it('saves every query and every text of the turn, one after the other', async () => {
+    start(two(), sections());
+
+    const body = (await chat({ question: 'Both?' })).json();
+
+    expect(turns()).toEqual([
+      expect.objectContaining({
+        id: body.turnId,
+        sql: `${FIRST}\n\n${SECOND}`,
+        narrative: '### Units per item\n\nInk leads.\n\n### Small items\n\nOnly pen is small.',
+        response: JSON.stringify({ blocks: body.blocks, suggestions: body.suggestions }),
+        error: null,
+        classification: 'data_question',
+      }),
+    ]);
+  });
+
+  it('sends the next turn every query and text of this one', async () => {
+    start(two(), sections(), sqlReply('SELECT name FROM items'), jsonResponse(INSIGHTS));
+
+    const first = (await chat({ question: 'Both?' })).json();
+    await chat({ question: 'Show it as a pie', conversationId: first.conversationId });
+
+    const prompt = String(llm.requests[2].input);
+    expect(prompt).toContain(`SQL: ${FIRST}\n\n${SECOND}`);
+    expect(prompt).toContain('### Units per item');
+    expect(prompt).toContain('### Small items');
+  });
+
+  it('answers a failed set like any failed turn, keeping every query tried', async () => {
+    const bad = () =>
+      queriesReply({ title: 'Ok', sql: FIRST }, { title: 'Bad', sql: 'SELECT zz_bad FROM items' });
+    start(bad(), bad(), bad());
+
+    const res = await chat({ question: 'Both?' });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().blocks).toEqual([{ type: 'text', markdown: NO_ANSWER_MESSAGE }]);
+    expect(turns()).toEqual([
+      expect.objectContaining({
+        sql: `${FIRST}\n\nSELECT zz_bad FROM items`,
+        narrative: null,
+        error: 'sql: no such column: zz_bad',
+      }),
+    ]);
+  });
+
+  it('keeps every query tried when the insights fail', async () => {
+    start(two(), new Error('500 Internal Server Error'));
+
+    const res = await chat({ question: 'Both?' });
+
+    expect(res.statusCode).toBe(502);
+    expect(turns()).toEqual([expect.objectContaining({ sql: `${FIRST}\n\n${SECOND}` })]);
   });
 });
