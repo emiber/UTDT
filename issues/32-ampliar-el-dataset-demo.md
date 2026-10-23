@@ -55,3 +55,6 @@ Propuestas al escribir el issue, sin una pregunta aparte:
 ## Deferred decisions
 - **El canal de venta** (`orders.channel`) y **la fecha de alta de los clientes** (`customers.signup_date`). Eran las otras dos ideas; se suman si la demo pide más dimensiones o preguntas de clientes nuevos contra recurrentes.
 - **Más volumen de datos.** Hoy alcanza para que las respuestas tengan sentido.
+
+## Notes
+- 2026-10-23: se suma #36, follow-up de #34: los puntajes del judge cambiaron al sumar `sales_targets` al esquema, aunque las respuestas eran las mismas. Va antes de #35, que suma otra tabla. El orden de los hijos queda #33, #34, #36 y #35.
