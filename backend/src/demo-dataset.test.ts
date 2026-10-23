@@ -206,12 +206,12 @@ describe('demo dataset: content', () => {
       FROM orders o JOIN products p USING (product_id)
       GROUP BY p.category
     `);
-    const top = (key: 'sales' | 'margin', sign: number) =>
-      [...categories].sort((a, b) => sign * (b[key] - a[key]))[0].category;
+    const bestSelling = [...categories].sort((a, b) => b.sales - a.sales)[0].category;
+    const lowestMargin = [...categories].sort((a, b) => a.margin - b.margin)[0].category;
 
     // So "sells the most" and "leaves the most" have different answers.
-    expect(top('sales', 1)).toBe('Electronics');
-    expect(top('margin', -1)).toBe('Electronics');
+    expect(bestSelling).toBe('Electronics');
+    expect(lowestMargin).toBe('Electronics');
   });
 
   it('indexes orders by customer_id and by product_id', () => {
