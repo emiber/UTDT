@@ -134,5 +134,10 @@
     "id": "margin-share-by-category",
     "question": "¿Qué categoría tiene el mayor margen porcentual?"
   },
-  { "id": "margin-by-country-2025", "question": "What was the total margin per country in 2025?" }
+  { "id": "margin-by-country-2025", "question": "What was the total margin per country in 2025?" },
+  { "id": "target-march-2025", "question": "¿Llegamos al objetivo de ventas en marzo de 2025?" },
+  {
+    "id": "categories-below-target-2025",
+    "question": "Which categories missed their total sales target for 2025?"
+  }
 ]
