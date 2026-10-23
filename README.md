@@ -11,7 +11,9 @@ shared access key. The frontend first asks for that key (the `APP_ACCESS_KEY` va
 your `.env`), then shows the backend status, an `Available data` section with the tables,
 columns, relationships and indexes the bot knows about, and the chat: ask a question and
 get a narrative, a table and, when it helps, a chart of real data, with follow-up
-suggestions you can click. A greeting, a vague question or an off-topic one gets a short
+suggestions you can click. A message that asks for separate results ("the top 5 customers
+and, separately, the top 3 products") gets a section for each, with its own text, table and
+chart. A greeting, a vague question or an off-topic one gets a short
 text reply instead, with no query run. Follow-ups like "and for last year?" use the last
 turns of the conversation, which is saved in `data/app.db`; reloading the page starts a
 new one. The chat is at `/chat`; `/usage` shows how much the LLM is used: calls, tokens,
@@ -111,7 +113,8 @@ needed.
   (gitignored) with every answer and score.
 - **Reading the summary:** it shows values, not a verdict. *The SQL answers the question*
   and *the narrative is faithful to the data* are averages from 0 to 2 (2 is best); *the
-  chart fits* is an average probability, only over answers with a chart. The counts say how
+  chart fits* is an average probability, only over answers with a chart. An answer with
+  several results is judged as a whole. The counts say how
   many questions had no answer, errored, or had a criterion refused or not applicable, and
   those stay out of the averages. Scores vary between runs: read them as a trend, for example
   before and after changing a prompt.
