@@ -92,3 +92,10 @@ Propuestas al escribir el issue, sin una pregunta aparte:
 ## Deferred decisions
 - **Objetivos de unidades o por país.** Se suman si la demo los pide.
 - **Una tabla de categorías** con su foreign key. Hoy la categoría es un texto en `products`, y no hace falta cambiarlo.
+
+## Notes
+- 2026-10-23: en la corrida real, la narrativa de `separate-lists` dio 0,19, fuera del rango de las corridas anteriores (de 0,85 a 1,85).
+  - Las mismas respuestas se volvieron a juzgar con el esquema de antes (sin `sales_targets`) y con el nuevo. `separate-lists` pasó de 0,83 a 0,19 y `top-products-after-spanish` de 1,94 a 1,50 de narrativa. El SQL de `as-pie-chart` pasó de 1,30 a 1,77. Las otras 10 respuestas se movieron 0,06 o menos.
+  - Las respuestas son correctas: lo que baja el puntaje es el esquema más largo que el judge ve en su input.
+  - El usuario decidió cerrar #34 con el criterio "la narrativa de los casos de antes sigue en su rango" sin cumplirse por `separate-lists`. Se abre un follow-up, hijo de #32, para hacer al judge menos sensible al esquema antes de #35.
+- 2026-10-23: en la misma corrida, `capital-of-france-after-spanish` respondió en español (idioma 0,00): es el bug de #22. Repetido 10 veces, 5 con cada esquema, salió en inglés las 10. El usuario decidió abrir un issue aparte, fuera del epic.
