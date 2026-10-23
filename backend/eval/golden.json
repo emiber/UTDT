@@ -18,5 +18,64 @@
   {
     "id": "separate-lists",
     "question": "Quiero un listado de los 5 clientes con mas ventas y un listado separado de los 3 productos con mas ventas"
+  },
+  { "id": "greeting", "question": "Hola", "classification": "conversation" },
+  {
+    "id": "capital-of-france",
+    "question": "¿Cuál es la capital de Francia?",
+    "classification": "out_of_scope"
+  },
+  {
+    "id": "how-are-we-doing",
+    "question": "¿Cómo venimos?",
+    "classification": "needs_clarification"
+  },
+  {
+    "id": "chart-not-shown",
+    "question": "No veo el gráfico",
+    "classification": "data_question",
+    "history": [
+      {
+        "question": "Ventas por mes en 2025",
+        "sql": "SELECT strftime('%Y-%m', o.order_date) AS \"Mes\", SUM(o.amount) AS \"Ventas\" FROM orders o WHERE o.order_date >= '2025-01-01' AND o.order_date < '2026-01-01' GROUP BY strftime('%Y-%m', o.order_date) ORDER BY \"Mes\";",
+        "narrative": "Las ventas mensuales de 2025 muestran variaciones claras a lo largo del año. El valor más alto fue en **2025-11** con **14993.4**, y el más bajo en **2025-09** con **6265.81**. También destacan niveles altos en **2025-03** y **2025-01**."
+      }
+    ]
+  },
+  {
+    "id": "as-pie-chart",
+    "question": "mostralo como gráfico de torta",
+    "classification": "data_question",
+    "history": [
+      {
+        "question": "Ventas por categoría",
+        "sql": "SELECT p.category AS \"Categoría\", SUM(o.amount) AS \"Ventas\" FROM orders o JOIN products p ON o.product_id = p.product_id GROUP BY p.category ORDER BY SUM(o.amount) DESC;",
+        "narrative": "La categoría **Electronics** lidera claramente las ventas con **133414**. A bastante distancia le siguen **Furniture** con **55477.2**, **Accessories** con **15502.76** y **Office Supplies** con **5700.87**. El reparto muestra una fuerte concentración en Electronics."
+      }
+    ]
+  },
+  {
+    "id": "and-in-2024",
+    "question": "¿y en 2024?",
+    "classification": "data_question",
+    "history": [
+      {
+        "question": "Total sales per month in 2025",
+        "sql": "WITH monthly_sales AS (\n  SELECT\n    strftime('%Y-%m', order_date) AS \"Month\",\n    SUM(amount) AS \"Total sales\"\n  FROM orders\n  WHERE order_date >= '2025-01-01'\n    AND order_date < '2026-01-01'\n  GROUP BY strftime('%Y-%m', order_date)\n)\nSELECT\n  \"Month\",\n  \"Total sales\"\nFROM monthly_sales\nORDER BY \"Month\";",
+        "narrative": "Monthly sales in 2025 range from **6,265.81** in **2025-09** to **14,993.40** in **2025-11**. Sales are strongest in **March**, **January**, and **November**, and weakest in **September** and **June**. The pattern is mixed across the year, with a noticeable peak in late 2025."
+      }
+    ]
+  },
+  {
+    "id": "thanks-after-answer",
+    "question": "gracias!",
+    "classification": "conversation",
+    "history": [
+      {
+        "question": "Ventas por categoría",
+        "sql": "SELECT p.category AS \"Categoría\", SUM(o.amount) AS \"Ventas\" FROM orders o JOIN products p ON o.product_id = p.product_id GROUP BY p.category ORDER BY SUM(o.amount) DESC;",
+        "narrative": "La categoría **Electronics** lidera claramente las ventas con **133414**. A bastante distancia le siguen **Furniture** con **55477.2**, **Accessories** con **15502.76** y **Office Supplies** con **5700.87**. El reparto muestra una fuerte concentración en Electronics."
+      }
+    ]
   }
 ]
