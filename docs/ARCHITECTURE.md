@@ -366,8 +366,9 @@ work.
 `npm run eval` (`backend/src/eval-command.ts`, `evaluate.ts`) runs the golden questions in
 `backend/eval/golden.json` (for the demo dataset) through the pipeline in process — no
 server, no access key, nothing written to `app.db` — compares each message's classification
-with the expected one, and has the Decisions API judge each answer to a data question. It
-is **not** part of the quality gate, because it costs money and isn't deterministic.
+with the expected one, and has the Decisions API judge each answer to a data question and
+the language of each text reply to any other message. It is **not** part of the quality
+gate, because it costs money and isn't deterministic.
 
 - **A golden case** is an `id`, a `question`, and two optional fields:
   - `classification` — the expected label, one of the classifier's four; `data_question`
@@ -383,9 +384,12 @@ is **not** part of the quality gate, because it costs money and isn't determinis
   fallback: the data answer and the failed SQL carry `data_question` (or null), the text
   reply its own label. Equal → *correct*, different → *incorrect*, null (the classifier
   failed) → *without a label*. A case that errors stays out of the count.
-- **What gets judged:** only a data answer to a case that expects `data_question`. Such a
-  case that gets a text reply or fails every SQL attempt is *without an answer*, as below.
-  A case that expects another label is *not judged*, whatever it got.
+- **What gets judged:** an answer of the kind the case expects. A data answer to a case
+  that expects `data_question` is judged on every criterion below. Such a case that gets a
+  text reply or fails every SQL attempt is *without an answer*, as below. A case that
+  expects another label counts as *with another label* (`not_judged` in the report): its
+  text reply is judged on its language only, even when the label it got isn't the expected
+  one, and a data answer or a failed SQL isn't judged at all.
 - **The judge** gets one request per answered question, with the answer as content (never
   as instructions): the case's history (the same `history.liquid` block the pipeline's
   prompts use) before the question, the question, the schema context and, for each query
@@ -393,7 +397,8 @@ is **not** part of the quality gate, because it costs money and isn't determinis
   (under its title when there are several), its SQL, every result row, its chart spec and
   its narrative, without the `### title` heading the backend adds: the judge scored a
   correct narrative lower with those headings in it. An answer with several results is
-  judged as a whole, in one request, with the same three criteria:
+  judged as a whole, in one request, with the same three criteria (plus the language, in a
+  request of its own; see below):
   - *the SQL answers the question* — a `score` on 3 levels (does not answer / partially /
     fully), 0 to 2. A question that asks for separate results needs a query for each: the
     rubric says different lists mixed in one table don't count as answering it. For a case
@@ -407,21 +412,36 @@ is **not** part of the quality gate, because it costs money and isn't determinis
     figures / minor inaccuracies / fully faithful), 0 to 2;
   - *the chart fits* — a `predicate` (a probability), asked only when at least one result
     has a chart spec; otherwise it's *not applicable*.
+- **The language criterion**, *the answer is in the language of the message*, catches the
+  bugs of #22 and #23 (earlier turns in another language pulled the answer into theirs). It's
+  a `predicate`: everything the bot wrote — its narratives or reply, its column names, and
+  its result and chart titles — is in the language of the question, whatever the language
+  of the earlier turns; values from the rows and proper names don't count. The judge works
+  the language out from the message: the golden case doesn't say it. It's asked in a
+  request of its own, about the same input **without the history**; a text reply's input
+  (`judge-reply-input.liquid`) is just the message and the reply. With the history in the
+  input, the judge took the English examples of its header ("show it as a chart") for the
+  message, and scored correct Spanish answers to "No veo el gráfico" as in the wrong
+  language. The Decisions API judges each question on its own (the same input gives the same
+  answer alone or with others), so the extra request doesn't move the other criteria.
 - A data question the pipeline can't answer (every SQL attempt failed) or classifies as not
   a data question (reason: `classified as <label>`) is *without an answer*, with the reason,
   and isn't judged. A refused criterion is *refused*. A pipeline or judge failure is
   recorded on that question, and the run goes on.
 - **Output:** one line per question — the classification first (`classification ok`, or
-  the expected and the actual label, or *without a label*), then the scores or why there's
-  no answer — and a summary: the counts (answered, without an answer, not judged, errors),
-  the average per criterion over judged values only (scores over 2, the chart as an average
-  probability), and `Classification: <correct>/<compared> correct (<n> without a label)`.
+  the expected and the actual label, or *without a label*), then the scores (the language
+  last, alone for a text reply) or why there's no answer — and a summary: the counts
+  (answered, without an answer, with another label, errors), the average per criterion over
+  judged values only (scores over 2, the chart and the language as an average probability),
+  and `Classification: <correct>/<compared> correct (<n> without a label)`. A text reply
+  counts for the language only, never as *not applicable* for the other criteria.
   No verdict, no thresholds: it exits 0 whenever the run finishes. The JSON report goes to
   `data/eval/eval-<timestamp>.json` (gitignored), with the models used, the summary, and
   per question the expected and the actual label (`expectedClassification`,
   `classification`, null without a label), the history, the SQL (every query's, one after
   the other), the narrative (or the text reply), each query's title, SQL, row count and
-  chart spec (`queries`), and each criterion's answer as the Decisions API returned it.
+  chart spec (`queries`), and each criterion's answer as the Decisions API returned it
+  (only `language` for a text reply).
 
 ### Frontend (Vue 3)
 
