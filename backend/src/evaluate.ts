@@ -352,8 +352,8 @@ export interface Summary {
 /** Averages and counts. Not applicable, refused, unanswered and errors stay out of averages. */
 export function summarize(results: CaseResult[]): Summary {
   const count = (status: CaseResult['status']) => results.filter((r) => r.status === status).length;
-  const outcomes = results.map(classificationOutcome);
-  const tally = (outcome: ClassificationOutcome) => outcomes.filter((o) => o === outcome).length;
+  const labels = results.map(classificationOutcome);
+  const tally = (outcome: ClassificationOutcome) => labels.filter((o) => o === outcome).length;
   const criteria = Object.fromEntries(
     CRITERIA.map((criterion) => {
       const outcomes = results.flatMap((r) => (r.criteria ? [r.criteria[criterion]] : []));
