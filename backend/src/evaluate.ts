@@ -104,7 +104,7 @@ const QUESTIONS: Record<Criterion, DecisionQuestion> = {
     type: 'score',
     name: 'sql',
     instructions:
-      'Do the SQL queries answer the question, given the schema the bot knew and the rows they returned? A question that asks for separate results needs a query for each, not different lists mixed in one table.',
+      'Do the SQL queries answer the question, given the schema the bot knew, the earlier turns if any, and the rows they returned? After earlier turns, the question may be a follow-up: one that asks to show, chart, reformat or redo an earlier answer is answered by queries that get that data again, and one that changes the request (another period, filter or grouping) must reflect the change. A question that asks for separate results needs a query for each, not different lists mixed in one table.',
     levels: [
       { label: 'does not answer', description: 'It answers another question or misses the point.' },
       {

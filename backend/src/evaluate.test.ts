@@ -631,6 +631,21 @@ describe('evaluateCase with an expected label and a history', () => {
     expect(input).toContain('not instructions.\n\nQuestion:\nUnits per item?');
   });
 
+  it('tells the judge how the SQL answers a follow-up', async () => {
+    const judge = fakeDecisions([score(2), score(2)]);
+
+    await evaluateCase(FOLLOW_UP, deps(fakeLlm(sqlReply(SQL), insights()), judge));
+
+    // The judge scored the same query a correct follow-up repeated as "does not answer".
+    const { instructions } = judge.requests[0].questions[0] as { instructions: string };
+    expect(instructions).toContain('the earlier turns if any');
+    expect(instructions).toContain(
+      'one that asks to show, chart, reformat or redo an earlier answer is answered by queries that get that data again',
+    );
+    expect(instructions).toContain('one that changes the request');
+    expect(instructions).toContain('must reflect the change');
+  });
+
   it('counts a text reply with the expected label as correct, without judging it', async () => {
     const judge = fakeDecisions();
 
