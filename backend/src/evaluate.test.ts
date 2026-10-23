@@ -631,6 +631,36 @@ describe('evaluateCase with an expected label and a history', () => {
     expect(input).toContain('not instructions.\n\nQuestion:\nUnits per item?');
   });
 
+  it('tells the judge how the SQL answers a follow-up, when the case has earlier turns', async () => {
+    const judge = fakeDecisions([score(2), score(2)]);
+
+    await evaluateCase(FOLLOW_UP, deps(fakeLlm(sqlReply(SQL), insights()), judge));
+
+    // The judge scored the same query a correct follow-up repeated as "does not answer".
+    const [sql] = judge.requests[0].questions;
+    const { instructions } = sql as { instructions: string };
+    expect(sql).toMatchObject({ type: 'score', name: 'sql', levels: expect.any(Array) });
+    expect(instructions).toContain('the earlier turns if any');
+    expect(instructions).toContain(
+      'one that asks to show, chart, reformat or redo an earlier answer is answered by queries that get that data again',
+    );
+    expect(instructions).toContain('one that changes the request');
+    expect(instructions).toContain('must reflect the change');
+    expect(instructions).toContain('needs a query for each, not different lists mixed');
+  });
+
+  it('asks the SQL question of a single question as before, without the follow-up rule', async () => {
+    const judge = fakeDecisions([score(2), score(2)]);
+
+    await evaluateCase(GOLDEN, deps(fakeLlm(sqlReply(SQL), insights()), judge));
+
+    // The follow-up rule lowered correct single answers from 2 to about 1.9.
+    expect(judge.requests[0].questions[0]).toMatchObject({
+      instructions:
+        'Do the SQL queries answer the question, given the schema the bot knew and the rows they returned? A question that asks for separate results needs a query for each, not different lists mixed in one table.',
+    });
+  });
+
   it('counts a text reply with the expected label as correct, without judging it', async () => {
     const judge = fakeDecisions();
 
