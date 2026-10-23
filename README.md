@@ -76,9 +76,9 @@ Restart the backend afterwards so it picks up the new prices.
 
 `npm run seed` loads a small, fictitious sales dataset (customers, products with their price
 and cost, orders for 2024–2025, and monthly sales targets per category) and the metadata
-that describes it to the bot (see *Data* in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)). It's **required before
-`npm run dev`**: without `data/data.db` the backend refuses to start (not even
-`/api/health` answers) and its error says to run the seed. Two warnings:
+that describes it to the bot (see *Data* in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)).
+It's **required before `npm run dev`**: without `data/data.db` the backend refuses to start
+(not even `/api/health` answers) and its error says to run the seed. Two warnings:
 
 - Running it again **recreates `data/data.db` from scratch**: everything in it is deleted,
   including data loaded by hand.
