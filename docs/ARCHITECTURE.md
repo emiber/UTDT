@@ -390,15 +390,15 @@ gate, because it costs money and isn't deterministic.
   expects another label counts as *with another label* (`not_judged` in the report): its
   text reply is judged on its language only, even when the label it got isn't the expected
   one, and a data answer or a failed SQL isn't judged at all.
-- **The judge** gets one request per answered question, with the answer as content (never
+- **The judge** gets one request per answered question for the three criteria below (and one
+  more for its language; see below), with the answer as content (never
   as instructions): the case's history (the same `history.liquid` block the pipeline's
   prompts use) before the question, the question, the schema context and, for each query
   of the answer
   (under its title when there are several), its SQL, every result row, its chart spec and
   its narrative, without the `### title` heading the backend adds: the judge scored a
   correct narrative lower with those headings in it. An answer with several results is
-  judged as a whole, in one request, with the same three criteria (plus the language, in a
-  request of its own; see below):
+  judged as a whole, in one request, with the same three criteria:
   - *the SQL answers the question* — a `score` on 3 levels (does not answer / partially /
     fully), 0 to 2. A question that asks for separate results needs a query for each: the
     rubric says different lists mixed in one table don't count as answering it. For a case

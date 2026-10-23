@@ -15,8 +15,8 @@ import { renderPrompt } from './prompts.ts';
 
 // Offline evaluation (LLM-as-a-judge): each golden question runs through the real pipeline,
 // its classification is compared with the expected one, and the Decisions API scores the
-// answer to a data question, and the language of a text reply to any other message. Values
-// are kept as they come: no verdict, no thresholds.
+// answer to a data question, and the language of that answer or of a text reply to any other
+// message. Values are kept as they come: no verdict, no thresholds.
 
 export interface GoldenCase {
   id: string;
