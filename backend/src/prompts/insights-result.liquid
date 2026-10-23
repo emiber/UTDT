@@ -1,0 +1,12 @@
+SQL:
+{{ result.sql }}
+
+Columns (JSON): {{ result.columns }}
+Total rows: {{ result.rowCount }}
+{%- if result.sample.size > 0 %}
+
+{% if result.sample.size < result.rowCount %}First {{ result.sample.size }} rows{% else %}Rows{% endif %} (JSON, one per line):
+{%- for row in result.sample %}
+{{ row }}
+{%- endfor %}
+{%- endif -%}
