@@ -75,7 +75,7 @@ const QUESTIONS: Record<Criterion, DecisionQuestion> = {
   narrative: {
     type: 'score',
     name: 'narrative',
-    instructions: 'Is the narrative faithful to the rows of every result?',
+    instructions: 'Is the narrative faithful to the result rows?',
     levels: [
       {
         label: 'contradicts or invents figures',
@@ -201,15 +201,16 @@ export async function evaluateCase(golden: GoldenCase, deps: EvalDeps): Promise<
   const input = renderPrompt('judge-input', {
     question: golden.question,
     schemaContext: deps.schemaContext,
-    queries: result.results.map(({ title, sql, columns, rows, chart }) => ({
+    // Each result's own text, without the heading the backend adds to it.
+    queries: result.results.map(({ title, sql, columns, rows, chart, narrative }) => ({
       title,
       sql,
       rowCount: rows.length,
       columns: JSON.stringify(columns),
       rows: rows.map((row) => JSON.stringify(row)),
       chart: chart && JSON.stringify(chart),
+      narrative,
     })),
-    narrative: result.narrative,
   });
   try {
     const answers = await requestDecision(

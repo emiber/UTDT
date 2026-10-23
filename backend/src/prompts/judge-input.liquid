@@ -23,7 +23,7 @@ Rows (JSON, one per line):
 
 Chart it proposed (JSON): {{ query.chart }}
 {%- endif %}
-{%- endfor %}
 
 Narrative it wrote:
-{{ narrative }}
+{{ query.narrative }}
+{%- endfor %}

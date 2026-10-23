@@ -371,10 +371,11 @@ deterministic.
   `OPENAI_DECISIONS_MODEL`, the golden file and `data/data.db`. A problem prints why and
   exits 1, with no report.
 - **The judge** gets one request per answered question, with the answer as content (never
-  as instructions): the question, the schema context and, for each query of the answer, its
-  SQL, every result row and its chart spec (under its title when there are several), then
-  the narrative. An answer with several results is judged as a whole, in one request, with
-  the same three criteria:
+  as instructions): the question, the schema context and, for each query of the answer
+  (under its title when there are several), its SQL, every result row, its chart spec and
+  its narrative, without the `### title` heading the backend adds: the judge scored a
+  correct narrative lower with those headings in it. An answer with several results is
+  judged as a whole, in one request, with the same three criteria:
   - *the SQL answers the question* — a `score` on 3 levels (does not answer / partially /
     fully), 0 to 2. A question that asks for separate results needs a query for each: the
     rubric says different lists mixed in one table don't count as answering it;
