@@ -2,7 +2,7 @@
 id: 28
 title: Evaluar la clasificación y las conversaciones de varios turnos en el set golden
 type: feat
-status: refined
+status: closed
 parent:
 created: 2026-10-22
 ---
@@ -112,3 +112,74 @@ Propuestas al escribir el issue, sin una pregunta aparte:
 - **Correr los turnos anteriores en vivo.** Sería más realista, pero cuesta más llamadas y suma la variación de cada turno. Se suma si el historial fijo deja de alcanzar.
 - **Juzgar las respuestas de texto** (por ejemplo, "la respuesta es adecuada para el mensaje"). Hoy alcanza con saber que la etiqueta fue la correcta.
 - **Veredictos, umbrales, filtros por id y repeticiones por caso:** siguen diferidos como en #12.
+
+## Pull request
+Branch: `feat/28-evaluar-clasificacion-y-conversaciones` → `main`
+
+### Qué hace
+- **Formato del caso** (`backend/src/evaluate.ts`, `parseGolden`): `classification` (la etiqueta esperada; `data_question` si falta) y `history` (turnos anteriores fijos, con la forma de `HistoryTurn`), los dos opcionales. Una etiqueta desconocida, un `history` que no es un array o un turno sin `question` (o con `sql` o `narrative` que no son texto) dan un error que nombra el caso y el turno. El eval sale con 1 antes de la primera llamada a OpenAI.
+- **Comparación** (`evaluateCase`, `classificationOutcome`): el historial va tal cual a `answerQuestion`. Se compara la etiqueta final del pipeline, después del fallback de confianza baja: *correcta*, *incorrecta* o *sin etiqueta* (falló el clasificador). Un caso con error (del pipeline o del judge) queda afuera del conteo.
+- **Judge:** solo corre cuando se esperaba `data_question` y llegó una respuesta de datos. Ve el historial antes de la pregunta, con el mismo bloque `history.liquid` que usa el pipeline, como contenido (`judge-input.liquid`). Los tres criterios no cambian.
+- **Estado nuevo `not_judged`:** para los casos que esperan otra etiqueta, respondiera lo que respondiera el pipeline. Una respuesta de texto guarda su texto en `narrative`.
+- **Salida:**
+  - Cada línea empieza con la clasificación: `classification ok`, `classification expected <x>, got <y>` o `classification without a label`.
+  - El resumen suma `N not judged` en la primera línea y `Classification: <correctas>/<comparadas> correct (<n> without a label)`.
+  - El reporte JSON suma `expectedClassification`, `classification` y `history` por caso, y `notJudged` y `classification` en el resumen. `eval-command.ts` no cambió.
+- **Golden:** 7 casos nuevos, los de la tabla de *Data*. Pasa de 8 a 15 casos, no de 7 a 14: #30 ya había sumado `separate-lists`. Por eso una corrida pasa de unas 32 llamadas a unas 52. El SQL y la narrativa de los 4 historiales se copiaron de una corrida real del pipeline sobre el dataset demo (2026-10-23).
+- **Docs:** la sección del eval en `README.md` y en `docs/ARCHITECTURE.md`.
+
+### Hallazgo de la corrida real
+- El judge puntúa bajo el SQL de los seguimientos que piden volver a mostrar una respuesta: `chart-not-shown` ("No veo el gráfico") sacó 0,23/2 y `as-pie-chart` ("mostralo como gráfico de torta") 1,27/2.
+- En los dos casos, el pipeline repitió la consulta correcta del turno anterior, con el gráfico pedido (línea y torta). El judge marcó "does not answer" con probabilidad 0,88 y 0,34: el criterio "Do the SQL queries answer the question" lee el último mensaje al pie de la letra, aunque ve el historial.
+- Este issue no cambia los criterios. Queda como follow-up.
+
+### Verification
+- Lint: `npm run lint` — pass
+- Tests: `npm run test:coverage` — pass (33 archivos, 614 tests; antes 591). Después del último commit, la primera corrida falló con solo 29 de 33 archivos corridos y coverage 84%. No quedó el texto del error, porque el filtro de la salida lo escondió. La segunda corrida, con el mismo código, pasó completa. Coincide con los cortes intermitentes de workers descritos en `docs/ARCHITECTURE.md` (Quality gate).
+- Coverage: 99,74% de statements, 97,51% de branches, 99,61% de funciones y 100% de líneas (umbral 85%). Archivos nuevos o cambiados bajo el umbral: ninguno (`evaluate.ts` al 100%).
+- Criterios de aceptación:
+  - **`classification` y `history` opcionales; los casos de antes funcionan como `data_question`: pass** (tests de `parseGolden`, y la corrida real los clasificó a los 8 como `data_question`).
+  - **Etiqueta desconocida o historial mal formado: dice cuál es el caso y sale con 1 sin llamar a OpenAI: pass** (tests de `parseGolden` y de arranque de `eval-command`).
+  - **El historial llega a `answerQuestion` y al input del judge, como contenido: pass** (tests sobre los requests del clasificador, del SQL y del judge).
+  - **Cada comparación de *Expected behavior*: pass.** Hay un test por fila: datos, texto y fallo de SQL con cada etiqueta esperada, el fallback de confianza baja, el clasificador que falla y el error del pipeline.
+  - **Líneas, resumen y reporte JSON: pass** (tests de formato y de `eval-command`, y la corrida real).
+  - **Los 7 casos nuevos con historiales reales: pass.** Se verificó que los 4 historiales coinciden con la salida de la corrida.
+  - **Tests offline, coverage y quality gate: pass.**
+  - **`README.md` y `docs/ARCHITECTURE.md`: pass.**
+  - **Corrida real en Verification: pass** (abajo).
+- `npm run eval` real (2026-10-23, pipeline `gpt-5.4-mini`, judge `gpt-6-luna`), 15 casos, salida 0:
+  ```
+  sales-by-month-2025: classification ok | sql 2.00/2 | narrative 1.98/2 | chart 1.00
+  revenue-by-country: classification ok | sql 2.00/2 | narrative 1.98/2 | chart 1.00
+  top-products-by-units: classification ok | sql 2.00/2 | narrative 1.98/2 | chart 1.00
+  category-share: classification ok | sql 2.00/2 | narrative 1.79/2 | chart 0.98
+  customer-count: classification ok | sql 2.00/2 | narrative 2.00/2 | chart n/a
+  average-order-by-segment: classification ok | sql 2.00/2 | narrative 2.00/2 | chart 0.99
+  orders-2024: classification ok | sql 2.00/2 | narrative 2.00/2 | chart n/a
+  separate-lists: classification ok | sql 2.00/2 | narrative 1.28/2 | chart 0.99
+  greeting: classification ok
+  capital-of-france: classification ok
+  how-are-we-doing: classification ok
+  chart-not-shown: classification ok | sql 0.23/2 | narrative 1.97/2 | chart 0.95
+  as-pie-chart: classification ok | sql 1.27/2 | narrative 1.97/2 | chart 1.00
+  and-in-2024: classification ok | sql 2.00/2 | narrative 1.98/2 | chart 0.99
+  thanks-after-answer: classification ok
+  Summary: 15 questions, 11 answered, 0 without an answer, 4 not judged, 0 errors
+    The SQL answers the question: 1.77/2 (11 judged, 0 refused, 0 not applicable)
+    The narrative is faithful to the data: 1.90/2 (11 judged, 0 refused, 0 not applicable)
+    The chart fits: 0.99 average probability (9 judged, 0 refused, 2 not applicable)
+    Classification: 15/15 correct (0 without a label)
+  ```
+  - Clasificación: 15/15 correctas, sin errores de clasificación que anotar.
+  - El promedio de SQL bajó a 1,77 por los dos seguimientos del hallazgo. Las 8 preguntas de antes siguen en 2,00.
+  - `and-in-2024` respondió con alias en español ("Mes", "Ventas totales") a una conversación en inglés: es el bug de #23, que va a medir #29.
+- Self-review: 1 ronda con un agente nuevo (separado); sin bloqueantes.
+  - **Aplicada:** renombrar una variable que tapaba a otra en `summarize`.
+  - **No aplicada:** un test que parsee el `golden.json` real. Un golden roto ya frena el eval antes de la primera llamada, y fijar los ids en un test lo vuelve frágil.
+  - **Anotada:** los conteos del issue (14 casos, ~48 llamadas) quedaron viejos por #30 (arriba, en *Golden*).
+- Plan: aprobado por el usuario ("Si, aprobalo así", 2026-10-23), con el estado `not_judged` y el formato de las líneas propuestos.
+- Security: no se tocó superficie de seguridad. El golden es un archivo local escrito a mano y validado. El historial va al pipeline y al judge como variables de template, como contenido, nunca como instrucciones. No hay secretos en el diff.
+- Docs: updated `README.md` y `docs/ARCHITECTURE.md`
+
+### Out of scope / follow-ups
+- El criterio de SQL del judge castiga a los seguimientos que piden volver a mostrar o cambiar el formato de una respuesta (ver *Hallazgo de la corrida real*).
