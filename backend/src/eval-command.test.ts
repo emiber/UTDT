@@ -104,23 +104,34 @@ describe('runEvalCommand', () => {
     expect(code).toBe(0);
     const reportPath = path.join(dir, 'reports', 'eval-2026-10-20T10-00-00-000Z.json');
     expect(lines).toEqual([
-      'units: sql 2.00/2 | narrative 1.50/2 | chart n/a',
-      'colors: no answer (sql: no such column: nope)',
-      'Summary: 2 questions, 1 answered, 1 without an answer, 0 errors',
+      'units: classification ok | sql 2.00/2 | narrative 1.50/2 | chart n/a',
+      'colors: classification ok | no answer (sql: no such column: nope)',
+      'Summary: 2 questions, 1 answered, 1 without an answer, 0 not judged, 0 errors',
       '  The SQL answers the question: 2.00/2 (1 judged, 0 refused, 0 not applicable)',
       '  The narrative is faithful to the data: 1.50/2 (1 judged, 0 refused, 0 not applicable)',
       '  The chart fits: nothing judged (0 judged, 0 refused, 1 not applicable)',
+      '  Classification: 2/2 correct (0 without a label)',
       `Report: ${reportPath}`,
     ]);
     const report = JSON.parse(readFileSync(reportPath, 'utf8'));
     expect(report).toMatchObject({
       startedAt: '2026-10-20T10:00:00.000Z',
       models: { pipeline: 'fake-model', judge: 'fake-decisions-model' },
-      summary: { questions: 2, answered: 1, unanswered: 1, errors: 0 },
+      summary: {
+        questions: 2,
+        answered: 1,
+        unanswered: 1,
+        notJudged: 0,
+        errors: 0,
+        classification: { correct: 2, incorrect: 0, withoutLabel: 0 },
+      },
     });
     expect(report.results[0]).toMatchObject({
       id: 'units',
       question: 'Units per item?',
+      expectedClassification: 'data_question',
+      classification: 'data_question',
+      history: [],
       sql: 'SELECT name, qty FROM items',
       queries: [{ title: 'Items', sql: 'SELECT name, qty FROM items', rowCount: 2, chart: null }],
       narrative: 'Ink leads.',
@@ -170,6 +181,53 @@ describe('runEvalCommand', () => {
     });
   });
 
+  it('compares each expected label, and writes the labels and the history in the report', async () => {
+    const history = [{ question: 'Units per item?', sql: 'SELECT name, qty FROM items' }];
+    writeGolden([
+      { id: 'thanks', question: 'Thanks!', classification: 'conversation', history },
+      { id: 'weather', question: 'Weather?', classification: 'out_of_scope' },
+    ]);
+    llm = fakeLlm(
+      jsonResponse({ narrative: 'You are welcome!', suggestions: ['A?', 'B?', 'C?'] }),
+      jsonResponse({ narrative: 'Nice to chat!', suggestions: ['A?', 'B?', 'C?'] }),
+    );
+    judge = fakeDecisions();
+
+    expect(await run({ createDecisions: () => fakeClassifier('conversation') })).toBe(0);
+
+    expect(lines.slice(0, 2)).toEqual([
+      'thanks: classification ok',
+      'weather: classification expected out_of_scope, got conversation',
+    ]);
+    expect(lines[2]).toBe(
+      'Summary: 2 questions, 0 answered, 0 without an answer, 2 not judged, 0 errors',
+    );
+    expect(lines[6]).toBe('  Classification: 1/2 correct (0 without a label)');
+    expect(judge.requests).toHaveLength(0);
+    const [file] = readdirSync(path.join(dir, 'reports'));
+    const report = JSON.parse(readFileSync(path.join(dir, 'reports', file), 'utf8'));
+    expect(report.summary).toMatchObject({
+      notJudged: 2,
+      classification: { correct: 1, incorrect: 1, withoutLabel: 0 },
+    });
+    expect(report.results).toMatchObject([
+      {
+        id: 'thanks',
+        status: 'not_judged',
+        expectedClassification: 'conversation',
+        classification: 'conversation',
+        narrative: 'You are welcome!',
+        history,
+      },
+      {
+        id: 'weather',
+        expectedClassification: 'out_of_scope',
+        classification: 'conversation',
+        history: [],
+      },
+    ]);
+  });
+
   it('still returns 0 when questions fail, recording each error', async () => {
     llm = fakeLlm(
       new Error('500 Server error'),
@@ -198,7 +256,7 @@ describe('runEvalCommand', () => {
     expect(await run()).toBe(0);
     expect(lines.slice(0, 2)).toEqual([
       'units: error (The judge returned an unexpected answer for sql.)',
-      'colors: sql 2.00/2 | narrative 2.00/2 | chart n/a',
+      'colors: classification ok | sql 2.00/2 | narrative 2.00/2 | chart n/a',
     ]);
   });
 
@@ -261,6 +319,16 @@ describe('runEvalCommand', () => {
       ],
       ['an invalid golden file', () => writeGolden('[]'), 'non-empty JSON array'],
       ['a golden case without a question', () => writeGolden([{ id: 'a' }]), 'has no question'],
+      [
+        'a golden case with an unknown classification',
+        () => writeGolden([{ id: 'a', question: 'Q?', classification: 'chitchat' }]),
+        'Case "a" has an unknown classification: "chitchat".',
+      ],
+      [
+        'a golden case with a malformed history',
+        () => writeGolden([{ id: 'a', question: 'Q?', history: [{ sql: 'SELECT 1' }] }]),
+        'Case "a", history turn 1, has no question.',
+      ],
       ['a missing data.db', () => rmSync(path.join(dir, 'data.db')), 'npm run seed'],
       [
         'a data.db without metadata',
