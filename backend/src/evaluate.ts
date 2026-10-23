@@ -98,13 +98,15 @@ export const CRITERION_LABELS: Record<Criterion, string> = {
   chart: 'The chart fits',
 };
 
+const SEPARATE_RESULTS =
+  'A question that asks for separate results needs a query for each, not different lists mixed in one table.';
+
 // The rubric. The answer under judgment goes in the input, never in these instructions.
 const QUESTIONS: Record<Criterion, DecisionQuestion> = {
   sql: {
     type: 'score',
     name: 'sql',
-    instructions:
-      'Do the SQL queries answer the question, given the schema the bot knew, the earlier turns if any, and the rows they returned? After earlier turns, the question may be a follow-up: one that asks to show, chart, reformat or redo an earlier answer is answered by queries that get that data again, and one that changes the request (another period, filter or grouping) must reflect the change. A question that asks for separate results needs a query for each, not different lists mixed in one table.',
+    instructions: `Do the SQL queries answer the question, given the schema the bot knew and the rows they returned? ${SEPARATE_RESULTS}`,
     levels: [
       { label: 'does not answer', description: 'It answers another question or misses the point.' },
       {
@@ -136,6 +138,17 @@ const QUESTIONS: Record<Criterion, DecisionQuestion> = {
     instructions:
       'The proposed charts (type, x column, series, title) are a suitable way to show their results.',
   },
+};
+
+/**
+ * The SQL question for a case with earlier turns, whose message may be a follow-up. Without
+ * it the judge scored a correct repeat of the earlier query for "I don't see the chart" as
+ * not answering it. Only with earlier turns: for single questions this wording lowered the
+ * scores of correct answers from 2 to about 1.9.
+ */
+const FOLLOW_UP_SQL: DecisionQuestion = {
+  ...QUESTIONS.sql,
+  instructions: `Do the SQL queries answer the question, given the schema the bot knew, the earlier turns if any, and the rows they returned? After earlier turns, the question may be a follow-up: one that asks to show, chart, reformat or redo an earlier answer is answered by queries that get that data again, and one that changes the request (another period, filter or grouping) must reflect the change. ${SEPARATE_RESULTS}`,
 };
 
 export type CriterionResult =
@@ -287,7 +300,9 @@ export async function evaluateCase(golden: GoldenCase, deps: EvalDeps): Promise<
     const answers = await requestDecision(
       deps.judge,
       input,
-      asked.map((criterion) => QUESTIONS[criterion]),
+      asked.map((criterion) =>
+        criterion === 'sql' && golden.history.length ? FOLLOW_UP_SQL : QUESTIONS[criterion],
+      ),
     );
     const criteria: Record<Criterion, CriterionResult> = {
       sql: { status: 'not_applicable' },

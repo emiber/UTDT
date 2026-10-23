@@ -395,13 +395,14 @@ is **not** part of the quality gate, because it costs money and isn't determinis
   correct narrative lower with those headings in it. An answer with several results is
   judged as a whole, in one request, with the same three criteria:
   - *the SQL answers the question* — a `score` on 3 levels (does not answer / partially /
-    fully), 0 to 2, given the earlier turns if any. After earlier turns the question may be a
-    follow-up: one that asks to show, chart, reformat or redo an earlier answer ("I don't
-    see the chart") is answered by queries that get that data again, and one that changes
-    the request ("and in 2024?") must reflect the change. Without that rule the judge scored
-    a correct repeat of the earlier query as *does not answer*. A question that asks for
-    separate results needs a query for each: the rubric says different lists mixed in one
-    table don't count as answering it;
+    fully), 0 to 2. A question that asks for separate results needs a query for each: the
+    rubric says different lists mixed in one table don't count as answering it. For a case
+    with a history the rubric adds that the question may be a follow-up: one that asks to
+    show, chart, reformat or redo an earlier answer ("I don't see the chart") is answered by
+    queries that get that data again, and one that changes the request ("and in 2024?")
+    must reflect the change. Without it the judge scored a correct repeat of the earlier
+    query for "I don't see the chart" as *does not answer*. It's left out for single
+    questions because there it lowered correct scores from 2 to about 1.9;
   - *the narrative is faithful to the data* — a `score` on 3 levels (contradicts or invents
     figures / minor inaccuracies / fully faithful), 0 to 2;
   - *the chart fits* — a `predicate` (a probability), asked only when at least one result
