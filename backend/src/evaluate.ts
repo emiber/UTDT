@@ -141,7 +141,7 @@ const QUESTIONS: Record<Criterion, DecisionQuestion> = {
       'The proposed charts (type, x column, series, title) are a suitable way to show their results.',
   },
   // The bugs of #22 and #23: earlier turns in another language pulled the answer into theirs.
-  // It's asked on its own, about an input without the history (see evaluateCase).
+  // It's asked with the narrative and the chart, about the answer alone (see evaluateCase).
   language: {
     type: 'predicate',
     name: 'language',
@@ -311,11 +311,10 @@ export async function evaluateCase(golden: GoldenCase, deps: EvalDeps): Promise<
   if (!expectsData) return { ...answered, status: 'not_judged' };
   // No chart spec in any result: the chart criterion doesn't apply and the judge isn't asked.
   const asked: Criterion[] = result.results.some((r) => r.chart)
-    ? ['sql', 'narrative', 'chart']
-    : ['sql', 'narrative'];
+    ? ['narrative', 'chart', 'language']
+    : ['narrative', 'language'];
   const answer = {
     question: golden.question,
-    schemaContext: deps.schemaContext,
     // Each result's own text, without the heading the backend adds to it.
     queries: result.results.map(({ title, sql, columns, rows, chart, narrative }) => ({
       title,
@@ -329,19 +328,26 @@ export async function evaluateCase(golden: GoldenCase, deps: EvalDeps): Promise<
   };
   try {
     const judged = {
+      // Only the SQL needs the schema and the earlier turns: to know what each column means
+      // and what a follow-up refers to.
       ...(await judgeCriteria(
         deps.judge,
-        renderPrompt('judge-input', { ...answer, history: golden.history }),
-        asked,
+        renderPrompt('judge-input', {
+          ...answer,
+          history: golden.history,
+          schemaContext: deps.schemaContext,
+        }),
+        ['sql'],
         golden,
       )),
-      // The language goes in its own request, without the history: with it, the judge took
-      // the English examples of the history's header ("show it as a chart") for a Spanish
-      // message asking that, and scored correct answers as in the wrong language.
+      // The rest is judged on the question and the answer alone. With the history, the judge
+      // took the English examples of its header ("show it as a chart") for a Spanish message
+      // asking that, and scored correct answers as in the wrong language. With the schema, a
+      // table the answer doesn't use moved the narrative's score (from 0.83 to 0.19).
       ...(await judgeCriteria(
         deps.judge,
-        renderPrompt('judge-input', { ...answer, history: [] }),
-        ['language'],
+        renderPrompt('judge-input', { ...answer, history: [], schemaContext: null }),
+        asked,
         golden,
       )),
     };
