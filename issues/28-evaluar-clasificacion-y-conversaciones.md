@@ -22,7 +22,7 @@ Que `npm run eval` (#12) mida si la clasificación de #10 acierta, también en l
   - 7 casos nuevos en el golden (ver *Data*).
   - Tests unitarios offline y las docs: la sección del eval en `README.md` y en `docs/ARCHITECTURE.md`.
 - NOT in:
-  - Un criterio de idioma en el judge (los bugs de #22 y #23). Va a un issue aparte (ver *Deferred decisions*).
+  - Un criterio de idioma en el judge (los bugs de #22 y #23). Va a #29.
   - Correr los turnos anteriores en vivo por el pipeline.
   - Juzgar las respuestas de texto (las de etiquetas que no son de datos).
   - Cambiar el clasificador o los prompts del pipeline. Si la corrida real muestra errores de clasificación, se anotan, no se arreglan acá.
@@ -75,7 +75,7 @@ Que `npm run eval` (#12) mida si la clasificación de #10 acierta, también en l
 
 ## Dependencies
 - Se apoya en #12 (el eval) y #10 (la clasificación), los dos cerrados.
-- El issue del criterio de idioma (por crear) reutiliza el `history` de este issue.
+- #29 (el criterio de idioma) reutiliza el `history` de este issue.
 - Externo: la corrida real usa OpenAI (Responses API y Decisions API), igual que hoy.
 
 ## Acceptance criteria
@@ -95,7 +95,7 @@ Que `npm run eval` (#12) mida si la clasificación de #10 acierta, también en l
 
 ## Assumptions
 Confirmadas en el refinamiento (2026-10-22):
-- El criterio de idioma de #22 y #23 queda para un issue aparte.
+- El criterio de idioma de #22 y #23 queda para un issue aparte (#29).
 - El historial se escribe fijo en el golden. No se corren los turnos anteriores.
 - Las etiquetas se comparan y se cuentan. El judge solo corre cuando la etiqueta esperada y la respuesta son de datos. No se juzgan las respuestas de texto.
 - Los 7 casos nuevos de *Data*.
@@ -108,7 +108,7 @@ Propuestas al escribir el issue, sin una pregunta aparte:
 - Se compara la etiqueta final del pipeline, después del fallback de confianza baja, porque es la que decide la respuesta.
 
 ## Deferred decisions
-- **Un criterio de idioma** ("la respuesta está en el idioma del mensaje", para la narrativa, los alias del SQL y las respuestas de texto). Detectaría los bugs de #22 y #23. Necesita un criterio nuevo en el judge, y que el judge también vea las respuestas de texto. Va a un issue aparte.
+- **Un criterio de idioma** ("la respuesta está en el idioma del mensaje", para la narrativa, los alias del SQL y las respuestas de texto). Detectaría los bugs de #22 y #23. Necesita un criterio nuevo en el judge, y que el judge también vea las respuestas de texto. Pasó a #29.
 - **Correr los turnos anteriores en vivo.** Sería más realista, pero cuesta más llamadas y suma la variación de cada turno. Se suma si el historial fijo deja de alcanzar.
 - **Juzgar las respuestas de texto** (por ejemplo, "la respuesta es adecuada para el mensaje"). Hoy alcanza con saber que la etiqueta fue la correcta.
 - **Veredictos, umbrales, filtros por id y repeticiones por caso:** siguen diferidos como en #12.
