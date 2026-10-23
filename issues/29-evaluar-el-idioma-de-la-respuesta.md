@@ -115,3 +115,7 @@ Propuestas al escribir el issue, sin una pregunta aparte:
 - **Un puntaje de 3 niveles** que distinga la respuesta mezclada. Hoy alcanza con el predicado.
 - **Juzgar el idioma de los casos mal clasificados.** La clasificación ya los marca.
 - **Veredictos, umbrales, filtros por id y repeticiones por caso:** siguen diferidos como en #12.
+
+## Notes
+- 2026-10-23: en la implementación, con el idioma en la misma llamada que SQL, narrativa y gráfico, la corrida real dio 0,16 a `chart-not-shown` y 0,01 a `as-pie-chart`, respondidos en español como sus mensajes. Con respuestas fijas se vio la causa: el judge tomaba los ejemplos en inglés del encabezado del historial ("show it as a chart", en `history.liquid`, que es del pipeline) por el mensaje, y decía que "No veo el gráfico" estaba en inglés. Siete redacciones de la rúbrica no lo arreglaron. El usuario decidió juzgar el idioma en un request aparte, con el mismo input sin el historial, y la respuesta de texto también sin historial. Esto reemplaza "en la misma llamada" de *Scope* y *Expected behavior*, y la propuesta de *Assumptions* de que el input de texto lleve el historial. La Decisions API juzga cada pregunta por separado, así que el request aparte no mueve los otros criterios; cuesta unas 12 llamadas más por corrida.
+- 2026-10-23: con respuestas fijas, `as-pie-chart` sigue en 0,43 sin el historial: el judge lee "mostralo como gráfico de torta" como español con 0,71 de probabilidad (es corto, con voseo, y "mostralo" también es italiano). El usuario aceptó anotarlo como un límite del judge.
