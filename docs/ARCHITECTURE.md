@@ -400,7 +400,7 @@ is **not** part of the quality gate, because it costs money and isn't determinis
     with a history the rubric adds that the question may be a follow-up: one that asks to
     show, chart, reformat or redo an earlier answer ("I don't see the chart") is answered by
     queries that get that data again, and one that changes the request ("and in 2024?")
-    must reflect the change. Without it the judge scored a correct repeat of the earlier
+    must reflect the change. Without this rule the judge scored a correct repeat of the earlier
     query for "I don't see the chart" as *does not answer*. It's left out for single
     questions because there it lowered correct scores from 2 to about 1.9;
   - *the narrative is faithful to the data* — a `score` on 3 levels (contradicts or invents
