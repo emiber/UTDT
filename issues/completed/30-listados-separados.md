@@ -2,7 +2,7 @@
 id: 30
 title: Responder con varias tablas y gráficos cuando el mensaje pide resultados separados
 type: feat
-status: refined
+status: closed
 parent:
 created: 2026-10-22
 ---
@@ -128,3 +128,64 @@ Propuestas al escribir el issue, sin una pregunta aparte:
 - **Una tabla `turn_queries`.** Solo valdría la pena si alguien necesita consultar las consultas una por una.
 - **Tablas que el modelo sume por su cuenta.** Respuestas menos predecibles y más tokens.
 - **Un tope del tamaño total de la respuesta:** sigue en `issues/pendientes.md` (pendiente 4).
+
+## Pull request
+Branch: `feat/30-listados-separados` → `main`
+
+### Qué hace
+- **Generación de SQL** (`backend/src/generate-sql.ts`, prompts `sql-system` y `sql-user`): la salida pasa de un `sql` a `{ language, queries }`, con 1 a 5 consultas, cada una con su título.
+  - Cada consulta pasa por las guardas de #6 por separado.
+  - Si alguna falla se regenera el set completo, con el SQL y el error de cada consulta que falló. Siguen siendo 3 intentos. El error del turno es el de la primera consulta que falló.
+  - El prompt pide varias consultas solo para resultados separados que no entran en una tabla, y prohíbe juntar listados distintos con `UNION`.
+  - Un set mal formado (ninguna consulta, más de 5, una sin SQL o sin título) es un `LlmError`.
+- **Insights** (`backend/src/insights.ts`, prompts `insights-*`): una sola llamada ve todos los resultados y devuelve una sección (texto y gráfico) por resultado, más las 3 sugerencias de toda la respuesta. El esquema fija la cantidad de secciones, y el código la vuelve a validar. Con un resultado el prompt queda igual que antes.
+- **Pipeline** (`backend/src/pipeline.ts`): con un resultado, los bloques son los de siempre. Con dos o más, cada sección lleva su texto con `### título`, su tabla y su gráfico, armados sobre sus propias filas. El resultado de datos pasa a traer `results[]`, con `sql` y `narrative` ya unidos para el turno, así que `chat.ts` no cambió.
+- **Turno e historial:** las consultas y los textos se guardan juntos en `turns.sql` y `turns.narrative`. `app.db` no cambia de esquema.
+- **Eval** (`backend/src/evaluate.ts`, `judge-input.liquid`, `golden.json`): el judge ve todas las consultas con sus filas y gráficos, y el texto de cada una, y aplica los mismos 3 criterios a la respuesta completa. El reporte trae las consultas. El golden suma el caso `separate-lists`, con el mensaje del reporte.
+- **Docs:** `docs/ARCHITECTURE.md` (pasos 3 a 6 del pipeline, el endpoint de chat y el eval) y `README.md`. En `issues/pendientes.md` se anotó el efecto sobre el tamaño de una respuesta.
+- **El frontend no cambió:** `ResponseBlocks.vue` ya recorre cualquier lista de bloques en orden.
+
+### Hallazgo de la verificación real
+- La primera corrida de `npm run eval` dio narrativa 1,64/2, con `separate-lists` en 0,15 aunque todas las cifras del texto eran correctas.
+- Con la misma respuesta fija (y el judge es determinista con la misma entrada), el judge daba 1,31 con los encabezados `### título` que arma el backend y 1,88 sin ellos.
+- Se corrigió mostrándole a cada resultado su propio texto, sin encabezado. La redacción del criterio de narrativa quedó como estaba.
+
+### Verification
+- Lint: `npm run lint` — pass
+- Tests: `npm run test:coverage` — pass (33 archivos, 591 tests; antes 532)
+- Coverage: 99,73% de statements, 97,37% de branches, 99,6% de funciones y 100% de líneas (umbral 85%). Archivos nuevos o cambiados bajo el umbral: ninguno. Los únicos que no llegan al 100% (`conversations.ts`, `eval-command.ts`, `update-prices.ts`, `ChatView.vue`, `UsageView.vue`) no cambiaron.
+- Criterios de aceptación:
+  - **Paso de SQL, 1 a 5 consultas con título, guardas por separado: pass** (tests y corrida real).
+  - **Reintento del set completo, 3 intentos, "no pude responder" si el último falla: pass** (tests de `generate-sql`, `pipeline` y `chat`).
+  - **Bloques con un resultado como hoy y en secciones con dos o más: pass.** En la corrida real, "Ventas por mes en 2025" salió sin encabezado, con texto, tabla y gráfico de línea.
+  - **Sección sin filas o gráfico que no encaja sin afectar a las demás: pass** (tests del pipeline).
+  - **Respuestas inválidas del modelo dan `LlmError`: pass** (tests de `generate-sql` e `insights`).
+  - **Consultas y textos juntos en `sql` y `narrative`, y el historial los incluye: pass** (tests de `chat`, y los seguimientos de la corrida real).
+  - **Reglas del prompt de SQL con sus tests: pass.**
+  - **Eval: pass.** Juzga la respuesta completa, el reporte trae las consultas y el golden tiene el caso.
+  - **Docs: pass.**
+- Verificación real, con OpenAI y un `app.db` temporal. No se tocó tu `app.db` ni tus puertos: se armó la app en proceso con `buildApp` y `inject`.
+  - **El mensaje del reporte:** dos secciones, "Top 5 clientes" y "Top 3 productos", cada una con su tabla y su gráfico de barras. Dos consultas guardadas, sin `UNION`.
+  - **"Quiero un listado de todos los clientes y un listado de todos los productos. Cada uno por separado"** (turno 109 de `app.db`): dos secciones con dos tablas y sin el `Columna 1…4` de antes ni gráfico.
+  - **Seguimientos sobre la respuesta de dos secciones:**
+    - "mostralo como gráfico de torta" repitió las dos consultas, con los dos gráficos en torta;
+    - "mostrá solo el de productos" repitió solo esa consulta;
+    - "and now only the customers, as a pie chart" repitió solo la de clientes, en torta y con los alias en inglés.
+  - **"Total sales per country in 2024 and 2025"** siguió siendo una sola consulta.
+  - **UI: n/a.** No hay navegador en esta sesión. Los `###` salen como `<h3>` con el estilo por defecto. Queda para verlo en `http://localhost:5173`.
+- `npm run eval` (real, después del arreglo del judge): 8 preguntas, 8 con respuesta, 0 errores. SQL 2,00/2, narrativa 1,92/2, gráfico 0,99.
+  - Las 7 preguntas de antes: SQL 2,00 en todas, narrativa entre 1,97 y 2,00, y gráfico entre 0,96 y 1,00. Es el rango de las corridas anteriores (narrativa 1,95 a 2,00).
+  - `separate-lists`: SQL 1,99, narrativa 1,43, gráfico 0,98.
+  - La rúbrica de SQL y de gráfico cambió de redacción para admitir varios resultados, y en el input del judge el gráfico va antes de la narrativa. Esta corrida no es estrictamente comparable con las anteriores.
+- Self-review: 1 ronda con un agente nuevo (separado); sin bloqueantes.
+  - **Aplicadas:** el endpoint de chat en `docs/ARCHITECTURE.md` todavía describía un solo resultado, los títulos entran en la regla de "datos, no instrucciones" del prompt de insights (con su test), y el JSDoc de `buildInsights`.
+  - **No aplicadas:** la legibilidad del historial con dos consultas. Se probó en real ("mostrá solo el de productos") y elige bien la consulta, así que no hace falta etiquetarlas.
+  - **Anotadas:** el baseline del eval (arriba) y las hasta 15 consultas seguidas de un turno (abajo).
+- Plan: aprobado por el usuario ("Plan aprobado", 2026-10-22). Antes de empezar, el usuario delegó qué hacer con `.vscode/settings.json`: se versionó, formateado con Prettier porque `npm run lint` lo rechazaba, en `chore/vscode-settings` (mergeado a `main`).
+- Security: pass. Cada consulta pasa por la guarda de una sola sentencia de solo lectura, y los títulos y las filas van a los prompts como datos. Los títulos se muestran con micromark, que escapa el HTML. No hay secretos en el diff.
+- Docs: updated `docs/ARCHITECTURE.md`, `README.md` e `issues/pendientes.md`
+
+### Out of scope / follow-ups
+- Un turno puede traer hasta 5 × 500 filas y hasta 15 consultas de `node:sqlite` seguidas, porque en cada intento corren todas aunque una falle. Es el ítem 4 de `issues/pendientes.md`, ya actualizado, y la decisión diferida del timeout de las consultas.
+- En el caso nuevo, la narrativa de las respuestas con varios resultados sacó 1,43/2 contra ~2,00 de las de un resultado. Es una sola corrida; si se repite, conviene mirar por qué antes de tocar el judge.
+- Mirar las dos secciones en la UI.
