@@ -259,8 +259,9 @@ Each step is its own issue. The design:
 Steps 1–5 run in `answerQuestion` (`backend/src/pipeline.ts`), with no HTTP or `app.db`,
 so the offline evaluation can reuse it. Its result is a data answer (`kind: 'data'`), a
 text reply (`kind: 'reply'`) or the reason every SQL attempt failed, each with the
-classification. A data answer also carries the checked chart spec (or `null`), which the
-HTTP response leaves out. When every SQL attempt fails it returns why
+classification. A data answer also carries each result with its title, SQL, columns, rows
+and checked chart spec (or `null`), which the HTTP response leaves out. When every SQL
+attempt fails it returns why
 (without insights); anything it throws is a `PipelineError` whose `cause` is the original
 error (an `LlmError` for OpenAI failures) and which keeps the final SQL, if any.
 
@@ -280,8 +281,8 @@ type Block =
 ```
 
 Table rows are lists aligned with `columns`, in `SELECT` order, so repeated column names
-keep their values; `NULL` is `null`. The chart block comes last, after the table. Its
-`labels` and `datasets` are Chart.js's `data` shape; the frontend adds the colors.
+keep their values; `NULL` is `null`. A result's chart block comes right after its table.
+Its `labels` and `datasets` are Chart.js's `data` shape; the frontend adds the colors.
 
 **Chat endpoint** (`POST /api/chat`, `backend/src/chat.ts`):
 
@@ -291,8 +292,10 @@ keep their values; `NULL` is `null`. The chart block comes last, after the table
   hand. An unknown `conversationId` is a `404`. Neither calls OpenAI or saves anything.
 - Without a `conversationId` it starts a new conversation (the backend makes the id).
 - `200`: `blocks` = `[text, table]` (`[text]` with 0 rows or a single value), plus a
-  `chart` block last when the LLM's spec fits the result, and 3 `suggestions`. A message
-  that isn't a data question: `[text]` and 3 suggestions. When every SQL attempt fails:
+  `chart` block after the table when the LLM's spec fits the result, and 3 `suggestions`.
+  A message that asks for separate results repeats that group once per result, in order:
+  `[text, table, chart, text, table]` for two. A message that isn't a data question:
+  `[text]` and 3 suggestions. When every SQL attempt fails:
   `200` with one fixed English `text` block and no suggestions.
 - `502` when an OpenAI call fails (API, network, refusal, incomplete output) and `500` on
   an unexpected error, both with a generic message in Fastify's error format; the detail

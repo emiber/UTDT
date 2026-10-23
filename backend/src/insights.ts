@@ -102,8 +102,9 @@ export interface InsightsInput {
 
 /**
  * Asks the LLM to explain the results of a question's queries, a section for each. For every
- * result it sees the title, the SQL, the columns, the first SAMPLE_ROWS rows and the total
- * row count. Throws an LlmError when OpenAI fails or the sections don't match the results.
+ * result it sees the SQL, the columns, the first SAMPLE_ROWS rows and the total row count,
+ * plus its title when there are several. Throws an LlmError when OpenAI fails or the
+ * sections don't match the results.
  */
 export async function buildInsights({
   question,
