@@ -182,4 +182,4 @@ Branch: `feat/28-evaluar-clasificacion-y-conversaciones` → `main`
 - Docs: updated `README.md` y `docs/ARCHITECTURE.md`
 
 ### Out of scope / follow-ups
-- El criterio de SQL del judge castiga a los seguimientos que piden volver a mostrar o cambiar el formato de una respuesta (ver *Hallazgo de la corrida real*).
+- #31: el criterio de SQL del judge castiga a los seguimientos que piden volver a mostrar o cambiar el formato de una respuesta (ver *Hallazgo de la corrida real*).
