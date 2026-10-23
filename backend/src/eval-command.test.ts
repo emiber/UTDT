@@ -28,6 +28,11 @@ const score = (value: number): DecisionAnswer => ({
   confidence: 0.9,
   probabilities: [],
 });
+const predicate = (probability: number): DecisionAnswer => ({
+  type: 'predicate',
+  name: null,
+  probability,
+});
 
 let dir: string;
 let lines: string[];
@@ -97,19 +102,20 @@ describe('runEvalCommand', () => {
       bad,
       bad,
     );
-    judge = fakeDecisions([score(2), score(1.5)]);
+    judge = fakeDecisions([score(2), score(1.5)], [predicate(1)]);
 
     const code = await run();
 
     expect(code).toBe(0);
     const reportPath = path.join(dir, 'reports', 'eval-2026-10-20T10-00-00-000Z.json');
     expect(lines).toEqual([
-      'units: classification ok | sql 2.00/2 | narrative 1.50/2 | chart n/a',
+      'units: classification ok | sql 2.00/2 | narrative 1.50/2 | chart n/a | language 1.00',
       'colors: classification ok | no answer (sql: no such column: nope)',
-      'Summary: 2 questions, 1 answered, 1 without an answer, 0 not judged, 0 errors',
+      'Summary: 2 questions, 1 answered, 1 without an answer, 0 with another label, 0 errors',
       '  The SQL answers the question: 2.00/2 (1 judged, 0 refused, 0 not applicable)',
       '  The narrative is faithful to the data: 1.50/2 (1 judged, 0 refused, 0 not applicable)',
       '  The chart fits: nothing judged (0 judged, 0 refused, 1 not applicable)',
+      '  The answer is in the language of the message: 1.00 average probability (1 judged, 0 refused, 0 not applicable)',
       '  Classification: 2/2 correct (0 without a label)',
       `Report: ${reportPath}`,
     ]);
@@ -138,6 +144,7 @@ describe('runEvalCommand', () => {
       criteria: {
         sql: { status: 'judged', answer: score(2) },
         chart: { status: 'not_applicable' },
+        language: { status: 'judged', answer: predicate(1) },
       },
     });
     expect(report.results[1]).toMatchObject({
@@ -163,7 +170,7 @@ describe('runEvalCommand', () => {
         suggestions: ['A?', 'B?', 'C?'],
       }),
     );
-    judge = fakeDecisions([score(2), score(2)]);
+    judge = fakeDecisions([score(2), score(2)], [predicate(1)]);
 
     expect(await run()).toBe(0);
 
@@ -181,7 +188,7 @@ describe('runEvalCommand', () => {
     });
   });
 
-  it('compares each expected label, and writes the labels and the history in the report', async () => {
+  it('compares each expected label, judges the text replies on their language, and writes the labels and the history in the report', async () => {
     const history = [{ question: 'Units per item?', sql: 'SELECT name, qty FROM items' }];
     writeGolden([
       { id: 'thanks', question: 'Thanks!', classification: 'conversation', history },
@@ -191,19 +198,22 @@ describe('runEvalCommand', () => {
       jsonResponse({ narrative: 'You are welcome!', suggestions: ['A?', 'B?', 'C?'] }),
       jsonResponse({ narrative: 'Nice to chat!', suggestions: ['A?', 'B?', 'C?'] }),
     );
-    judge = fakeDecisions();
+    judge = fakeDecisions([predicate(1)], [predicate(0.4)]);
 
     expect(await run({ createDecisions: () => fakeClassifier('conversation') })).toBe(0);
 
-    expect(lines.slice(0, 2)).toEqual([
-      'thanks: classification ok',
-      'weather: classification expected out_of_scope, got conversation',
+    expect(lines.slice(0, 8)).toEqual([
+      'thanks: classification ok | language 1.00',
+      'weather: classification expected out_of_scope, got conversation | language 0.40',
+      'Summary: 2 questions, 0 answered, 0 without an answer, 2 with another label, 0 errors',
+      // A text reply counts for its language only.
+      '  The SQL answers the question: nothing judged (0 judged, 0 refused, 0 not applicable)',
+      '  The narrative is faithful to the data: nothing judged (0 judged, 0 refused, 0 not applicable)',
+      '  The chart fits: nothing judged (0 judged, 0 refused, 0 not applicable)',
+      '  The answer is in the language of the message: 0.70 average probability (2 judged, 0 refused, 0 not applicable)',
+      '  Classification: 1/2 correct (0 without a label)',
     ]);
-    expect(lines[2]).toBe(
-      'Summary: 2 questions, 0 answered, 0 without an answer, 2 not judged, 0 errors',
-    );
-    expect(lines[6]).toBe('  Classification: 1/2 correct (0 without a label)');
-    expect(judge.requests).toHaveLength(0);
+    expect(judge.requests).toHaveLength(2);
     const [file] = readdirSync(path.join(dir, 'reports'));
     const report = JSON.parse(readFileSync(path.join(dir, 'reports', file), 'utf8'));
     expect(report.summary).toMatchObject({
@@ -217,12 +227,14 @@ describe('runEvalCommand', () => {
         expectedClassification: 'conversation',
         classification: 'conversation',
         narrative: 'You are welcome!',
+        criteria: { language: { status: 'judged', answer: predicate(1) } },
         history,
       },
       {
         id: 'weather',
         expectedClassification: 'out_of_scope',
         classification: 'conversation',
+        criteria: { language: { status: 'judged', answer: predicate(0.4) } },
         history: [],
       },
     ]);
@@ -251,12 +263,16 @@ describe('runEvalCommand', () => {
       insightsReply('Eight.'),
     );
     const choice = { type: 'choice', name: null, choice: 'x', confidence: 1, probabilities: [] };
-    judge = fakeDecisions([choice as DecisionAnswer, score(2)], [score(2), score(2)]);
+    judge = fakeDecisions(
+      [choice as DecisionAnswer, score(2)],
+      [score(2), score(2)],
+      [predicate(1)],
+    );
 
     expect(await run()).toBe(0);
     expect(lines.slice(0, 2)).toEqual([
       'units: error (The judge returned an unexpected answer for sql.)',
-      'colors: classification ok | sql 2.00/2 | narrative 2.00/2 | chart n/a',
+      'colors: classification ok | sql 2.00/2 | narrative 2.00/2 | chart n/a | language 1.00',
     ]);
   });
 

@@ -101,7 +101,8 @@ npm run eval
 
 It runs the golden questions in [backend/eval/golden.json](backend/eval/golden.json) through
 the real pipeline, checks how each one was classified, and has OpenAI's Decisions API judge
-each answer to a data question. No server or access key needed.
+each answer to a data question and the language of each text reply to any other message. No
+server or access key needed.
 
 - **A golden case** is an `id` and a `question`, plus two optional fields:
   `classification`, the label the message should get (`data_question` by default,
@@ -113,18 +114,23 @@ each answer to a data question. No server or access key needed.
   and `OPENAI_DECISIONS_MODEL` (today the Decisions API only supports `gpt-6-luna`). If
   something is missing it says what and exits without calling OpenAI.
 - **It costs money:** each data question is a full pipeline run (a classification, then the
-  SQL and insights calls) plus one judge call; any other message is a classification and a
-  text reply, with no judge. That's why it runs by hand and isn't part of the quality gate.
+  SQL and insights calls) plus two judge calls, one for the answer and one for its language;
+  any other message is a classification, a text reply and one judge call for its language.
+  That's why it runs by hand and isn't part of the quality gate.
 - **Output:** one line per question, a summary, and a JSON report in `data/eval/`
   (gitignored) with every answer, label and score.
 - **The classification** is compared with the expected label: each line starts with
   `classification ok`, or the expected and the actual label when they differ. A message
-  that expects another label than `data_question` isn't judged (*not judged*). The summary
+  that expects another label than `data_question` counts as *with another label*: only the
+  language of its text reply is judged. The summary
   adds `Classification: <correct>/<compared> correct (<n> without a label)`; *without a
   label* means the classifier failed, and errors stay out of the count.
 - **Reading the summary:** it shows values, not a verdict. *The SQL answers the question*
   and *the narrative is faithful to the data* are averages from 0 to 2 (2 is best); *the
-  chart fits* is an average probability, only over answers with a chart. An answer with
+  chart fits* is an average probability, only over answers with a chart. *The answer is in
+  the language of the message* is an average probability too, over the data answers and the
+  text replies: everything the bot wrote (texts, column names and titles) should be in the
+  language of the last message, whatever the language of the earlier turns. An answer with
   several results is judged as a whole. The counts say how
   many questions had no answer, errored, or had a criterion refused or not applicable, and
   those stay out of the averages. Scores vary between runs: read them as a trend, for example

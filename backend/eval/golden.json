@@ -77,5 +77,57 @@
         "narrative": "La categoría **Electronics** lidera claramente las ventas con **133414**. A bastante distancia le siguen **Furniture** con **55477.2**, **Accessories** con **15502.76** y **Office Supplies** con **5700.87**. El reparto muestra una fuerte concentración en Electronics."
       }
     ]
+  },
+  {
+    "id": "capital-of-france-after-spanish",
+    "question": "What is the capital of France?",
+    "classification": "out_of_scope",
+    "history": [
+      {
+        "question": "Hola!",
+        "narrative": "¡Hola! 😊 Puedo ayudarte a analizar las ventas, clientes y productos de esta base de datos; te responderé con texto breve y, cuando encaje, también con una tabla y un gráfico.\n\n¿Sobre qué te gustaría preguntar?"
+      },
+      {
+        "question": "Ventas por mes en 2025",
+        "sql": "WITH ventas_mensuales AS (\n  SELECT strftime('%Y-%m', order_date) AS \"Mes\", SUM(amount) AS \"Ventas\"\n  FROM orders\n  WHERE order_date >= '2025-01-01' AND order_date < '2026-01-01'\n  GROUP BY strftime('%Y-%m', order_date)\n)\nSELECT \"Mes\", \"Ventas\"\nFROM ventas_mensuales\nORDER BY \"Mes\";",
+        "narrative": "Las ventas de 2025 muestran variaciones mensuales claras a lo largo del año. El mes con más ventas fue **2025-11** con **14993.4**, mientras que el menor registro visible fue **2025-09** con **6265.81**. En general, hubo picos en marzo y noviembre, y varios meses por debajo de 9000."
+      },
+      {
+        "question": "No veo el gráfico",
+        "sql": "WITH ventas_mensuales AS (\n  SELECT strftime('%Y-%m', order_date) AS \"Mes\", SUM(amount) AS \"Ventas\"\n  FROM orders\n  WHERE order_date >= '2025-01-01' AND order_date < '2026-01-01'\n  GROUP BY strftime('%Y-%m', order_date)\n)\nSELECT \"Mes\", \"Ventas\"\nFROM ventas_mensuales\nORDER BY \"Mes\";",
+        "narrative": "Las ventas mensuales de 2025 muestran una evolución irregular a lo largo del año, con un máximo en **2025-11** de **14993.4** y un mínimo visible en **2025-09** de **6265.81**. También destacan valores altos en **2025-03** (**13274.49**) y **2025-01** (**12290.94**). En total hay **12** meses con datos."
+      },
+      {
+        "question": "¿Cuántos clientes hay?",
+        "sql": "SELECT COUNT(*) AS \"Clientes\" FROM customers;",
+        "narrative": "Hay **20** clientes en total."
+      }
+    ]
+  },
+  {
+    "id": "top-products-after-spanish",
+    "question": "Top 5 products by units sold",
+    "classification": "data_question",
+    "history": [
+      {
+        "question": "Hola!",
+        "narrative": "¡Hola! 😊 Puedo ayudarte a analizar las ventas, clientes y productos de esta base de datos; te responderé con texto breve y, cuando encaje, también con una tabla y un gráfico.\n\n¿Sobre qué te gustaría preguntar?"
+      },
+      {
+        "question": "Ventas por mes en 2025",
+        "sql": "WITH ventas_mensuales AS (\n  SELECT strftime('%Y-%m', order_date) AS \"Mes\", SUM(amount) AS \"Ventas\"\n  FROM orders\n  WHERE order_date >= '2025-01-01' AND order_date < '2026-01-01'\n  GROUP BY strftime('%Y-%m', order_date)\n)\nSELECT \"Mes\", \"Ventas\"\nFROM ventas_mensuales\nORDER BY \"Mes\";",
+        "narrative": "Las ventas de 2025 muestran variaciones mensuales claras a lo largo del año. El mes con más ventas fue **2025-11** con **14993.4**, mientras que el menor registro visible fue **2025-09** con **6265.81**. En general, hubo picos en marzo y noviembre, y varios meses por debajo de 9000."
+      },
+      {
+        "question": "No veo el gráfico",
+        "sql": "WITH ventas_mensuales AS (\n  SELECT strftime('%Y-%m', order_date) AS \"Mes\", SUM(amount) AS \"Ventas\"\n  FROM orders\n  WHERE order_date >= '2025-01-01' AND order_date < '2026-01-01'\n  GROUP BY strftime('%Y-%m', order_date)\n)\nSELECT \"Mes\", \"Ventas\"\nFROM ventas_mensuales\nORDER BY \"Mes\";",
+        "narrative": "Las ventas mensuales de 2025 muestran una evolución irregular a lo largo del año, con un máximo en **2025-11** de **14993.4** y un mínimo visible en **2025-09** de **6265.81**. También destacan valores altos en **2025-03** (**13274.49**) y **2025-01** (**12290.94**). En total hay **12** meses con datos."
+      },
+      {
+        "question": "¿Cuántos clientes hay?",
+        "sql": "SELECT COUNT(*) AS \"Clientes\" FROM customers;",
+        "narrative": "Hay **20** clientes en total."
+      }
+    ]
   }
 ]

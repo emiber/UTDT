@@ -15,7 +15,8 @@ import { renderPrompt } from './prompts.ts';
 
 // Offline evaluation (LLM-as-a-judge): each golden question runs through the real pipeline,
 // its classification is compared with the expected one, and the Decisions API scores the
-// answer to a data question. Values are kept as they come: no verdict, no thresholds.
+// answer to a data question, and the language of that answer or of a text reply to any other
+// message. Values are kept as they come: no verdict, no thresholds.
 
 export interface GoldenCase {
   id: string;
@@ -86,7 +87,7 @@ function parseHistory(id: string, history: unknown): HistoryTurn[] {
   });
 }
 
-export const CRITERIA = ['sql', 'narrative', 'chart'] as const;
+export const CRITERIA = ['sql', 'narrative', 'chart', 'language'] as const;
 export type Criterion = (typeof CRITERIA)[number];
 
 /** Both scores have 3 levels; the Decisions API scores them from 0 to 2. */
@@ -96,6 +97,7 @@ export const CRITERION_LABELS: Record<Criterion, string> = {
   sql: 'The SQL answers the question',
   narrative: 'The narrative is faithful to the data',
   chart: 'The chart fits',
+  language: 'The answer is in the language of the message',
 };
 
 const SEPARATE_RESULTS =
@@ -138,6 +140,14 @@ const QUESTIONS: Record<Criterion, DecisionQuestion> = {
     instructions:
       'The proposed charts (type, x column, series, title) are a suitable way to show their results.',
   },
+  // The bugs of #22 and #23: earlier turns in another language pulled the answer into theirs.
+  // It's asked on its own, about an input without the history (see evaluateCase).
+  language: {
+    type: 'predicate',
+    name: 'language',
+    instructions:
+      "Everything the bot wrote is in the language of the question (the latest message), even when the earlier turns are in another language: its narratives or reply, the column names of its results, and the titles of its results and charts. Values from the result rows and proper names don't count.",
+  },
 };
 
 /**
@@ -156,6 +166,12 @@ export type CriterionResult =
   | { status: 'judged'; answer: DecisionAnswer }
   | { status: 'refused' }
   | { status: 'not_applicable' };
+
+/**
+ * The criteria asked about an answer of its kind: all of them for a data answer, only the
+ * language for a text reply. A criterion that isn't there isn't counted anywhere.
+ */
+export type Criteria = Partial<Record<Criterion, CriterionResult>>;
 
 /** One query of an answer, as the report keeps it. */
 export interface EvaluatedQuery {
@@ -176,8 +192,8 @@ export interface CaseResult {
    */
   classification: Classification | null;
   /**
-   * `not_judged`: the case expects a label other than `data_question`, so whatever the
-   * pipeline answered, the judge isn't asked.
+   * `not_judged`: the case expects a label other than `data_question`, so the judge isn't
+   * asked about the SQL, narrative or chart; a text reply is still judged on its language.
    */
   status: 'answered' | 'unanswered' | 'not_judged' | 'error';
   /** Every query's SQL, one after the other. */
@@ -186,8 +202,11 @@ export interface CaseResult {
   queries: EvaluatedQuery[] | null;
   /** Every text of the answer, one after the other. */
   narrative: string | null;
-  /** Per criterion, for an answered question; null otherwise. */
-  criteria: Record<Criterion, CriterionResult> | null;
+  /**
+   * For a judged answer: a data answer to a data question, or a text reply to any other
+   * message (only its language); null otherwise.
+   */
+  criteria: Criteria | null;
   /** Why the pipeline gave no answer. */
   reason: string | null;
   error: string | null;
@@ -210,8 +229,9 @@ const QUIET: PipelineLogger = { info: () => {}, warn: () => {} };
 
 /**
  * Runs one golden message through the pipeline, after the case's history (a new
- * conversation when it has none), keeps the label it got, and judges the answer when a data
- * question got one. Never throws: a pipeline or judge failure is recorded as the case's error.
+ * conversation when it has none), keeps the label it got, and judges the answer when it's of
+ * the expected kind: a data answer to a data question, a text reply to any other message.
+ * Never throws: a pipeline or judge failure is recorded as the case's error.
  */
 export async function evaluateCase(golden: GoldenCase, deps: EvalDeps): Promise<CaseResult> {
   const base: CaseResult = {
@@ -244,7 +264,7 @@ export async function evaluateCase(golden: GoldenCase, deps: EvalDeps): Promise<
     const { sql, cause } = error as PipelineError;
     return { ...base, sql, error: (cause as Error).message };
   }
-  // Only a data question's data answer is judged; any other case just keeps its label.
+  // Only an answer of the expected kind is judged; any other case just keeps its label.
   const expectsData = golden.classification === 'data_question';
   const labeled: CaseResult = { ...base, classification: result.classification };
   if (!result.ok) {
@@ -256,13 +276,25 @@ export async function evaluateCase(golden: GoldenCase, deps: EvalDeps): Promise<
     };
   }
   if (result.kind === 'reply') {
-    return {
+    const reply: CaseResult = {
       ...labeled,
       status: expectsData ? 'unanswered' : 'not_judged',
       narrative: result.narrative,
       // For a data question, a text reply means the classifier missed.
       reason: expectsData ? `classified as ${result.classification}` : null,
     };
+    if (expectsData) return reply;
+    // A text reply has nothing else to judge: only its language, without the history (see
+    // the language request below).
+    const input = renderPrompt('judge-reply-input', {
+      question: golden.question,
+      reply: result.narrative,
+    });
+    try {
+      return { ...reply, criteria: await judgeCriteria(deps.judge, input, ['language'], golden) };
+    } catch (error) {
+      return { ...reply, status: 'error', error: (error as Error).message };
+    }
   }
 
   const answered: CaseResult = {
@@ -279,10 +311,9 @@ export async function evaluateCase(golden: GoldenCase, deps: EvalDeps): Promise<
   if (!expectsData) return { ...answered, status: 'not_judged' };
   // No chart spec in any result: the chart criterion doesn't apply and the judge isn't asked.
   const asked: Criterion[] = result.results.some((r) => r.chart)
-    ? [...CRITERIA]
+    ? ['sql', 'narrative', 'chart']
     : ['sql', 'narrative'];
-  const input = renderPrompt('judge-input', {
-    history: golden.history,
+  const answer = {
     question: golden.question,
     schemaContext: deps.schemaContext,
     // Each result's own text, without the heading the backend adds to it.
@@ -295,38 +326,65 @@ export async function evaluateCase(golden: GoldenCase, deps: EvalDeps): Promise<
       chart: chart && JSON.stringify(chart),
       narrative,
     })),
-  });
+  };
   try {
-    const answers = await requestDecision(
-      deps.judge,
-      input,
-      asked.map((criterion) =>
-        criterion === 'sql' && golden.history.length ? FOLLOW_UP_SQL : QUESTIONS[criterion],
-      ),
-    );
-    const criteria: Record<Criterion, CriterionResult> = {
-      sql: { status: 'not_applicable' },
-      narrative: { status: 'not_applicable' },
-      chart: { status: 'not_applicable' },
+    const judged = {
+      ...(await judgeCriteria(
+        deps.judge,
+        renderPrompt('judge-input', { ...answer, history: golden.history }),
+        asked,
+        golden,
+      )),
+      // The language goes in its own request, without the history: with it, the judge took
+      // the English examples of the history's header ("show it as a chart") for a Spanish
+      // message asking that, and scored correct answers as in the wrong language.
+      ...(await judgeCriteria(
+        deps.judge,
+        renderPrompt('judge-input', { ...answer, history: [] }),
+        ['language'],
+        golden,
+      )),
     };
-    asked.forEach((criterion, index) => {
-      const answer = answers[index];
-      if (answer?.type === 'refusal') {
-        criteria[criterion] = { status: 'refused' };
-        return;
-      }
-      // The Decisions API is a beta: an answer of another shape is this question's error,
-      // never a crash later in the summary.
-      const value = answer?.type === QUESTIONS[criterion].type ? valueOf(answer) : NaN;
-      if (!Number.isFinite(value)) {
-        throw new LlmError(`The judge returned an unexpected answer for ${criterion}.`);
-      }
-      criteria[criterion] = { status: 'judged', answer };
-    });
+    // A criterion the judge wasn't asked (the chart) is not applicable to a data answer.
+    const criteria: Criteria = Object.fromEntries(
+      CRITERIA.map((criterion) => [criterion, judged[criterion] ?? { status: 'not_applicable' }]),
+    );
     return { ...answered, status: 'answered', criteria };
   } catch (error) {
     return { ...answered, error: (error as Error).message };
   }
+}
+
+/** Asks the judge these criteria about the input. Throws on a failure or an odd answer. */
+async function judgeCriteria(
+  judge: DecisionClient,
+  input: string,
+  asked: Criterion[],
+  golden: GoldenCase,
+): Promise<Criteria> {
+  const answers = await requestDecision(
+    judge,
+    input,
+    asked.map((criterion) =>
+      criterion === 'sql' && golden.history.length ? FOLLOW_UP_SQL : QUESTIONS[criterion],
+    ),
+  );
+  const criteria: Criteria = {};
+  asked.forEach((criterion, index) => {
+    const answer = answers[index];
+    if (answer?.type === 'refusal') {
+      criteria[criterion] = { status: 'refused' };
+      return;
+    }
+    // The Decisions API is a beta: an answer of another shape is this question's error,
+    // never a crash later in the summary.
+    const value = answer?.type === QUESTIONS[criterion].type ? valueOf(answer) : NaN;
+    if (!Number.isFinite(value)) {
+      throw new LlmError(`The judge returned an unexpected answer for ${criterion}.`);
+    }
+    criteria[criterion] = { status: 'judged', answer };
+  });
+  return criteria;
 }
 
 /** A judged answer's value: the score (0 to SCORE_MAX) or the predicate's probability. */
@@ -371,7 +429,7 @@ export function summarize(results: CaseResult[]): Summary {
   const tally = (outcome: ClassificationOutcome) => labels.filter((o) => o === outcome).length;
   const criteria = Object.fromEntries(
     CRITERIA.map((criterion) => {
-      const outcomes = results.flatMap((r) => (r.criteria ? [r.criteria[criterion]] : []));
+      const outcomes = results.flatMap((r) => r.criteria?.[criterion] ?? []);
       const values = outcomes.flatMap((o) => (o.status === 'judged' ? [valueOf(o.answer)] : []));
       return [
         criterion,
@@ -404,15 +462,12 @@ export function formatCase(result: CaseResult): string {
   if (result.status === 'error') return `${result.id}: error (${result.error})`;
   const parts = [formatClassification(result)];
   if (result.status === 'unanswered') parts.push(`no answer (${result.reason})`);
-  if (result.status === 'answered') {
-    parts.push(
-      ...CRITERIA.map((criterion) => {
-        const outcome = (result.criteria as Record<Criterion, CriterionResult>)[criterion];
-        if (outcome.status === 'not_applicable') return `${criterion} n/a`;
-        if (outcome.status === 'refused') return `${criterion} refused`;
-        return `${criterion} ${formatValue(criterion, valueOf(outcome.answer))}`;
-      }),
-    );
+  for (const criterion of CRITERIA) {
+    const outcome = result.criteria?.[criterion];
+    if (!outcome) continue;
+    if (outcome.status === 'not_applicable') parts.push(`${criterion} n/a`);
+    else if (outcome.status === 'refused') parts.push(`${criterion} refused`);
+    else parts.push(`${criterion} ${formatValue(criterion, valueOf(outcome.answer))}`);
   }
   return `${result.id}: ${parts.join(' | ')}`;
 }
@@ -424,15 +479,19 @@ function formatClassification(result: CaseResult): string {
   return `classification expected ${result.expectedClassification}, got ${result.classification}`;
 }
 
-/** The summary lines: averages and counts, with no verdict. */
+/**
+ * The summary lines: averages and counts, with no verdict. The cases that expect a label
+ * other than `data_question` (`not_judged`) show as "with another label": their text
+ * replies are judged on their language.
+ */
 export function formatSummary(summary: Summary): string[] {
   const lines = [
-    `Summary: ${summary.questions} questions, ${summary.answered} answered, ${summary.unanswered} without an answer, ${summary.notJudged} not judged, ${summary.errors} errors`,
+    `Summary: ${summary.questions} questions, ${summary.answered} answered, ${summary.unanswered} without an answer, ${summary.notJudged} with another label, ${summary.errors} errors`,
   ];
   for (const criterion of CRITERIA) {
     const { average, judged, refused, notApplicable } = summary.criteria[criterion];
     const value = average === null ? 'nothing judged' : formatValue(criterion, average);
-    const scale = criterion === 'chart' ? ' average probability' : '';
+    const scale = QUESTIONS[criterion].type === 'predicate' ? ' average probability' : '';
     lines.push(
       `  ${CRITERION_LABELS[criterion]}: ${value}${average === null ? '' : scale} (${judged} judged, ${refused} refused, ${notApplicable} not applicable)`,
     );
@@ -444,6 +503,9 @@ export function formatSummary(summary: Summary): string[] {
   return lines;
 }
 
+/** A probability as is, a score over its scale. */
 function formatValue(criterion: Criterion, value: number): string {
-  return criterion === 'chart' ? value.toFixed(2) : `${value.toFixed(2)}/${SCORE_MAX}`;
+  return QUESTIONS[criterion].type === 'predicate'
+    ? value.toFixed(2)
+    : `${value.toFixed(2)}/${SCORE_MAX}`;
 }
