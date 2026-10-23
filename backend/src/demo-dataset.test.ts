@@ -229,7 +229,7 @@ describe('demo dataset: content', () => {
       WHERE month NOT IN (SELECT strftime('%Y-%m', order_date) FROM orders)
          OR category NOT IN (SELECT category FROM products)
          OR target_amount <= 0
-         OR target_amount % 10 <> 0
+         OR target_amount / 10 <> round(target_amount / 10)
     `);
 
     // With (month, category) as the key, 24 × 4 rows inside the grid fill all of it.
@@ -276,7 +276,7 @@ describe('demo dataset: content', () => {
         WHERE month LIKE '2025-%'
         GROUP BY category
       `);
-      expect(totals.map((t) => t.met).sort()).toEqual(expect.arrayContaining([0, 1]));
+      expect(totals.map((t) => t.met)).toEqual(expect.arrayContaining([0, 1]));
     });
   });
 
