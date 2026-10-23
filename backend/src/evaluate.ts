@@ -1,5 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import type { ChartSpec } from './chart.ts';
+import { CLASSIFICATIONS, type Classification } from './classify.ts';
+import type { HistoryTurn } from './conversations.ts';
 import {
   LlmError,
   requestDecision,
@@ -12,12 +14,16 @@ import { answerQuestion, type PipelineError, type PipelineLogger } from './pipel
 import { renderPrompt } from './prompts.ts';
 
 // Offline evaluation (LLM-as-a-judge): each golden question runs through the real pipeline,
-// and the Decisions API scores the answer. Values are kept as they come: no verdict, no
-// thresholds.
+// its classification is compared with the expected one, and the Decisions API scores the
+// answer to a data question. Values are kept as they come: no verdict, no thresholds.
 
 export interface GoldenCase {
   id: string;
   question: string;
+  /** The label the message should get; `data_question` when the case doesn't say. */
+  classification: Classification;
+  /** Earlier turns, written by hand, oldest first; empty for a new conversation. */
+  history: HistoryTurn[];
 }
 
 /** Parses the golden file. Throws an Error saying what's wrong with it. */
@@ -33,14 +39,50 @@ export function parseGolden(text: string): GoldenCase[] {
   }
   const ids = new Set<string>();
   return data.map((item, index) => {
-    const { id, question } = (item ?? {}) as Partial<GoldenCase>;
+    const {
+      id,
+      question,
+      classification = 'data_question',
+      history = [],
+    } = (item ?? {}) as Record<string, unknown>;
     if (typeof id !== 'string' || !id.trim()) throw new Error(`Case ${index + 1} has no id.`);
     if (typeof question !== 'string' || !question.trim()) {
       throw new Error(`Case "${id}" has no question.`);
     }
     if (ids.has(id)) throw new Error(`Case id "${id}" is repeated.`);
     ids.add(id);
-    return { id, question };
+    if (!CLASSIFICATIONS.includes(classification as Classification)) {
+      throw new Error(
+        `Case "${id}" has an unknown classification: ${JSON.stringify(classification)}.`,
+      );
+    }
+    return {
+      id,
+      question,
+      classification: classification as Classification,
+      history: parseHistory(id, history),
+    };
+  });
+}
+
+/** A case's history, in the shape the pipeline takes. Throws an Error naming the bad turn. */
+function parseHistory(id: string, history: unknown): HistoryTurn[] {
+  if (!Array.isArray(history)) throw new Error(`Case "${id}" has a history that is not an array.`);
+  return history.map((item, index) => {
+    const fields = (item ?? {}) as Record<string, unknown>;
+    const where = `Case "${id}", history turn ${index + 1},`;
+    const { question } = fields;
+    if (typeof question !== 'string' || !question.trim()) {
+      throw new Error(`${where} has no question.`);
+    }
+    const turn: HistoryTurn = { question };
+    for (const field of ['sql', 'narrative'] as const) {
+      const value = fields[field];
+      if (value === undefined) continue;
+      if (typeof value !== 'string') throw new Error(`${where} has a ${field} that is not text.`);
+      turn[field] = value;
+    }
+    return turn;
   });
 }
 
@@ -113,7 +155,18 @@ export interface EvaluatedQuery {
 export interface CaseResult {
   id: string;
   question: string;
-  status: 'answered' | 'unanswered' | 'error';
+  /** The label the golden case expects. */
+  expectedClassification: Classification;
+  /**
+   * The label the pipeline answered with, after its low-confidence fallback; null when the
+   * classifier failed (or the pipeline threw before saying).
+   */
+  classification: Classification | null;
+  /**
+   * `not_judged`: the case expects a label other than `data_question`, so whatever the
+   * pipeline answered, the judge isn't asked.
+   */
+  status: 'answered' | 'unanswered' | 'not_judged' | 'error';
   /** Every query's SQL, one after the other. */
   sql: string | null;
   /** One per query, for an answered question; null otherwise. */
@@ -125,6 +178,8 @@ export interface CaseResult {
   /** Why the pipeline gave no answer. */
   reason: string | null;
   error: string | null;
+  /** The case's earlier turns, as the pipeline and the judge got them. */
+  history: HistoryTurn[];
 }
 
 export interface EvalDeps {
@@ -141,12 +196,16 @@ export interface EvalDeps {
 const QUIET: PipelineLogger = { info: () => {}, warn: () => {} };
 
 /**
- * Runs one golden question through the pipeline, as a new conversation, and judges the
- * answer. Never throws: a pipeline or judge failure is recorded as the case's error.
+ * Runs one golden message through the pipeline, after the case's history (a new
+ * conversation when it has none), keeps the label it got, and judges the answer when a data
+ * question got one. Never throws: a pipeline or judge failure is recorded as the case's error.
  */
 export async function evaluateCase(golden: GoldenCase, deps: EvalDeps): Promise<CaseResult> {
   const base: CaseResult = {
-    ...golden,
+    id: golden.id,
+    question: golden.question,
+    expectedClassification: golden.classification,
+    classification: null,
     status: 'error',
     sql: null,
     queries: null,
@@ -154,6 +213,7 @@ export async function evaluateCase(golden: GoldenCase, deps: EvalDeps): Promise<
     criteria: null,
     reason: null,
     error: null,
+    history: golden.history,
   };
 
   let result: Awaited<ReturnType<typeof answerQuestion>>;
@@ -164,27 +224,36 @@ export async function evaluateCase(golden: GoldenCase, deps: EvalDeps): Promise<
       dataDb,
       llm,
       decisions,
+      history: golden.history,
       log: QUIET,
     });
   } catch (error) {
     const { sql, cause } = error as PipelineError;
     return { ...base, sql, error: (cause as Error).message };
   }
+  // Only a data question's data answer is judged; any other case just keeps its label.
+  const expectsData = golden.classification === 'data_question';
+  const labeled: CaseResult = { ...base, classification: result.classification };
   if (!result.ok) {
     return {
-      ...base,
-      status: 'unanswered',
+      ...labeled,
+      status: expectsData ? 'unanswered' : 'not_judged',
       sql: result.sql,
       reason: `${result.kind}: ${result.message}`,
     };
   }
-  // Golden questions are all data questions: a text reply means the classifier missed.
   if (result.kind === 'reply') {
-    return { ...base, status: 'unanswered', reason: `classified as ${result.classification}` };
+    return {
+      ...labeled,
+      status: expectsData ? 'unanswered' : 'not_judged',
+      narrative: result.narrative,
+      // For a data question, a text reply means the classifier missed.
+      reason: expectsData ? `classified as ${result.classification}` : null,
+    };
   }
 
   const answered: CaseResult = {
-    ...base,
+    ...labeled,
     sql: result.sql,
     queries: result.results.map(({ title, sql, rows, chart }) => ({
       title,
@@ -194,11 +263,13 @@ export async function evaluateCase(golden: GoldenCase, deps: EvalDeps): Promise<
     })),
     narrative: result.narrative,
   };
+  if (!expectsData) return { ...answered, status: 'not_judged' };
   // No chart spec in any result: the chart criterion doesn't apply and the judge isn't asked.
   const asked: Criterion[] = result.results.some((r) => r.chart)
     ? [...CRITERIA]
     : ['sql', 'narrative'];
   const input = renderPrompt('judge-input', {
+    history: golden.history,
     question: golden.question,
     schemaContext: deps.schemaContext,
     // Each result's own text, without the heading the backend adds to it.
@@ -258,17 +329,31 @@ export interface CriterionSummary {
   notApplicable: number;
 }
 
+export type ClassificationOutcome = 'correct' | 'incorrect' | 'without_label';
+
+/** How a case's label compares with the expected one; null for an error, left out of the count. */
+export function classificationOutcome(result: CaseResult): ClassificationOutcome | null {
+  if (result.status === 'error') return null;
+  if (result.classification === null) return 'without_label';
+  return result.classification === result.expectedClassification ? 'correct' : 'incorrect';
+}
+
 export interface Summary {
   questions: number;
   answered: number;
   unanswered: number;
+  notJudged: number;
   errors: number;
   criteria: Record<Criterion, CriterionSummary>;
+  /** Errors are left out: they have no outcome. */
+  classification: { correct: number; incorrect: number; withoutLabel: number };
 }
 
 /** Averages and counts. Not applicable, refused, unanswered and errors stay out of averages. */
 export function summarize(results: CaseResult[]): Summary {
   const count = (status: CaseResult['status']) => results.filter((r) => r.status === status).length;
+  const outcomes = results.map(classificationOutcome);
+  const tally = (outcome: ClassificationOutcome) => outcomes.filter((o) => o === outcome).length;
   const criteria = Object.fromEntries(
     CRITERIA.map((criterion) => {
       const outcomes = results.flatMap((r) => (r.criteria ? [r.criteria[criterion]] : []));
@@ -288,28 +373,46 @@ export function summarize(results: CaseResult[]): Summary {
     questions: results.length,
     answered: count('answered'),
     unanswered: count('unanswered'),
+    notJudged: count('not_judged'),
     errors: count('error'),
     criteria,
+    classification: {
+      correct: tally('correct'),
+      incorrect: tally('incorrect'),
+      withoutLabel: tally('without_label'),
+    },
   };
 }
 
-/** One console line per question. */
+/** One console line per question: the classification, then the answer's scores, if judged. */
 export function formatCase(result: CaseResult): string {
-  if (result.status === 'unanswered') return `${result.id}: no answer (${result.reason})`;
   if (result.status === 'error') return `${result.id}: error (${result.error})`;
-  const parts = CRITERIA.map((criterion) => {
-    const outcome = (result.criteria as Record<Criterion, CriterionResult>)[criterion];
-    if (outcome.status === 'not_applicable') return `${criterion} n/a`;
-    if (outcome.status === 'refused') return `${criterion} refused`;
-    return `${criterion} ${formatValue(criterion, valueOf(outcome.answer))}`;
-  });
+  const parts = [formatClassification(result)];
+  if (result.status === 'unanswered') parts.push(`no answer (${result.reason})`);
+  if (result.status === 'answered') {
+    parts.push(
+      ...CRITERIA.map((criterion) => {
+        const outcome = (result.criteria as Record<Criterion, CriterionResult>)[criterion];
+        if (outcome.status === 'not_applicable') return `${criterion} n/a`;
+        if (outcome.status === 'refused') return `${criterion} refused`;
+        return `${criterion} ${formatValue(criterion, valueOf(outcome.answer))}`;
+      }),
+    );
+  }
   return `${result.id}: ${parts.join(' | ')}`;
+}
+
+function formatClassification(result: CaseResult): string {
+  const outcome = classificationOutcome(result);
+  if (outcome === 'correct') return 'classification ok';
+  if (outcome === 'without_label') return 'classification without a label';
+  return `classification expected ${result.expectedClassification}, got ${result.classification}`;
 }
 
 /** The summary lines: averages and counts, with no verdict. */
 export function formatSummary(summary: Summary): string[] {
   const lines = [
-    `Summary: ${summary.questions} questions, ${summary.answered} answered, ${summary.unanswered} without an answer, ${summary.errors} errors`,
+    `Summary: ${summary.questions} questions, ${summary.answered} answered, ${summary.unanswered} without an answer, ${summary.notJudged} not judged, ${summary.errors} errors`,
   ];
   for (const criterion of CRITERIA) {
     const { average, judged, refused, notApplicable } = summary.criteria[criterion];
@@ -319,6 +422,10 @@ export function formatSummary(summary: Summary): string[] {
       `  ${CRITERION_LABELS[criterion]}: ${value}${average === null ? '' : scale} (${judged} judged, ${refused} refused, ${notApplicable} not applicable)`,
     );
   }
+  const { correct, incorrect, withoutLabel } = summary.classification;
+  lines.push(
+    `  Classification: ${correct}/${correct + incorrect} correct (${withoutLabel} without a label)`,
+  );
   return lines;
 }
 
