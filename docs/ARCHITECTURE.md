@@ -364,17 +364,32 @@ work.
 ### Evaluation (LLM-as-a-judge, offline)
 
 `npm run eval` (`backend/src/eval-command.ts`, `evaluate.ts`) runs the golden questions in
-`backend/eval/golden.json` (each case is only an `id` and a `question`, for the demo
-dataset) through the pipeline in process — no server, no access key, nothing written to
-`app.db`, each question as a new conversation — and has the Decisions API judge each
-answer. It is **not** part of the quality gate, because it costs money and isn't
-deterministic.
+`backend/eval/golden.json` (for the demo dataset) through the pipeline in process — no
+server, no access key, nothing written to `app.db` — compares each message's classification
+with the expected one, and has the Decisions API judge each answer to a data question. It
+is **not** part of the quality gate, because it costs money and isn't deterministic.
 
+- **A golden case** is an `id`, a `question`, and two optional fields:
+  - `classification` — the expected label, one of the classifier's four; `data_question`
+    when missing;
+  - `history` — earlier turns written by hand, oldest first, in the pipeline's
+    `HistoryTurn` shape (`question`, optional `sql` and `narrative`), copied from a real
+    run. It's passed to `answerQuestion` as is; only the last message runs. Empty or
+    missing means a new conversation.
 - **Before the first OpenAI call** it checks `OPENAI_API_KEY`, `OPENAI_MODEL`,
-  `OPENAI_DECISIONS_MODEL`, the golden file and `data/data.db`. A problem prints why and
-  exits 1, with no report.
+  `OPENAI_DECISIONS_MODEL`, the golden file (including each label and history turn) and
+  `data/data.db`. A problem prints why, naming the case, and exits 1, with no report.
+- **The classification** compared is the pipeline's final label, after its low-confidence
+  fallback: the data answer and the failed SQL carry `data_question` (or null), the text
+  reply its own label. Equal → *correct*, different → *incorrect*, null (the classifier
+  failed) → *without a label*. A case that errors stays out of the count.
+- **What gets judged:** only a data answer to a case that expects `data_question`. Such a
+  case that gets a text reply or fails every SQL attempt is *without an answer*, as below.
+  A case that expects another label is *not judged*, whatever it got.
 - **The judge** gets one request per answered question, with the answer as content (never
-  as instructions): the question, the schema context and, for each query of the answer
+  as instructions): the case's history (the same `history.liquid` block the pipeline's
+  prompts use) before the question, the question, the schema context and, for each query
+  of the answer
   (under its title when there are several), its SQL, every result row, its chart spec and
   its narrative, without the `### title` heading the backend adds: the judge scored a
   correct narrative lower with those headings in it. An answer with several results is
@@ -386,17 +401,21 @@ deterministic.
     figures / minor inaccuracies / fully faithful), 0 to 2;
   - *the chart fits* — a `predicate` (a probability), asked only when at least one result
     has a chart spec; otherwise it's *not applicable*.
-- A question the pipeline can't answer (every SQL attempt failed) or classifies as not a
-  data question (reason: `classified as <label>`) is *without an answer*, with the reason,
+- A data question the pipeline can't answer (every SQL attempt failed) or classifies as not
+  a data question (reason: `classified as <label>`) is *without an answer*, with the reason,
   and isn't judged. A refused criterion is *refused*. A pipeline or judge failure is
   recorded on that question, and the run goes on.
-- **Output:** one line per question, then a summary — the average per criterion over judged
-  values only (scores over 2, the chart as an average probability) and the counts. No
-  verdict, no thresholds: it exits 0 whenever the run finishes. The JSON report goes to
+- **Output:** one line per question — the classification first (`classification ok`, or
+  the expected and the actual label, or *without a label*), then the scores or why there's
+  no answer — and a summary: the counts (answered, without an answer, not judged, errors),
+  the average per criterion over judged values only (scores over 2, the chart as an average
+  probability), and `Classification: <correct>/<compared> correct (<n> without a label)`.
+  No verdict, no thresholds: it exits 0 whenever the run finishes. The JSON report goes to
   `data/eval/eval-<timestamp>.json` (gitignored), with the models used, the summary, and
-  per question the SQL (every query's, one after the other), the narrative, each query's
-  title, SQL, row count and chart spec (`queries`), and each criterion's answer as the
-  Decisions API returned it.
+  per question the expected and the actual label (`expectedClassification`,
+  `classification`, null without a label), the history, the SQL (every query's, one after
+  the other), the narrative (or the text reply), each query's title, SQL, row count and
+  chart spec (`queries`), and each criterion's answer as the Decisions API returned it.
 
 ### Frontend (Vue 3)
 
