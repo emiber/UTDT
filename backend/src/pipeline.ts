@@ -18,21 +18,32 @@ export type Block =
   | { type: 'table'; columns: string[]; rows: unknown[][] }
   | ChartBlock;
 
+/** One result of a data answer: a query, its rows, and what's said and charted about them. */
+export interface ResultSection {
+  title: string;
+  sql: string;
+  columns: string[];
+  rows: unknown[][];
+  narrative: string;
+  /** The chart spec behind this result's chart block, or null when there's no chart. */
+  chart: ChartSpec | null;
+}
+
 export type PipelineResult =
-  /** A data question, answered from the query result. */
+  /** A data question, answered from the results of its queries. */
   | {
       ok: true;
       kind: 'data';
       /** `data_question`, or null when the classifier failed and the data path was the fallback. */
       classification: 'data_question' | null;
+      /** Every query's SQL, one after the other: what the saved turn keeps. */
       sql: string;
-      columns: string[];
-      rows: unknown[][];
+      /** Every text block, one after the other, headings included: what the saved turn keeps. */
       narrative: string;
+      /** One per query, in order. */
+      results: ResultSection[];
       suggestions: string[];
       blocks: Block[];
-      /** The chart spec behind the chart block, or null when there's no chart. */
-      chart: ChartSpec | null;
     }
   /** Not a data question: a text reply, with no SQL. */
   | {
@@ -85,12 +96,13 @@ export interface PipelineInput {
 
 /**
  * Answers a message. First it's classified; anything but a data question gets a text reply.
- * A data question goes through SQL (with its retries), then insights, then the blocks: always
- * text, a table when there are rows (but not for a single value, which the text already
- * says), and a chart when the LLM's spec fits the result (one that doesn't is dropped with a
- * warning). When every SQL attempt fails, returns why, without calling the insights.
- * Anything thrown (OpenAI failures, unexpected errors) comes out as a PipelineError whose
- * `cause` is the original.
+ * A data question goes through SQL (with its retries), then insights, then the blocks. Each
+ * query's result is a section: always text, a table when there are rows (but not for a
+ * single value, which the text already says), and a chart when the LLM's spec fits that
+ * result (one that doesn't is dropped with a warning). With several queries each text starts
+ * with its title as a heading; with one, the blocks have no heading. When every SQL attempt
+ * fails, returns why, without calling the insights. Anything thrown (OpenAI failures,
+ * unexpected errors) comes out as a PipelineError whose `cause` is the original.
  */
 export async function answerQuestion({
   question,
@@ -175,41 +187,62 @@ export async function answerQuestion({
       'Pipeline step done',
     );
     if (!generated.ok) return { ...generated, classification };
-    const result = { ...generated, classification };
+    const { queries } = generated;
 
     step = 'insights';
     started = performance.now();
-    const { sql, columns, rows } = result;
     const insights = await buildInsights({
       question,
-      sql,
-      columns,
-      rows,
+      results: queries,
       llm,
       history,
       onLlmCall: record('answer'),
     });
     log.info({ step, durationMs: elapsed(started), result: 'ok' }, 'Pipeline step done');
 
-    const blocks: Block[] = [{ type: 'text', markdown: insights.narrative }];
-    // A single value is already in the text: a one-cell table adds nothing.
-    const singleValue = rows.length === 1 && columns.length === 1;
-    if (rows.length && !singleValue) blocks.push({ type: 'table', columns, rows });
-    let chart: ChartSpec | null = null;
-    if (insights.chart) {
-      const built = buildChart(insights.chart, columns, rows);
-      if (built.ok) {
-        blocks.push(built.block);
-        chart = insights.chart;
-      } else {
-        // Not a step line (no duration): the reason only, never the rows.
-        log.warn({ reason: built.reason }, 'Chart dropped');
+    // A heading only tells the results apart: with one result there's nothing to tell.
+    const headed = queries.length > 1;
+    const blocks: Block[] = [];
+    const texts: string[] = [];
+    const results = queries.map((query, index): ResultSection => {
+      const { title, sql, columns, rows } = query;
+      const { narrative, chart: spec } = insights.sections[index];
+      const text = headed ? `### ${oneLine(title)}\n\n${narrative}` : narrative;
+      texts.push(text);
+      blocks.push({ type: 'text', markdown: text });
+      // A single value is already in the text: a one-cell table adds nothing.
+      const singleValue = rows.length === 1 && columns.length === 1;
+      if (rows.length && !singleValue) blocks.push({ type: 'table', columns, rows });
+      let chart: ChartSpec | null = null;
+      if (spec) {
+        const built = buildChart(spec, columns, rows);
+        if (built.ok) {
+          blocks.push(built.block);
+          chart = spec;
+        } else {
+          // Not a step line (no duration): the reason only, never the rows.
+          log.warn({ reason: built.reason }, 'Chart dropped');
+        }
       }
-    }
-    const { narrative, suggestions } = insights;
-    return { ...result, kind: 'data', narrative, suggestions, blocks, chart };
+      return { title, sql, columns, rows, narrative, chart };
+    });
+    return {
+      ok: true,
+      kind: 'data',
+      classification,
+      sql: generated.sql,
+      narrative: texts.join('\n\n'),
+      results,
+      suggestions: insights.suggestions,
+      blocks,
+    };
   } catch (error) {
     log.info({ step, durationMs: elapsed(started), result: 'error' }, 'Pipeline step failed');
     throw new PipelineError(lastSql, error);
   }
+}
+
+/** A title on one line, so a line break in it can't break the heading it goes in. */
+function oneLine(title: string): string {
+  return title.replace(/\s+/g, ' ').trim();
 }
