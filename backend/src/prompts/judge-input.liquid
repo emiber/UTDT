@@ -5,21 +5,25 @@ Question:
 
 Schema the bot knew:
 {{ schemaContext }}
+{%- for query in queries %}
 
-SQL it ran:
-{{ sql }}
+{% if queries.size > 1 %}Result {{ forloop.index }}: {{ query.title }}
 
-Result: {{ rowCount }} rows. Columns (JSON): {{ columns }}
-{%- if rows.size > 0 %}
+{% endif %}SQL it ran:
+{{ query.sql }}
+
+Result: {{ query.rowCount }} rows. Columns (JSON): {{ query.columns }}
+{%- if query.rows.size > 0 %}
 Rows (JSON, one per line):
-{%- for row in rows %}
+{%- for row in query.rows %}
 {{ row }}
 {%- endfor %}
 {%- endif %}
+{%- if query.chart %}
+
+Chart it proposed (JSON): {{ query.chart }}
+{%- endif %}
+{%- endfor %}
 
 Narrative it wrote:
 {{ narrative }}
-{%- if chart %}
-
-Chart it proposed (JSON): {{ chart }}
-{%- endif %}

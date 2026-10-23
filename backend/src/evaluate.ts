@@ -62,7 +62,7 @@ const QUESTIONS: Record<Criterion, DecisionQuestion> = {
     type: 'score',
     name: 'sql',
     instructions:
-      'Does the SQL query answer the question, given the schema the bot knew and the rows it returned?',
+      'Do the SQL queries answer the question, given the schema the bot knew and the rows they returned? A question that asks for separate results needs a query for each, not different lists mixed in one table.',
     levels: [
       { label: 'does not answer', description: 'It answers another question or misses the point.' },
       {
@@ -75,7 +75,7 @@ const QUESTIONS: Record<Criterion, DecisionQuestion> = {
   narrative: {
     type: 'score',
     name: 'narrative',
-    instructions: 'Is the narrative faithful to the result rows?',
+    instructions: 'Is the narrative faithful to the rows of every result?',
     levels: [
       {
         label: 'contradicts or invents figures',
@@ -92,7 +92,7 @@ const QUESTIONS: Record<Criterion, DecisionQuestion> = {
     type: 'predicate',
     name: 'chart',
     instructions:
-      'The proposed chart (type, x column, series, title) is a suitable way to show this result.',
+      'The proposed charts (type, x column, series, title) are a suitable way to show their results.',
   },
 };
 
@@ -102,14 +102,24 @@ export type CriterionResult =
   | { status: 'refused' }
   | { status: 'not_applicable' };
 
+/** One query of an answer, as the report keeps it. */
+export interface EvaluatedQuery {
+  title: string;
+  sql: string;
+  rowCount: number;
+  chart: ChartSpec | null;
+}
+
 export interface CaseResult {
   id: string;
   question: string;
   status: 'answered' | 'unanswered' | 'error';
+  /** Every query's SQL, one after the other. */
   sql: string | null;
-  rowCount: number | null;
+  /** One per query, for an answered question; null otherwise. */
+  queries: EvaluatedQuery[] | null;
+  /** Every text of the answer, one after the other. */
   narrative: string | null;
-  chart: ChartSpec | null;
   /** Per criterion, for an answered question; null otherwise. */
   criteria: Record<Criterion, CriterionResult> | null;
   /** Why the pipeline gave no answer. */
@@ -139,9 +149,8 @@ export async function evaluateCase(golden: GoldenCase, deps: EvalDeps): Promise<
     ...golden,
     status: 'error',
     sql: null,
-    rowCount: null,
+    queries: null,
     narrative: null,
-    chart: null,
     criteria: null,
     reason: null,
     error: null,
@@ -177,21 +186,30 @@ export async function evaluateCase(golden: GoldenCase, deps: EvalDeps): Promise<
   const answered: CaseResult = {
     ...base,
     sql: result.sql,
-    rowCount: result.rows.length,
+    queries: result.results.map(({ title, sql, rows, chart }) => ({
+      title,
+      sql,
+      rowCount: rows.length,
+      chart,
+    })),
     narrative: result.narrative,
-    chart: result.chart,
   };
-  // No chart spec: the chart criterion doesn't apply and the judge isn't asked about it.
-  const asked: Criterion[] = result.chart ? [...CRITERIA] : ['sql', 'narrative'];
+  // No chart spec in any result: the chart criterion doesn't apply and the judge isn't asked.
+  const asked: Criterion[] = result.results.some((r) => r.chart)
+    ? [...CRITERIA]
+    : ['sql', 'narrative'];
   const input = renderPrompt('judge-input', {
     question: golden.question,
     schemaContext: deps.schemaContext,
-    sql: result.sql,
-    rowCount: result.rows.length,
-    columns: JSON.stringify(result.columns),
-    rows: result.rows.map((row) => JSON.stringify(row)),
+    queries: result.results.map(({ title, sql, columns, rows, chart }) => ({
+      title,
+      sql,
+      rowCount: rows.length,
+      columns: JSON.stringify(columns),
+      rows: rows.map((row) => JSON.stringify(row)),
+      chart: chart && JSON.stringify(chart),
+    })),
     narrative: result.narrative,
-    chart: result.chart && JSON.stringify(result.chart),
   });
   try {
     const answers = await requestDecision(

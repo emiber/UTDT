@@ -14,5 +14,9 @@
     "id": "average-order-by-segment",
     "question": "What is the average order amount per customer segment?"
   },
-  { "id": "orders-2024", "question": "How many orders were placed in 2024?" }
+  { "id": "orders-2024", "question": "How many orders were placed in 2024?" },
+  {
+    "id": "separate-lists",
+    "question": "Quiero un listado de los 5 clientes con mas ventas y un listado separado de los 3 productos con mas ventas"
+  }
 ]
