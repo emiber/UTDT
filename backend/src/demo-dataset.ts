@@ -16,7 +16,8 @@ const schema = `
     product_id INTEGER PRIMARY KEY,
     name TEXT NOT NULL,
     category TEXT NOT NULL,
-    unit_price REAL NOT NULL
+    unit_price REAL NOT NULL,
+    unit_cost REAL NOT NULL
   );
   CREATE TABLE orders (
     order_id INTEGER PRIMARY KEY,
@@ -54,23 +55,25 @@ const customers: [number, string, string, string][] = [
   [20, 'Austral Tech SA', 'Argentina', 'Business'],
 ];
 
-// [product_id, name, category, unit_price in USD]
-const products: [number, string, string, number][] = [
-  [1, 'Laptop 14 inch', 'Electronics', 1199],
-  [2, '27 inch Monitor', 'Electronics', 329],
-  [3, 'Smartphone', 'Electronics', 799],
-  [4, 'Noise-Cancelling Headphones', 'Electronics', 249],
-  [5, 'Wireless Mouse', 'Accessories', 24.99],
-  [6, 'Mechanical Keyboard', 'Accessories', 89.5],
-  [7, 'USB-C Dock', 'Accessories', 149.99],
-  [8, 'Office Chair', 'Furniture', 279],
-  [9, 'Standing Desk', 'Furniture', 549],
-  [10, 'Bookshelf', 'Furniture', 129],
-  [11, 'Desk Lamp', 'Furniture', 39.9],
-  [12, 'Notebook Pack', 'Office Supplies', 12.5],
-  [13, 'Gel Pens (12 pack)', 'Office Supplies', 9.99],
-  [14, 'Printer Paper (500 sheets)', 'Office Supplies', 7.49],
-  [15, 'Whiteboard', 'Office Supplies', 64],
+// [product_id, name, category, unit_price in USD, unit_cost in USD]. The margin differs by
+// category: Electronics, the one that sells the most, leaves the least (15–25% of the price),
+// so "sells the most" and "leaves the most" give different answers.
+const products: [number, string, string, number, number][] = [
+  [1, 'Laptop 14 inch', 'Electronics', 1199, 1019.15],
+  [2, '27 inch Monitor', 'Electronics', 329, 256.62],
+  [3, 'Smartphone', 'Electronics', 799, 655.18],
+  [4, 'Noise-Cancelling Headphones', 'Electronics', 249, 186.75],
+  [5, 'Wireless Mouse', 'Accessories', 24.99, 11.25],
+  [6, 'Mechanical Keyboard', 'Accessories', 89.5, 42.96],
+  [7, 'USB-C Dock', 'Accessories', 149.99, 63],
+  [8, 'Office Chair', 'Furniture', 279, 167.4],
+  [9, 'Standing Desk', 'Furniture', 549, 351.36],
+  [10, 'Bookshelf', 'Furniture', 129, 72.24],
+  [11, 'Desk Lamp', 'Furniture', 39.9, 23.14],
+  [12, 'Notebook Pack', 'Office Supplies', 12.5, 5],
+  [13, 'Gel Pens (12 pack)', 'Office Supplies', 9.99, 3.8],
+  [14, 'Printer Paper (500 sheets)', 'Office Supplies', 7.49, 3.37],
+  [15, 'Whiteboard', 'Office Supplies', 64, 22.4],
 ];
 
 /**
@@ -109,7 +112,7 @@ export const demoDataset: Dataset = {
     { table: 'customers', columns: ['customer_id', 'name', 'country', 'segment'], rows: customers },
     {
       table: 'products',
-      columns: ['product_id', 'name', 'category', 'unit_price'],
+      columns: ['product_id', 'name', 'category', 'unit_price', 'unit_cost'],
       rows: products,
     },
     {
@@ -126,7 +129,8 @@ export const demoDataset: Dataset = {
       },
       {
         tableName: 'products',
-        description: 'One row per product in the catalog, with its category and unit price.',
+        description:
+          'One row per product in the catalog, with its category, unit price and unit cost.',
       },
       {
         tableName: 'orders',
@@ -183,6 +187,13 @@ export const demoDataset: Dataset = {
         dataType: 'REAL',
         description:
           'Price of one unit, in USD. It does not change over time. Do not sum it: use orders.amount for revenue.',
+      },
+      {
+        tableName: 'products',
+        columnName: 'unit_cost',
+        dataType: 'REAL',
+        description:
+          "Cost of one unit, in USD. It does not change over time. An order's margin is amount - quantity * unit_cost, and its margin percentage is that margin over amount.",
       },
       {
         tableName: 'orders',

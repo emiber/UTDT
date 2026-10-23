@@ -66,7 +66,9 @@ The backend opens `data.db` read-only at startup: without the file it refuses to
 
 **Initial data:** `npm run seed` creates `data/data.db` with the metadata tables and a
 small, fictitious sales dataset (`customers`, `products`, `orders` for 2024–2025) whose
-only purpose is to exercise the pipeline.
+only purpose is to exercise the pipeline. Each product has a fixed unit price and unit cost,
+so the bot can answer margin questions; Electronics, the category that sells the most,
+leaves the lowest margin percentage, so "sells the most" and "leaves the most" differ.
 
 - The demo lives in one file, `backend/src/demo-dataset.ts`: its schema, its rows and its
   metadata. It's the only code that knows those tables, and it's meant to be replaced.

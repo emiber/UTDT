@@ -129,5 +129,10 @@
         "narrative": "Hay **20** clientes en total."
       }
     ]
-  }
+  },
+  {
+    "id": "margin-share-by-category",
+    "question": "¿Qué categoría tiene el mayor margen porcentual?"
+  },
+  { "id": "margin-by-country-2025", "question": "What was the total margin per country in 2025?" }
 ]
