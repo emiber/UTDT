@@ -104,6 +104,7 @@ describe('demo dataset: content', () => {
         ['name', 'TEXT', 0],
         ['category', 'TEXT', 0],
         ['unit_price', 'REAL', 0],
+        ['unit_cost', 'REAL', 0],
       ],
     ],
     [
@@ -187,6 +188,30 @@ describe('demo dataset: content', () => {
       WHERE abs(o.amount - round(o.quantity * p.unit_price, 2)) > 1e-9
     `);
     expect(wrong).toBe(0);
+  });
+
+  it('sets each unit cost above 0 and below the unit price, with at most 2 decimals', () => {
+    const wrong = scalar(`
+      SELECT count(*) FROM products
+      WHERE unit_cost <= 0 OR unit_cost >= unit_price OR unit_cost <> round(unit_cost, 2)
+    `);
+    expect(wrong).toBe(0);
+  });
+
+  it('gives the category with the most sales, Electronics, the lowest margin percentage', () => {
+    const categories = all<{ category: string; sales: number; margin: number }>(`
+      SELECT p.category,
+             sum(o.amount) AS sales,
+             sum(o.amount - o.quantity * p.unit_cost) / sum(o.amount) AS margin
+      FROM orders o JOIN products p USING (product_id)
+      GROUP BY p.category
+    `);
+    const top = (key: 'sales' | 'margin', sign: number) =>
+      [...categories].sort((a, b) => sign * (b[key] - a[key]))[0].category;
+
+    // So "sells the most" and "leaves the most" have different answers.
+    expect(top('sales', 1)).toBe('Electronics');
+    expect(top('margin', -1)).toBe('Electronics');
   });
 
   it('indexes orders by customer_id and by product_id', () => {
