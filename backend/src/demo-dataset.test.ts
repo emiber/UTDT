@@ -4,7 +4,7 @@ import { openDatabase } from './db.ts';
 import { demoDataset } from './demo-dataset.ts';
 import { seedDatabase } from './seed.ts';
 
-const DEMO_TABLES = ['customers', 'orders', 'products'];
+const DEMO_TABLES = ['customers', 'orders', 'products', 'sales_targets'];
 
 let db: DatabaseSync;
 
@@ -73,7 +73,7 @@ describe('demo dataset: metadata consistency', () => {
 });
 
 describe('demo dataset: content', () => {
-  it('has exactly the three meta_* tables plus customers, products and orders', () => {
+  it('has exactly the three meta_* tables plus customers, products, orders and sales_targets', () => {
     const tables = all<{ name: string }>(
       "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
     );
@@ -84,6 +84,7 @@ describe('demo dataset: content', () => {
       'meta_tables',
       'orders',
       'products',
+      'sales_targets',
     ]);
   });
 
@@ -116,6 +117,14 @@ describe('demo dataset: content', () => {
         ['order_date', 'TEXT', 0],
         ['quantity', 'INTEGER', 0],
         ['amount', 'REAL', 0],
+      ],
+    ],
+    [
+      'sales_targets',
+      [
+        ['month', 'TEXT', 1],
+        ['category', 'TEXT', 2],
+        ['target_amount', 'REAL', 0],
       ],
     ],
   ])('defines %s with its columns, types and primary key', (table, expected) => {
@@ -212,6 +221,63 @@ describe('demo dataset: content', () => {
     // So "sells the most" and "leaves the most" have different answers.
     expect(bestSelling).toBe('Electronics');
     expect(lowestMargin).toBe('Electronics');
+  });
+
+  it('has a target above 0, in tens, for each month of the orders and each category', () => {
+    const outside = scalar(`
+      SELECT count(*) FROM sales_targets
+      WHERE month NOT IN (SELECT strftime('%Y-%m', order_date) FROM orders)
+         OR category NOT IN (SELECT category FROM products)
+         OR target_amount <= 0
+         OR target_amount / 10 <> round(target_amount / 10)
+    `);
+
+    // With (month, category) as the key, 24 × 4 rows inside the grid fill all of it.
+    expect(outside).toBe(0);
+    expect(scalar('SELECT count(*) FROM sales_targets')).toBe(
+      scalar(`
+        SELECT (SELECT count(DISTINCT strftime('%Y-%m', order_date)) FROM orders)
+             * (SELECT count(DISTINCT category) FROM products)
+      `),
+    );
+    expect(scalar('SELECT count(*) FROM sales_targets')).toBe(96);
+  });
+
+  describe('targets against sales', () => {
+    // Each target with what its category sold that month; a month without sales sold 0.
+    const VERSUS = `
+      SELECT t.month, t.category, t.target_amount AS target,
+             coalesce((
+               SELECT sum(o.amount) FROM orders o JOIN products p USING (product_id)
+               WHERE strftime('%Y-%m', o.order_date) = t.month AND p.category = t.category
+             ), 0) AS sold
+      FROM sales_targets t
+    `;
+
+    it('has months and categories both above and below their target', () => {
+      expect(scalar(`SELECT count(*) FROM (${VERSUS}) WHERE sold >= target`)).toBeGreaterThan(0);
+      expect(scalar(`SELECT count(*) FROM (${VERSUS}) WHERE sold < target`)).toBeGreaterThan(0);
+    });
+
+    it('has a category below its target in most months of 2025', () => {
+      const missed = scalar(`
+        SELECT max(missed) FROM (
+          SELECT count(*) AS missed FROM (${VERSUS})
+          WHERE month LIKE '2025-%' AND sold < target
+          GROUP BY category
+        )
+      `);
+      expect(missed).toBeGreaterThan(6);
+    });
+
+    it('has, in 2025, a category that meets its total target and one that misses it', () => {
+      const totals = all<{ met: number }>(`
+        SELECT sum(sold) >= sum(target) AS met FROM (${VERSUS})
+        WHERE month LIKE '2025-%'
+        GROUP BY category
+      `);
+      expect(totals.map((t) => t.met)).toEqual(expect.arrayContaining([0, 1]));
+    });
   });
 
   it('indexes orders by customer_id and by product_id', () => {

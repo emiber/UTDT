@@ -29,6 +29,12 @@ const schema = `
   );
   CREATE INDEX idx_orders_customer_id ON orders (customer_id);
   CREATE INDEX idx_orders_product_id ON orders (product_id);
+  CREATE TABLE sales_targets (
+    month TEXT NOT NULL,
+    category TEXT NOT NULL,
+    target_amount REAL NOT NULL,
+    PRIMARY KEY (month, category)
+  );
 `;
 
 // [customer_id, name, country, segment]
@@ -102,9 +108,46 @@ function generateOrders(): SQLInputValue[][] {
   return rows;
 }
 
+// Each category's target factor before its monthly variation: Furniture's is above 1, so it
+// misses its target most months.
+const TARGET_BASE: Record<string, number> = {
+  Electronics: 0.98,
+  Accessories: 0.97,
+  Furniture: 1.05,
+  'Office Supplies': 0.99,
+};
+
+/**
+ * A sales target for every month of 2024 and 2025 and every category, around what that
+ * category sold that month: the sales times a fixed factor between 0.91 and 1.11, rounded to
+ * tens and never below 10. So some months meet their target and others don't, and Furniture
+ * misses most of 2025.
+ */
+function generateTargets(orders: SQLInputValue[][]): SQLInputValue[][] {
+  const categoryOf = (productId: SQLInputValue) => products[(productId as number) - 1][2];
+  const sold = new Map<string, number>();
+  for (const [, , productId, orderDate, , amount] of orders) {
+    const key = `${(orderDate as string).slice(0, 7)} ${categoryOf(productId)}`;
+    sold.set(key, (sold.get(key) ?? 0) + (amount as number));
+  }
+  const categories = [...new Set(products.map((product) => product[2]))];
+  const rows: SQLInputValue[][] = [];
+  for (let m = 0; m < 24; m++) {
+    const month = isoDate(2024 + Math.floor(m / 12), (m % 12) + 1, 1).slice(0, 7);
+    categories.forEach((category, c) => {
+      const factor = TARGET_BASE[category] + (((m * 5 + c * 3) % 7) - 3) * 0.02;
+      const target = Math.round(((sold.get(`${month} ${category}`) ?? 0) * factor) / 10) * 10;
+      rows.push([month, category, Math.max(10, target)]);
+    });
+  }
+  return rows;
+}
+
 function isoDate(year: number, month: number, day: number): string {
   return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
+
+const orders = generateOrders();
 
 export const demoDataset: Dataset = {
   schema,
@@ -118,7 +161,12 @@ export const demoDataset: Dataset = {
     {
       table: 'orders',
       columns: ['order_id', 'customer_id', 'product_id', 'order_date', 'quantity', 'amount'],
-      rows: generateOrders(),
+      rows: orders,
+    },
+    {
+      table: 'sales_targets',
+      columns: ['month', 'category', 'target_amount'],
+      rows: generateTargets(orders),
     },
   ],
   metadata: {
@@ -136,6 +184,11 @@ export const demoDataset: Dataset = {
         tableName: 'orders',
         description:
           'One row per order, from January 2024 to December 2025. Each order is for a single product.',
+      },
+      {
+        tableName: 'sales_targets',
+        description:
+          'Monthly sales target per product category, in USD, from January 2024 to December 2025. Compare it with the sum of orders.amount for that month and category.',
       },
     ],
     columns: [
@@ -231,6 +284,26 @@ export const demoDataset: Dataset = {
         columnName: 'amount',
         dataType: 'REAL',
         description: 'Order total in USD: quantity times the unit price. Sum it to get revenue.',
+      },
+      {
+        tableName: 'sales_targets',
+        columnName: 'month',
+        dataType: 'TEXT',
+        description:
+          "Month of the target, as 'YYYY-MM'. It matches strftime('%Y-%m', orders.order_date).",
+      },
+      {
+        tableName: 'sales_targets',
+        columnName: 'category',
+        dataType: 'TEXT',
+        description: 'Product category of the target. It matches products.category.',
+      },
+      {
+        tableName: 'sales_targets',
+        columnName: 'target_amount',
+        dataType: 'REAL',
+        description:
+          "Sales target in USD for that month and category. A month's total target is the sum over its categories.",
       },
     ],
     relationships: [
