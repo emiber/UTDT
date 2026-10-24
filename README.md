@@ -115,9 +115,9 @@ server or access key needed.
   and `OPENAI_DECISIONS_MODEL` (today the Decisions API only supports `gpt-6-luna`). If
   something is missing it says what and exits without calling OpenAI.
 - **It costs money:** each data question is a full pipeline run (a classification, then the
-  SQL and insights calls) plus two judge calls, one for the answer and one for its language;
-  any other message is a classification, a text reply and one judge call for its language.
-  That's why it runs by hand and isn't part of the quality gate.
+  SQL and insights calls) plus three judge calls: the SQL, the narrative and chart, and the
+  language; any other message is a classification, a text reply and one judge call for its
+  language. That's why it runs by hand and isn't part of the quality gate.
 - **Output:** one line per question, a summary, and a JSON report in `data/eval/`
   (gitignored) with every answer, label and score.
 - **The classification** is compared with the expected label: each line starts with
