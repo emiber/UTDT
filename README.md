@@ -132,11 +132,11 @@ server or access key needed.
   chart fits* is an average probability, only over answers with a chart. *The answer is in
   the language of the message* is an average probability too, over the data answers and the
   text replies: the probability that everything the bot wrote (texts, column names and
-  titles) is in the case's `language`, whatever the language of the earlier turns. An answer with
-  several results is judged as a whole. The counts say how
-  many questions had no answer, errored, or had a criterion refused or not applicable, and
-  those stay out of the averages. Scores vary between runs: read them as a trend, for example
-  before and after changing a prompt.
+  titles) is in the case's `language`, whatever the language of the earlier turns. An
+  answer with several results is judged as a whole. The counts say how many questions had
+  no answer, errored, or had a criterion refused or not applicable, and those stay out of
+  the averages. Scores vary between runs: read them as a trend, for example before and
+  after changing a prompt.
 
 ## Quality gate
 

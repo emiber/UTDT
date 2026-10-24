@@ -1031,6 +1031,17 @@ describe('evaluateCase with an expected label and a history', () => {
     });
   });
 
+  it('keeps a refused language of a data answer as refused, and the other criteria as judged', async () => {
+    const judge = fakeDecisions([score(2)], [score(2)], [REFUSAL]);
+
+    const result = await evaluateCase(GOLDEN, deps(fakeLlm(sqlReply(SQL), insights()), judge));
+
+    expect(result).toMatchObject({
+      status: 'answered',
+      criteria: { sql: { status: 'judged' }, language: { status: 'refused' } },
+    });
+  });
+
   it('judges the language of a data answer against the expected one', async () => {
     const answer = language({ Spanish: 0.8, English: 0.2 });
     const judge = fakeDecisions([score(2)], [score(2)], [answer]);

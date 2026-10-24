@@ -195,10 +195,11 @@ const FOLLOW_UP_SQL: DecisionQuestion = {
 };
 
 export type CriterionResult =
-  /** The Decisions API's answer, as it came. */
-  | { status: 'judged'; answer: DecisionAnswer }
-  /** The language: the answer as it came, and the probability it gives the case's language. */
-  | { status: 'judged'; answer: DecisionAnswer; probability: number }
+  /**
+   * The Decisions API's answer, as it came. The language also keeps its value: the
+   * probability the answer gives the case's language.
+   */
+  | { status: 'judged'; answer: DecisionAnswer; probability?: number }
   | { status: 'refused' }
   | { status: 'not_applicable' };
 
@@ -476,7 +477,7 @@ export function valueOf(answer: DecisionAnswer): number {
 
 /** A judged criterion's value: the language's probability, or its answer's value. */
 function judgedValue(outcome: Extract<CriterionResult, { status: 'judged' }>): number {
-  return 'probability' in outcome ? outcome.probability : valueOf(outcome.answer);
+  return outcome.probability ?? valueOf(outcome.answer);
 }
 
 /** Scores go over their scale; the chart and the language are probabilities. */
