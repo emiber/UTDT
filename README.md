@@ -74,10 +74,11 @@ model gets an output price of 0, because the Decisions API charges input tokens 
 the page doesn't list a model, the command warns and leaves that model's price as it was.
 Restart the backend afterwards so it picks up the new prices.
 
-`npm run seed` loads a small, fictitious sales dataset and the metadata that describes it
-to the bot (see *Data* in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)). It's **required
-before `npm run dev`**: without `data/data.db` the backend refuses to start (not even
-`/api/health` answers) and its error says to run the seed. Two warnings:
+`npm run seed` loads a small, fictitious sales dataset (customers, products with their price
+and cost, orders for 2024–2025, monthly sales targets per category, and returns) and the
+metadata that describes it to the bot (see *Data* in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)).
+It's **required before `npm run dev`**: without `data/data.db` the backend refuses to start
+(not even `/api/health` answers) and its error says to run the seed. Two warnings:
 
 - Running it again **recreates `data/data.db` from scratch**: everything in it is deleted,
   including data loaded by hand.
@@ -114,9 +115,9 @@ server or access key needed.
   and `OPENAI_DECISIONS_MODEL` (today the Decisions API only supports `gpt-6-luna`). If
   something is missing it says what and exits without calling OpenAI.
 - **It costs money:** each data question is a full pipeline run (a classification, then the
-  SQL and insights calls) plus two judge calls, one for the answer and one for its language;
-  any other message is a classification, a text reply and one judge call for its language.
-  That's why it runs by hand and isn't part of the quality gate.
+  SQL and insights calls) plus three judge calls: the SQL, the narrative and chart, and the
+  language; any other message is a classification, a text reply and one judge call for its
+  language. That's why it runs by hand and isn't part of the quality gate.
 - **Output:** one line per question, a summary, and a JSON report in `data/eval/`
   (gitignored) with every answer, label and score.
 - **The classification** is compared with the expected label: each line starts with
