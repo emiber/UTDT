@@ -65,13 +65,16 @@ The backend opens `data.db` read-only at startup: without the file it refuses to
 (not even `/api/health` answers) and its error says to run `npm run seed` first.
 
 **Initial data:** `npm run seed` creates `data/data.db` with the metadata tables and a
-small, fictitious sales dataset (`customers`, `products`, `orders` for 2024–2025, and
-`sales_targets`) whose only purpose is to exercise the pipeline. Each product has a fixed
-unit price and unit cost, so the bot can answer margin questions; Electronics, the category
-that sells the most, leaves the lowest margin percentage, so "sells the most" and "leaves
-the most" differ. `sales_targets` has a sales target per month and category, around what
-each category sold: some months meet it and others don't, and Furniture misses most of
-2025.
+small, fictitious sales dataset (`customers`, `products`, `orders` for 2024–2025,
+`sales_targets` and `returns`) whose only purpose is to exercise the pipeline. Each product
+has a fixed unit price and unit cost, so the bot can answer margin questions; Electronics,
+the category that sells the most, leaves the lowest margin percentage, so "sells the most"
+and "leaves the most" differ. `sales_targets` has a sales target per month and category,
+around what each category sold: some months meet it and others don't, and Furniture misses
+most of 2025. `returns` has at most one return per order, with one of four reasons, for
+12.5% of the orders: Electronics is returned the most and Office Supplies the least. Sales
+stay gross: `orders.amount` doesn't subtract returns, and the metadata says to subtract
+`refund_amount` only for net sales.
 
 - The demo lives in one file, `backend/src/demo-dataset.ts`: its schema, its rows and its
   metadata. It's the only code that knows those tables, and it's meant to be replaced.
