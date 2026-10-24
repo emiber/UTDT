@@ -18,11 +18,16 @@ import { renderPrompt } from './prompts.ts';
 // answer to a data question, and the language of that answer or of a text reply to any other
 // message. Values are kept as they come: no verdict, no thresholds.
 
+export const LANGUAGES = ['English', 'Spanish'] as const;
+export type Language = (typeof LANGUAGES)[number];
+
 export interface GoldenCase {
   id: string;
   question: string;
   /** The label the message should get; `data_question` when the case doesn't say. */
   classification: Classification;
+  /** The language of the message, which the answer should be in. */
+  language: Language;
   /** Earlier turns, written by hand, oldest first; empty for a new conversation. */
   history: HistoryTurn[];
 }
@@ -44,6 +49,7 @@ export function parseGolden(text: string): GoldenCase[] {
       id,
       question,
       classification = 'data_question',
+      language,
       history = [],
     } = (item ?? {}) as Record<string, unknown>;
     if (typeof id !== 'string' || !id.trim()) throw new Error(`Case ${index + 1} has no id.`);
@@ -57,10 +63,16 @@ export function parseGolden(text: string): GoldenCase[] {
         `Case "${id}" has an unknown classification: ${JSON.stringify(classification)}.`,
       );
     }
+    if (!LANGUAGES.includes(language as Language)) {
+      throw new Error(
+        `Case "${id}" needs a language: ${LANGUAGES.map((l) => JSON.stringify(l)).join(' or ')}.`,
+      );
+    }
     return {
       id,
       question,
       classification: classification as Classification,
+      language: language as Language,
       history: parseHistory(id, history),
     };
   });
@@ -103,8 +115,11 @@ export const CRITERION_LABELS: Record<Criterion, string> = {
 const SEPARATE_RESULTS =
   'A question that asks for separate results needs a query for each, not different lists mixed in one table.';
 
+/** The criteria asked about the input alone; the language is also compared with the case. */
+type SingleQuestionCriterion = Exclude<Criterion, 'language'>;
+
 // The rubric. The answer under judgment goes in the input, never in these instructions.
-const QUESTIONS: Record<Criterion, DecisionQuestion> = {
+const QUESTIONS: Record<SingleQuestionCriterion, DecisionQuestion> = {
   sql: {
     type: 'score',
     name: 'sql',
@@ -140,14 +155,32 @@ const QUESTIONS: Record<Criterion, DecisionQuestion> = {
     instructions:
       'The proposed charts (type, x column, series, title) are a suitable way to show their results.',
   },
-  // The bugs of #22 and #23: earlier turns in another language pulled the answer into theirs.
-  // It's asked on its own, about an input without the history (see evaluateCase).
-  language: {
-    type: 'predicate',
-    name: 'language',
-    instructions:
-      "Everything the bot wrote is in the language of the question (the latest message), even when the earlier turns are in another language: its narratives or reply, the column names of its results, and the titles of its results and charts. Values from the result rows and proper names don't count.",
-  },
+};
+
+type ChoiceQuestion = Extract<DecisionQuestion, { type: 'choice' }>;
+
+/**
+ * The language of what the bot wrote, for the bugs of #22 and #23 (earlier turns in another
+ * language pulled the answer into theirs). The golden case says which one it should be (see
+ * judgeLanguage). As a predicate ("everything the bot wrote is in the language of the
+ * question"), the judge said no to a short Spanish answer naming an English category; asked
+ * for the message's language, it read short Spanish messages as English or as another
+ * language. It's asked on its own, about an input without the history (see evaluateCase).
+ */
+const LANGUAGE_QUESTION: ChoiceQuestion = {
+  type: 'choice',
+  name: 'language',
+  instructions:
+    "Which language is the text the bot wrote in: its narratives or reply, the column names of its results, and the titles of its results and charts? The SQL, values from the result rows and proper names (such as product, category or country names) don't count.",
+  choices: [
+    ...LANGUAGES.map((value) => ({ value })),
+    {
+      value: 'mixed',
+      description:
+        'Its own sentences, column names or titles are in more than one language. A name or value in another language does not make it mixed.',
+    },
+    { value: 'other', description: 'Any other language.' },
+  ],
 };
 
 /**
@@ -162,8 +195,11 @@ const FOLLOW_UP_SQL: DecisionQuestion = {
 };
 
 export type CriterionResult =
-  /** The Decisions API's answer, as it came. */
-  | { status: 'judged'; answer: DecisionAnswer }
+  /**
+   * The Decisions API's answer, as it came. The language also keeps its value: the
+   * probability the answer gives the case's language.
+   */
+  | { status: 'judged'; answer: DecisionAnswer; probability?: number }
   | { status: 'refused' }
   | { status: 'not_applicable' };
 
@@ -186,6 +222,8 @@ export interface CaseResult {
   question: string;
   /** The label the golden case expects. */
   expectedClassification: Classification;
+  /** The language the golden case expects the answer in. */
+  expectedLanguage: Language;
   /**
    * The label the pipeline answered with, after its low-confidence fallback; null when the
    * classifier failed (or the pipeline threw before saying).
@@ -238,6 +276,7 @@ export async function evaluateCase(golden: GoldenCase, deps: EvalDeps): Promise<
     id: golden.id,
     question: golden.question,
     expectedClassification: golden.classification,
+    expectedLanguage: golden.language,
     classification: null,
     status: 'error',
     sql: null,
@@ -291,7 +330,8 @@ export async function evaluateCase(golden: GoldenCase, deps: EvalDeps): Promise<
       reply: result.narrative,
     });
     try {
-      return { ...reply, criteria: await judgeCriteria(deps.judge, input, ['language'], golden) };
+      const language = await judgeLanguage(deps.judge, input, golden.language);
+      return { ...reply, criteria: { language } };
     } catch (error) {
       return { ...reply, status: 'error', error: (error as Error).message };
     }
@@ -310,7 +350,7 @@ export async function evaluateCase(golden: GoldenCase, deps: EvalDeps): Promise<
   };
   if (!expectsData) return { ...answered, status: 'not_judged' };
   // No chart spec in any result: the chart criterion doesn't apply and the judge isn't asked.
-  const asked: Criterion[] = result.results.some((r) => r.chart)
+  const asked: SingleQuestionCriterion[] = result.results.some((r) => r.chart)
     ? ['narrative', 'chart']
     : ['narrative'];
   const answer = {
@@ -351,16 +391,15 @@ export async function evaluateCase(golden: GoldenCase, deps: EvalDeps): Promise<
       // The language, without the history: with it, the judge took the English examples of its
       // header ("show it as a chart") for a Spanish message asking that. It keeps the schema:
       // without it, the judge scored correct Spanish answers as in the wrong language.
-      ...(await judgeCriteria(
+      language: await judgeLanguage(
         deps.judge,
         renderPrompt('judge-input', {
           ...answer,
           history: [],
           schemaContext: deps.schemaContext,
         }),
-        ['language'],
-        golden,
-      )),
+        golden.language,
+      ),
     };
     // A criterion the judge wasn't asked (the chart) is not applicable to a data answer.
     const criteria: Criteria = Object.fromEntries(
@@ -376,7 +415,7 @@ export async function evaluateCase(golden: GoldenCase, deps: EvalDeps): Promise<
 async function judgeCriteria(
   judge: DecisionClient,
   input: string,
-  asked: Criterion[],
+  asked: SingleQuestionCriterion[],
   golden: GoldenCase,
 ): Promise<Criteria> {
   const answers = await requestDecision(
@@ -404,11 +443,46 @@ async function judgeCriteria(
   return criteria;
 }
 
+/**
+ * Asks the judge the language of the bot's text. Its value is the probability of the case's
+ * language: `mixed` and `other` never match. Throws on a failure or an odd answer.
+ */
+async function judgeLanguage(
+  judge: DecisionClient,
+  input: string,
+  expected: Language,
+): Promise<CriterionResult> {
+  const [answer] = await requestDecision(judge, input, [LANGUAGE_QUESTION]);
+  if (answer.type === 'refusal') return { status: 'refused' };
+  // The Decisions API is a beta: an answer of another shape, or without every option's
+  // probability, is this question's error, never a crash later in the summary.
+  const options = LANGUAGE_QUESTION.choices.map(({ value }) => value);
+  const given = new Map(
+    answer.type === 'choice' && options.includes(answer.choice)
+      ? answer.probabilities.map(({ value, probability }) => [value, probability])
+      : [],
+  );
+  if (!options.every((option) => Number.isFinite(given.get(option)))) {
+    throw new LlmError('The judge returned an unexpected answer for language.');
+  }
+  return { status: 'judged', answer, probability: given.get(expected) as number };
+}
+
 /** A judged answer's value: the score (0 to SCORE_MAX) or the predicate's probability. */
 export function valueOf(answer: DecisionAnswer): number {
   if (answer.type === 'score') return answer.score;
   if (answer.type === 'predicate') return answer.probability;
   throw new Error(`Unexpected ${answer.type} answer.`);
+}
+
+/** A judged criterion's value: the language's probability, or its answer's value. */
+function judgedValue(outcome: Extract<CriterionResult, { status: 'judged' }>): number {
+  return outcome.probability ?? valueOf(outcome.answer);
+}
+
+/** Scores go over their scale; the chart and the language are probabilities. */
+function isScore(criterion: Criterion): boolean {
+  return criterion !== 'language' && QUESTIONS[criterion].type === 'score';
 }
 
 export interface CriterionSummary {
@@ -447,7 +521,7 @@ export function summarize(results: CaseResult[]): Summary {
   const criteria = Object.fromEntries(
     CRITERIA.map((criterion) => {
       const outcomes = results.flatMap((r) => r.criteria?.[criterion] ?? []);
-      const values = outcomes.flatMap((o) => (o.status === 'judged' ? [valueOf(o.answer)] : []));
+      const values = outcomes.flatMap((o) => (o.status === 'judged' ? [judgedValue(o)] : []));
       return [
         criterion,
         {
@@ -484,7 +558,7 @@ export function formatCase(result: CaseResult): string {
     if (!outcome) continue;
     if (outcome.status === 'not_applicable') parts.push(`${criterion} n/a`);
     else if (outcome.status === 'refused') parts.push(`${criterion} refused`);
-    else parts.push(`${criterion} ${formatValue(criterion, valueOf(outcome.answer))}`);
+    else parts.push(`${criterion} ${formatValue(criterion, judgedValue(outcome))}`);
   }
   return `${result.id}: ${parts.join(' | ')}`;
 }
@@ -508,7 +582,7 @@ export function formatSummary(summary: Summary): string[] {
   for (const criterion of CRITERIA) {
     const { average, judged, refused, notApplicable } = summary.criteria[criterion];
     const value = average === null ? 'nothing judged' : formatValue(criterion, average);
-    const scale = QUESTIONS[criterion].type === 'predicate' ? ' average probability' : '';
+    const scale = isScore(criterion) ? '' : ' average probability';
     lines.push(
       `  ${CRITERION_LABELS[criterion]}: ${value}${average === null ? '' : scale} (${judged} judged, ${refused} refused, ${notApplicable} not applicable)`,
     );
@@ -522,7 +596,5 @@ export function formatSummary(summary: Summary): string[] {
 
 /** A probability as is, a score over its scale. */
 function formatValue(criterion: Criterion, value: number): string {
-  return QUESTIONS[criterion].type === 'predicate'
-    ? value.toFixed(2)
-    : `${value.toFixed(2)}/${SCORE_MAX}`;
+  return isScore(criterion) ? `${value.toFixed(2)}/${SCORE_MAX}` : value.toFixed(2);
 }

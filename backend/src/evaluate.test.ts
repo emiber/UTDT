@@ -9,6 +9,7 @@ import {
   summarize,
   valueOf,
   type CaseResult,
+  type CriterionResult,
   type EvalDeps,
   type GoldenCase,
 } from './evaluate.ts';
@@ -26,6 +27,7 @@ const GOLDEN: GoldenCase = {
   id: 'units',
   question: 'Units per item?',
   classification: 'data_question',
+  language: 'English',
   history: [],
 };
 const SQL = 'SELECT name, qty FROM items ORDER BY id';
@@ -49,6 +51,23 @@ const predicate = (probability: number): DecisionAnswer => ({
   probability,
 });
 const REFUSAL: DecisionAnswer = { type: 'refusal', name: null };
+/** A choice answer over these options, with the given probabilities (0 for the others). */
+const choice = (name: string, options: string[], given: Record<string, number>): DecisionAnswer => {
+  const probabilities = options.map((value) => ({ value, probability: given[value] ?? 0 }));
+  const [top] = [...probabilities].sort((a, b) => b.probability - a.probability);
+  return { type: 'choice', name, choice: top.value, confidence: top.probability, probabilities };
+};
+/** The language answer: how likely the bot's text is in each option. */
+const language = (given: Record<string, number>): DecisionAnswer =>
+  choice('language', ['English', 'Spanish', 'mixed', 'other'], given);
+const ENGLISH = language({ English: 1 });
+const BOT = ENGLISH as Extract<DecisionAnswer, { type: 'choice' }>;
+/** The language criterion as the report keeps it. */
+const judgedLanguage = (answer: DecisionAnswer, probability: number): CriterionResult => ({
+  status: 'judged',
+  answer,
+  probability,
+});
 
 let dataDb: DatabaseSync;
 
@@ -72,10 +91,16 @@ function deps(llm: ReturnType<typeof fakeLlm>, judge: FakeDecisions): EvalDeps {
 
 describe('parseGolden', () => {
   it('reads a case without a label or history as a data question in a new conversation', () => {
-    const text = JSON.stringify([{ id: 'a', question: 'Q?', extra: 1 }]);
+    const text = JSON.stringify([{ id: 'a', question: 'Q?', language: 'Spanish', extra: 1 }]);
 
     expect(parseGolden(text)).toEqual([
-      { id: 'a', question: 'Q?', classification: 'data_question', history: [] },
+      {
+        id: 'a',
+        question: 'Q?',
+        classification: 'data_question',
+        language: 'Spanish',
+        history: [],
+      },
     ]);
   });
 
@@ -85,12 +110,13 @@ describe('parseGolden', () => {
         id: 'a',
         question: 'Thanks!',
         classification: 'conversation',
+        language: 'English',
         history: [
           { question: 'Units?', sql: 'SELECT 1', narrative: 'One.', extra: 1 },
           { question: 'And pens?' },
         ],
       },
-      { id: 'b', question: 'Q?', history: [] },
+      { id: 'b', question: 'Q?', language: 'English', history: [] },
     ]);
 
     expect(parseGolden(text)).toEqual([
@@ -98,12 +124,19 @@ describe('parseGolden', () => {
         id: 'a',
         question: 'Thanks!',
         classification: 'conversation',
+        language: 'English',
         history: [
           { question: 'Units?', sql: 'SELECT 1', narrative: 'One.' },
           { question: 'And pens?' },
         ],
       },
-      { id: 'b', question: 'Q?', classification: 'data_question', history: [] },
+      {
+        id: 'b',
+        question: 'Q?',
+        classification: 'data_question',
+        language: 'English',
+        history: [],
+      },
     ]);
   });
 
@@ -113,7 +146,11 @@ describe('parseGolden', () => {
     ['empty', '[]', 'non-empty JSON array'],
     ['a case without an id', '[{"question":"Q?"}]', 'Case 1 has no id'],
     ['a case without a question', '[{"id":"a","question":" "}]', 'Case "a" has no question'],
-    ['a repeated id', '[{"id":"a","question":"Q?"},{"id":"a","question":"R?"}]', 'is repeated'],
+    [
+      'a repeated id',
+      '[{"id":"a","question":"Q?","language":"English"},{"id":"a","question":"R?"}]',
+      'is repeated',
+    ],
     ['a null case', '[null]', 'Case 1 has no id'],
     [
       'an unknown classification',
@@ -126,28 +163,38 @@ describe('parseGolden', () => {
       'Case "a" has an unknown classification: null.',
     ],
     [
+      'a case without a language',
+      '[{"id":"a","question":"Q?"}]',
+      'Case "a" needs a language: "English" or "Spanish".',
+    ],
+    [
+      'an unknown language',
+      '[{"id":"a","question":"Q?","language":"spanish"}]',
+      'Case "a" needs a language: "English" or "Spanish".',
+    ],
+    [
       'a history that is not an array',
-      '[{"id":"a","question":"Q?","history":{"question":"P?"}}]',
+      '[{"id":"a","question":"Q?","language":"English","history":{"question":"P?"}}]',
       'Case "a" has a history that is not an array.',
     ],
     [
       'a history turn without a question',
-      '[{"id":"a","question":"Q?","history":[{"question":"P?"},{"sql":"SELECT 1"}]}]',
+      '[{"id":"a","question":"Q?","language":"English","history":[{"question":"P?"},{"sql":"SELECT 1"}]}]',
       'Case "a", history turn 2, has no question.',
     ],
     [
       'a null history turn',
-      '[{"id":"a","question":"Q?","history":[null]}]',
+      '[{"id":"a","question":"Q?","language":"English","history":[null]}]',
       'Case "a", history turn 1, has no question.',
     ],
     [
       'a history turn whose sql is not text',
-      '[{"id":"a","question":"Q?","history":[{"question":"P?","sql":1}]}]',
+      '[{"id":"a","question":"Q?","language":"English","history":[{"question":"P?","sql":1}]}]',
       'Case "a", history turn 1, has a sql that is not text.',
     ],
     [
       'a history turn whose narrative is not text',
-      '[{"id":"a","question":"Q?","history":[{"question":"P?","narrative":null}]}]',
+      '[{"id":"a","question":"Q?","language":"English","history":[{"question":"P?","narrative":null}]}]',
       'Case "a", history turn 1, has a narrative that is not text.',
     ],
   ])('rejects %s', (_case, text, message) => {
@@ -156,8 +203,9 @@ describe('parseGolden', () => {
 });
 
 describe('evaluateCase', () => {
-  it('asks the judge both scores and the chart and language predicates, and keeps the answers as they came', async () => {
-    const judge = fakeDecisions([score(1.9)], [score(1.5), predicate(0.8)], [predicate(0.95)]);
+  it('asks the judge both scores, the chart predicate and the language, and keeps the answers as they came', async () => {
+    const answer = language({ English: 0.95, Spanish: 0.05 });
+    const judge = fakeDecisions([score(1.9)], [score(1.5), predicate(0.8)], [answer]);
 
     const result = await evaluateCase(GOLDEN, deps(fakeLlm(sqlReply(SQL), insights(CHART)), judge));
 
@@ -165,6 +213,7 @@ describe('evaluateCase', () => {
       id: 'units',
       question: 'Units per item?',
       expectedClassification: 'data_question',
+      expectedLanguage: 'English',
       classification: 'data_question',
       status: 'answered',
       sql: SQL,
@@ -174,7 +223,7 @@ describe('evaluateCase', () => {
         sql: { status: 'judged', answer: score(1.9) },
         narrative: { status: 'judged', answer: score(1.5) },
         chart: { status: 'judged', answer: predicate(0.8) },
-        language: { status: 'judged', answer: predicate(0.95) },
+        language: { status: 'judged', answer, probability: 0.95 },
       },
       reason: null,
       error: null,
@@ -182,13 +231,15 @@ describe('evaluateCase', () => {
     });
     // One request for the SQL, one for the narrative and the chart, and one for the language.
     expect(judge.requests).toHaveLength(3);
-    const [sql, rest, language] = judge.requests;
+    const [sql, rest, languageRequest] = judge.requests;
     expect(sql.questions.map((q) => [q.type, q.name])).toEqual([['score', 'sql']]);
     expect(rest.questions.map((q) => [q.type, q.name])).toEqual([
       ['score', 'narrative'],
       ['predicate', 'chart'],
     ]);
-    expect(language.questions.map((q) => [q.type, q.name])).toEqual([['predicate', 'language']]);
+    expect(languageRequest.questions.map((q) => [q.type, q.name])).toEqual([
+      ['choice', 'language'],
+    ]);
     for (const question of [sql.questions[0], rest.questions[0]]) {
       expect(question.type === 'score' && question.levels.map((l) => l.label)).toHaveLength(3);
     }
@@ -208,25 +259,31 @@ describe('evaluateCase', () => {
     });
   });
 
-  it('asks whether everything the bot wrote is in the language of the latest message', async () => {
-    const judge = fakeDecisions([score(2)], [score(2)], [predicate(1)]);
+  it('asks the language of everything the bot wrote, as a choice', async () => {
+    const judge = fakeDecisions([score(2)], [score(2)], [ENGLISH]);
 
     await evaluateCase(GOLDEN, deps(fakeLlm(sqlReply(SQL), insights()), judge));
 
     // Earlier turns in another language pulled the answer into theirs (#22 and #23).
-    const [language] = judge.requests[2].questions;
-    const { instructions } = language as { instructions: string };
-    expect(language).toMatchObject({ type: 'predicate', name: 'language' });
-    expect(instructions).toContain('in the language of the question (the latest message)');
-    expect(instructions).toContain('even when the earlier turns are in another language');
+    const [question] = judge.requests[2].questions;
+    expect(question).toMatchObject({ type: 'choice', name: 'language' });
+    const { instructions, choices } = question as Extract<typeof question, { type: 'choice' }>;
     expect(instructions).toContain(
       'its narratives or reply, the column names of its results, and the titles of its results and charts',
     );
-    expect(instructions).toContain("Values from the result rows and proper names don't count.");
+    expect(instructions).toContain(
+      "The SQL, values from the result rows and proper names (such as product, category or country names) don't count.",
+    );
+    expect(choices.map((c) => c.value)).toEqual(['English', 'Spanish', 'mixed', 'other']);
+    // With "some parts in one language", a Spanish answer naming an English category came
+    // out as mixed.
+    expect(choices[2].description).toContain(
+      'A name or value in another language does not make it mixed.',
+    );
   });
 
   it('gives the judge the question, schema, SQL, rows, narrative and chart as content', async () => {
-    const judge = fakeDecisions([score(2)], [score(2), predicate(1)], [predicate(1)]);
+    const judge = fakeDecisions([score(2)], [score(2), predicate(1)], [ENGLISH]);
 
     await evaluateCase(GOLDEN, deps(fakeLlm(sqlReply(SQL), insights(CHART)), judge));
 
@@ -246,7 +303,7 @@ describe('evaluateCase', () => {
   });
 
   it('leaves the chart not applicable, without asking, when there is no chart', async () => {
-    const judge = fakeDecisions([score(2)], [score(1)], [predicate(1)]);
+    const judge = fakeDecisions([score(2)], [score(1)], [ENGLISH]);
 
     const result = await evaluateCase(GOLDEN, deps(fakeLlm(sqlReply(SQL), insights()), judge));
 
@@ -259,11 +316,11 @@ describe('evaluateCase', () => {
       expect(String(request.input)).not.toContain('Chart it proposed');
     }
     expect(result.criteria?.chart).toEqual({ status: 'not_applicable' });
-    expect(result.criteria?.language).toEqual({ status: 'judged', answer: predicate(1) });
+    expect(result.criteria?.language).toEqual(judgedLanguage(ENGLISH, 1));
   });
 
   it('judges an empty result on both scores, with the chart not applicable', async () => {
-    const judge = fakeDecisions([score(2)], [score(2)], [predicate(1)]);
+    const judge = fakeDecisions([score(2)], [score(2)], [ENGLISH]);
     const llm = fakeLlm(sqlReply('SELECT name FROM items WHERE qty > 99'), insights(CHART));
 
     const result = await evaluateCase(GOLDEN, deps(llm, judge));
@@ -296,7 +353,7 @@ describe('evaluateCase', () => {
   });
 
   it('keeps a refused criterion as refused and the others as judged', async () => {
-    const judge = fakeDecisions([REFUSAL], [score(2)], [predicate(1)]);
+    const judge = fakeDecisions([REFUSAL], [score(2)], [ENGLISH]);
 
     const result = await evaluateCase(GOLDEN, deps(fakeLlm(sqlReply(SQL), insights()), judge));
 
@@ -365,7 +422,7 @@ describe('evaluateCase', () => {
     ['a score without a score', { type: 'score', name: null, confidence: 1, probabilities: [] }],
     ['a predicate for a score question', predicate(0.5)],
   ])('records %s from the judge as the case error', async (_case, odd) => {
-    const judge = fakeDecisions([odd as DecisionAnswer], [score(2)], [predicate(1)]);
+    const judge = fakeDecisions([odd as DecisionAnswer], [score(2)], [ENGLISH]);
 
     const result = await evaluateCase(GOLDEN, deps(fakeLlm(sqlReply(SQL), insights()), judge));
 
@@ -377,7 +434,7 @@ describe('evaluateCase', () => {
   });
 
   it('records an answer of another shape in the narrative request as the case error', async () => {
-    const judge = fakeDecisions([score(2)], [predicate(0.5)], [predicate(1)]);
+    const judge = fakeDecisions([score(2)], [predicate(0.5)], [ENGLISH]);
 
     const result = await evaluateCase(GOLDEN, deps(fakeLlm(sqlReply(SQL), insights()), judge));
 
@@ -394,6 +451,7 @@ describe('summarize and format', () => {
     id: 'a',
     question: 'Q?',
     expectedClassification: 'data_question',
+    expectedLanguage: 'English',
     classification: 'data_question',
     status: 'answered',
     sql: 'SELECT 1',
@@ -409,13 +467,13 @@ describe('summarize and format', () => {
       sql: { status: 'judged', answer: score(2) },
       narrative: { status: 'judged', answer: score(1) },
       chart: { status: 'judged', answer: predicate(0.9) },
-      language: { status: 'judged', answer: predicate(1) },
+      language: judgedLanguage(ENGLISH, 1),
     }),
     answered({
       sql: { status: 'judged', answer: score(1) },
       narrative: { status: 'refused' },
       chart: { status: 'not_applicable' },
-      language: { status: 'judged', answer: predicate(0.5) },
+      language: judgedLanguage(language({ English: 0.5, Spanish: 0.5 }), 0.5),
     }),
     { ...answered(null), id: 'b', status: 'unanswered', reason: 'sql: no such column: x' },
     // A judge failure: the label is known, but an error stays out of the classification count.
@@ -437,7 +495,7 @@ describe('summarize and format', () => {
     },
     // A text reply: judged on its language only.
     {
-      ...answered({ language: { status: 'judged', answer: predicate(0) } }),
+      ...answered({ language: judgedLanguage(language({ Spanish: 1 }), 0) }),
       id: 'g',
       status: 'not_judged',
       expectedClassification: 'conversation',
@@ -522,7 +580,7 @@ describe('summarize and format', () => {
     ]);
   });
 
-  it('prints the summary without a verdict: scores over the scale, predicates as probabilities', () => {
+  it('prints the summary without a verdict: scores over the scale, the chart and the language as probabilities', () => {
     expect(formatSummary(summarize(RESULTS))).toEqual([
       'Summary: 8 questions, 2 answered, 2 without an answer, 3 with another label, 1 errors',
       '  The SQL answers the question: 1.50/2 (2 judged, 0 refused, 0 not applicable)',
@@ -547,7 +605,7 @@ describe('evaluateCase with several queries', () => {
     });
 
   it('keeps every query with its own row count and chart, and the texts joined', async () => {
-    const judge = fakeDecisions([score(2)], [score(2), predicate(1)], [predicate(1)]);
+    const judge = fakeDecisions([score(2)], [score(2), predicate(1)], [ENGLISH]);
 
     const result = await evaluateCase(GOLDEN, deps(fakeLlm(two(), sections(CHART, null)), judge));
 
@@ -564,7 +622,7 @@ describe('evaluateCase with several queries', () => {
   });
 
   it('gives the judge each result under its title, with its own SQL, rows, chart and text', async () => {
-    const judge = fakeDecisions([score(2)], [score(2), predicate(1)], [predicate(1)]);
+    const judge = fakeDecisions([score(2)], [score(2), predicate(1)], [ENGLISH]);
 
     await evaluateCase(GOLDEN, deps(fakeLlm(two(), sections(CHART, null)), judge));
 
@@ -595,7 +653,7 @@ describe('evaluateCase with several queries', () => {
   });
 
   it('asks about the chart when only one of the results has one', async () => {
-    const judge = fakeDecisions([score(2)], [score(2), predicate(0.5)], [predicate(1)]);
+    const judge = fakeDecisions([score(2)], [score(2), predicate(0.5)], [ENGLISH]);
 
     await evaluateCase(GOLDEN, deps(fakeLlm(two(), sections(null, CHART)), judge));
 
@@ -603,7 +661,7 @@ describe('evaluateCase with several queries', () => {
   });
 
   it('leaves the chart not applicable when none of the results has one', async () => {
-    const judge = fakeDecisions([score(2)], [score(2)], [predicate(1)]);
+    const judge = fakeDecisions([score(2)], [score(2)], [ENGLISH]);
 
     const result = await evaluateCase(GOLDEN, deps(fakeLlm(two(), sections(null, null)), judge));
 
@@ -612,7 +670,7 @@ describe('evaluateCase with several queries', () => {
   });
 
   it('tells the judge a question for separate results needs a query for each', async () => {
-    const judge = fakeDecisions([score(2)], [score(2)], [predicate(1)]);
+    const judge = fakeDecisions([score(2)], [score(2)], [ENGLISH]);
 
     await evaluateCase(GOLDEN, deps(fakeLlm(two(), sections(null, null)), judge));
 
@@ -622,7 +680,7 @@ describe('evaluateCase with several queries', () => {
   });
 
   it('shows a single query as before, with no result heading', async () => {
-    const judge = fakeDecisions([score(2)], [score(2)], [predicate(1)]);
+    const judge = fakeDecisions([score(2)], [score(2)], [ENGLISH]);
 
     await evaluateCase(GOLDEN, deps(fakeLlm(sqlReply(SQL), insights()), judge));
 
@@ -656,12 +714,14 @@ describe('evaluateCase with an expected label and a history', () => {
     id: 'chart',
     question: 'Show it as a chart',
     classification: 'data_question',
+    language: 'English',
     history: HISTORY,
   };
   const THANKS: GoldenCase = {
     id: 'thanks',
     question: 'Thanks!',
     classification: 'conversation',
+    language: 'English',
     history: [],
   };
   const textReply = () => jsonResponse({ narrative: 'You are welcome!', suggestions: SUGGESTIONS });
@@ -672,7 +732,7 @@ describe('evaluateCase with an expected label and a history', () => {
     const llm = fakeLlm(sqlReply(SQL), insights());
 
     await evaluateCase(FOLLOW_UP, {
-      ...deps(llm, fakeDecisions([score(2)], [score(2)], [predicate(1)])),
+      ...deps(llm, fakeDecisions([score(2)], [score(2)], [ENGLISH])),
       decisions,
     });
 
@@ -681,7 +741,7 @@ describe('evaluateCase with an expected label and a history', () => {
   });
 
   it('shows the judge the history before the question, as content, and keeps it in the result', async () => {
-    const judge = fakeDecisions([score(2)], [score(2), predicate(1)], [predicate(1)]);
+    const judge = fakeDecisions([score(2)], [score(2), predicate(1)], [ENGLISH]);
 
     const result = await evaluateCase(
       FOLLOW_UP,
@@ -704,7 +764,7 @@ describe('evaluateCase with an expected label and a history', () => {
       .replace(/\n\nSchema the bot knew:\n[\s\S]*?(?=\n\nSQL it ran:)/, '');
 
   it('judges the rest of the answer on the question and the answer alone', async () => {
-    const judge = fakeDecisions([score(2)], [score(2), predicate(1)], [predicate(1)]);
+    const judge = fakeDecisions([score(2)], [score(2), predicate(1)], [ENGLISH]);
 
     await evaluateCase(FOLLOW_UP, deps(fakeLlm(sqlReply(SQL), insights(CHART)), judge));
 
@@ -729,7 +789,7 @@ describe('evaluateCase with an expected label and a history', () => {
   });
 
   it('asks the language about the SQL input without the history, keeping the schema', async () => {
-    const judge = fakeDecisions([score(2)], [score(2), predicate(1)], [predicate(1)]);
+    const judge = fakeDecisions([score(2)], [score(2), predicate(1)], [ENGLISH]);
 
     await evaluateCase(FOLLOW_UP, deps(fakeLlm(sqlReply(SQL), insights(CHART)), judge));
 
@@ -741,7 +801,7 @@ describe('evaluateCase with an expected label and a history', () => {
   });
 
   it('leaves only the schema out of the rest of the answer when the case has no history', async () => {
-    const judge = fakeDecisions([score(2)], [score(2)], [predicate(1)]);
+    const judge = fakeDecisions([score(2)], [score(2)], [ENGLISH]);
 
     await evaluateCase(GOLDEN, deps(fakeLlm(sqlReply(SQL), insights()), judge));
 
@@ -772,7 +832,7 @@ describe('evaluateCase with an expected label and a history', () => {
   });
 
   it('shows the judge no history when the case has none', async () => {
-    const judge = fakeDecisions([score(2)], [score(2)], [predicate(1)]);
+    const judge = fakeDecisions([score(2)], [score(2)], [ENGLISH]);
 
     await evaluateCase(GOLDEN, deps(fakeLlm(sqlReply(SQL), insights()), judge));
 
@@ -782,7 +842,7 @@ describe('evaluateCase with an expected label and a history', () => {
   });
 
   it('tells the judge how the SQL answers a follow-up, when the case has earlier turns', async () => {
-    const judge = fakeDecisions([score(2)], [score(2)], [predicate(1)]);
+    const judge = fakeDecisions([score(2)], [score(2)], [ENGLISH]);
 
     await evaluateCase(FOLLOW_UP, deps(fakeLlm(sqlReply(SQL), insights()), judge));
 
@@ -800,7 +860,7 @@ describe('evaluateCase with an expected label and a history', () => {
   });
 
   it('asks the SQL question of a single question as before, without the follow-up rule', async () => {
-    const judge = fakeDecisions([score(2)], [score(2)], [predicate(1)]);
+    const judge = fakeDecisions([score(2)], [score(2)], [ENGLISH]);
 
     await evaluateCase(GOLDEN, deps(fakeLlm(sqlReply(SQL), insights()), judge));
 
@@ -812,7 +872,8 @@ describe('evaluateCase with an expected label and a history', () => {
   });
 
   it('counts a text reply with the expected label as correct, judging only its language', async () => {
-    const judge = fakeDecisions([predicate(0.9)]);
+    const answer = language({ English: 0.9, Spanish: 0.1 });
+    const judge = fakeDecisions([answer]);
 
     const result = await evaluateCase(THANKS, {
       ...deps(fakeLlm(textReply()), judge),
@@ -826,7 +887,8 @@ describe('evaluateCase with an expected label and a history', () => {
       narrative: 'You are welcome!',
       sql: null,
       queries: null,
-      criteria: { language: { status: 'judged', answer: predicate(0.9) } },
+      expectedLanguage: 'English',
+      criteria: { language: { status: 'judged', answer, probability: 0.9 } },
       reason: null,
       error: null,
     });
@@ -835,12 +897,12 @@ describe('evaluateCase with an expected label and a history', () => {
     expect(formatCase(result)).toBe('thanks: classification ok | language 0.90');
     expect(judge.requests).toHaveLength(1);
     expect(judge.requests[0].questions.map((q) => [q.type, q.name])).toEqual([
-      ['predicate', 'language'],
+      ['choice', 'language'],
     ]);
   });
 
   it('counts a text reply with another label as incorrect, and still judges its language', async () => {
-    const judge = fakeDecisions([predicate(0.9)]);
+    const judge = fakeDecisions([language({ English: 0.9, Spanish: 0.1 })]);
 
     const result = await evaluateCase(THANKS, {
       ...deps(fakeLlm(textReply()), judge),
@@ -856,7 +918,7 @@ describe('evaluateCase with an expected label and a history', () => {
   });
 
   it('shows the judge the message and the reply as content, without the history or the schema', async () => {
-    const judge = fakeDecisions([predicate(1)]);
+    const judge = fakeDecisions([ENGLISH]);
 
     await evaluateCase(
       { ...THANKS, history: HISTORY },
@@ -901,8 +963,22 @@ describe('evaluateCase with an expected label and a history', () => {
     expect(classificationOutcome(result)).toBeNull();
   });
 
-  it('records an answer of another shape for the language of a text reply as the case error', async () => {
-    const judge = fakeDecisions([score(2)]);
+  it.each([
+    ['a predicate instead of a choice', predicate(1)],
+    ['a choice that is not an option', { ...BOT, choice: 'French' }],
+    [
+      'probabilities without every option',
+      { ...BOT, probabilities: BOT.probabilities.filter((p) => p.value !== 'mixed') },
+    ],
+    [
+      'a probability that is not a number',
+      {
+        ...BOT,
+        probabilities: [...BOT.probabilities.slice(1), { value: 'English', probability: null }],
+      },
+    ],
+  ])('records %s for the language of a text reply as the case error', async (_case, answer) => {
+    const judge = fakeDecisions([answer as DecisionAnswer]);
 
     const result = await evaluateCase(THANKS, {
       ...deps(fakeLlm(textReply()), judge),
@@ -914,6 +990,71 @@ describe('evaluateCase with an expected label and a history', () => {
       error: 'The judge returned an unexpected answer for language.',
       criteria: null,
     });
+  });
+
+  it.each([
+    ['in the expected language', 'Spanish', { Spanish: 1 }, 1],
+    ['in another language', 'Spanish', { English: 1 }, 0],
+    ['mixed', 'Spanish', { mixed: 1 }, 0],
+    ['in neither language', 'English', { other: 1 }, 0],
+    ['partly mixed', 'Spanish', { Spanish: 0.77, mixed: 0.21, English: 0.02 }, 0.77],
+    ['in English, as expected', 'English', { English: 0.9, Spanish: 0.1 }, 0.9],
+  ] as const)(
+    'scores the language of a text %s as the probability of the expected one',
+    async (_case, expected, given, probability) => {
+      const answer = language(given);
+      const judge = fakeDecisions([answer]);
+
+      const result = await evaluateCase(
+        { ...THANKS, language: expected },
+        { ...deps(fakeLlm(textReply()), judge), decisions: fakeClassifier('conversation') },
+      );
+
+      // The report keeps the answer as it came, and the value worked out from it.
+      expect(result).toMatchObject({
+        expectedLanguage: expected,
+        criteria: { language: { status: 'judged', answer, probability } },
+      });
+    },
+  );
+
+  it('records an answer of another shape for the language of a data answer as the case error', async () => {
+    const judge = fakeDecisions([score(2)], [score(2)], [predicate(1)]);
+
+    const result = await evaluateCase(GOLDEN, deps(fakeLlm(sqlReply(SQL), insights()), judge));
+
+    expect(result).toMatchObject({
+      status: 'error',
+      error: 'The judge returned an unexpected answer for language.',
+      narrative: 'Ink leads.',
+      criteria: null,
+    });
+  });
+
+  it('keeps a refused language of a data answer as refused, and the other criteria as judged', async () => {
+    const judge = fakeDecisions([score(2)], [score(2)], [REFUSAL]);
+
+    const result = await evaluateCase(GOLDEN, deps(fakeLlm(sqlReply(SQL), insights()), judge));
+
+    expect(result).toMatchObject({
+      status: 'answered',
+      criteria: { sql: { status: 'judged' }, language: { status: 'refused' } },
+    });
+  });
+
+  it('judges the language of a data answer against the expected one', async () => {
+    const answer = language({ Spanish: 0.8, English: 0.2 });
+    const judge = fakeDecisions([score(2)], [score(2)], [answer]);
+
+    const result = await evaluateCase(
+      { ...GOLDEN, language: 'Spanish' },
+      deps(fakeLlm(sqlReply(SQL), insights()), judge),
+    );
+
+    expect(result.criteria?.language).toEqual(judgedLanguage(answer, 0.8));
+    expect(formatCase(result)).toBe(
+      'units: classification ok | sql 2.00/2 | narrative 2.00/2 | chart n/a | language 0.80',
+    );
   });
 
   it('counts a data answer to a message that expects another label as incorrect, without judging it', async () => {
@@ -975,7 +1116,7 @@ describe('evaluateCase with an expected label and a history', () => {
     const failing = () => fakeDecisions(new Error('503 Busy'));
 
     it('judges the data answer of a data question, without a label', async () => {
-      const judge = fakeDecisions([score(2)], [score(2)], [predicate(1)]);
+      const judge = fakeDecisions([score(2)], [score(2)], [ENGLISH]);
 
       const result = await evaluateCase(GOLDEN, {
         ...deps(fakeLlm(sqlReply(SQL), insights()), judge),
