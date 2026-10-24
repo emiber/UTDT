@@ -396,10 +396,11 @@ gate, because it costs money and isn't deterministic.
   text reply is judged on its language only, even when the label it got isn't the expected
   one, and a data answer or a failed SQL isn't judged at all.
 - **The judge** gets three requests per answered question, with the answer as content (never
-  as instructions): for each query of the answer (under its title when there are several),
-  its SQL, every result row, its chart spec and its narrative, without the `### title`
-  heading the backend adds (the judge scored a correct narrative lower with those headings in
-  it), after the question. An answer with several results is judged as a whole.
+  as instructions). Each one shows the question and then, for each query of the answer (under
+  its title when there are several), its SQL, every result row, its chart spec and its
+  narrative, without the `### title` heading the backend adds (the judge scored a correct
+  narrative lower with those headings in it). An answer with several results is judged as a
+  whole.
   - **The SQL's request** also shows the case's history (the same `history.liquid` block the
     pipeline's prompts use) before the question, and the schema context: the SQL criterion
     needs them to know what each column means and what a follow-up refers to.
@@ -412,7 +413,8 @@ gate, because it costs money and isn't deterministic.
 
   The Decisions API judges each question on its own (the same input gives the same answer
   alone or with others), so how the questions are grouped doesn't change their scores; what
-  matters is what each input shows.
+  matters is what each input shows. The SQL and the language still see the schema, so a new
+  table can still move their scores.
 
   The criteria:
   - *the SQL answers the question* — a `score` on 3 levels (does not answer / partially /

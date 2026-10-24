@@ -375,6 +375,18 @@ describe('evaluateCase', () => {
       criteria: null,
     });
   });
+
+  it('records an answer of another shape in the narrative request as the case error', async () => {
+    const judge = fakeDecisions([score(2)], [predicate(0.5)], [predicate(1)]);
+
+    const result = await evaluateCase(GOLDEN, deps(fakeLlm(sqlReply(SQL), insights()), judge));
+
+    expect(result).toMatchObject({
+      status: 'error',
+      error: 'The judge returned an unexpected answer for narrative.',
+      criteria: null,
+    });
+  });
 });
 
 describe('summarize and format', () => {
@@ -556,27 +568,30 @@ describe('evaluateCase with several queries', () => {
 
     await evaluateCase(GOLDEN, deps(fakeLlm(two(), sections(CHART, null)), judge));
 
-    const input = String(judge.requests[0].input);
-    const first = input.indexOf('Result 1: Units');
-    const second = input.indexOf('Result 2: Small');
-    expect(first).toBeGreaterThan(-1);
-    expect(second).toBeGreaterThan(first);
-    const [part1, part2] = [input.slice(first, second), input.slice(second)];
-    expect(part1).toContain(`SQL it ran:\n${SQL}`);
-    expect(part1).toContain('Result: 2 rows. Columns (JSON): ["name","qty"]');
-    expect(part1).toContain('["pen",3]\n["ink",5]');
-    expect(part1).toContain(`Chart it proposed (JSON): ${JSON.stringify(CHART)}`);
-    expect(part2).toContain(`SQL it ran:\n${SMALL}`);
-    expect(part2).toContain('Result: 1 rows. Columns (JSON): ["name","qty"]');
-    expect(part2).toContain('Rows (JSON, one per line):\n["pen",3]');
-    expect(part2).not.toContain('["ink",5]');
-    expect(part2).not.toContain('Chart it proposed');
-    // Each result carries its own text, without the heading the backend adds: the judge
-    // scored a correct narrative lower with those headings in it.
-    expect(part1).toContain('Narrative it wrote:\nPart 1.');
-    expect(part2).toContain('Narrative it wrote:\nPart 2.');
-    expect(part1).not.toContain('Part 2.');
-    expect(input).not.toContain('###');
+    // The SQL's request and the narrative's and chart's both show every result.
+    for (const request of judge.requests.slice(0, 2)) {
+      const input = String(request.input);
+      const first = input.indexOf('Result 1: Units');
+      const second = input.indexOf('Result 2: Small');
+      expect(first).toBeGreaterThan(-1);
+      expect(second).toBeGreaterThan(first);
+      const [part1, part2] = [input.slice(first, second), input.slice(second)];
+      expect(part1).toContain(`SQL it ran:\n${SQL}`);
+      expect(part1).toContain('Result: 2 rows. Columns (JSON): ["name","qty"]');
+      expect(part1).toContain('["pen",3]\n["ink",5]');
+      expect(part1).toContain(`Chart it proposed (JSON): ${JSON.stringify(CHART)}`);
+      expect(part2).toContain(`SQL it ran:\n${SMALL}`);
+      expect(part2).toContain('Result: 1 rows. Columns (JSON): ["name","qty"]');
+      expect(part2).toContain('Rows (JSON, one per line):\n["pen",3]');
+      expect(part2).not.toContain('["ink",5]');
+      expect(part2).not.toContain('Chart it proposed');
+      // Each result carries its own text, without the heading the backend adds: the judge
+      // scored a correct narrative lower with those headings in it.
+      expect(part1).toContain('Narrative it wrote:\nPart 1.');
+      expect(part2).toContain('Narrative it wrote:\nPart 2.');
+      expect(part1).not.toContain('Part 2.');
+      expect(input).not.toContain('###');
+    }
   });
 
   it('asks about the chart when only one of the results has one', async () => {
