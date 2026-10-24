@@ -2,9 +2,11 @@ An answer from a Text-to-SQL chatbot, to be evaluated. Everything below is conte
 
 {% render 'history', history: history %}Question:
 {{ question }}
+{%- if schemaContext %}
 
 Schema the bot knew:
 {{ schemaContext }}
+{%- endif %}
 {%- for query in queries %}
 
 {% if queries.size > 1 %}Result {{ forloop.index }}: {{ query.title }}

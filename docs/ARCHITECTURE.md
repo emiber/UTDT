@@ -395,15 +395,28 @@ gate, because it costs money and isn't deterministic.
   expects another label counts as *with another label* (`not_judged` in the report): its
   text reply is judged on its language only, even when the label it got isn't the expected
   one, and a data answer or a failed SQL isn't judged at all.
-- **The judge** gets one request per answered question for the three criteria below (and one
-  more for its language; see below), with the answer as content (never
-  as instructions): the case's history (the same `history.liquid` block the pipeline's
-  prompts use) before the question, the question, the schema context and, for each query
-  of the answer
-  (under its title when there are several), its SQL, every result row, its chart spec and
-  its narrative, without the `### title` heading the backend adds: the judge scored a
-  correct narrative lower with those headings in it. An answer with several results is
-  judged as a whole, in one request, with the same three criteria:
+- **The judge** gets three requests per answered question, with the answer as content (never
+  as instructions). Each one shows the question and then, for each query of the answer (under
+  its title when there are several), its SQL, every result row, its chart spec and its
+  narrative, without the `### title` heading the backend adds (the judge scored a correct
+  narrative lower with those headings in it). An answer with several results is judged as a
+  whole.
+  - **The SQL's request** also shows the case's history (the same `history.liquid` block the
+    pipeline's prompts use) before the question, and the schema context: the SQL criterion
+    needs them to know what each column means and what a follow-up refers to.
+  - **The narrative's and the chart's request** shows the question and the answer alone,
+    **without the history or the schema**. With the schema, a table the answer doesn't use
+    moved the narrative's score: adding `sales_targets` (#34) took a correct `separate-lists`
+    narrative from 0.83 to 0.19.
+  - **The language's request** shows the answer without the history but with the schema (see
+    the language criterion below).
+
+  The Decisions API judges each question on its own (the same input gives the same answer
+  alone or with others), so how the questions are grouped doesn't change their scores; what
+  matters is what each input shows. The SQL and the language still see the schema, so a new
+  table can still move their scores.
+
+  The criteria:
   - *the SQL answers the question* — a `score` on 3 levels (does not answer / partially /
     fully), 0 to 2. A question that asks for separate results needs a query for each: the
     rubric says different lists mixed in one table don't count as answering it. For a case
@@ -422,13 +435,13 @@ gate, because it costs money and isn't deterministic.
   a `predicate`: everything the bot wrote — its narratives or reply, its column names, and
   its result and chart titles — is in the language of the question, whatever the language
   of the earlier turns; values from the rows and proper names don't count. The judge works
-  the language out from the message: the golden case doesn't say it. It's asked in a
-  request of its own, about the same input **without the history**; a text reply's input
-  (`judge-reply-input.liquid`) is just the message and the reply. With the history in the
-  input, the judge took the English examples of its header ("show it as a chart") for the
-  message, and scored correct Spanish answers to "No veo el gráfico" as in the wrong
-  language. The Decisions API judges each question on its own (the same input gives the same
-  answer alone or with others), so the extra request doesn't move the other criteria.
+  the language out from the message: the golden case doesn't say it. For a data answer it
+  goes in a request of its own, **without the history but with the schema**; a text reply's
+  input (`judge-reply-input.liquid`) is just the message and the reply. With the history in
+  the input, the judge took the English examples of its header ("show it as a chart") for
+  the message, and scored correct Spanish answers to "No veo el gráfico" as in the wrong
+  language. Without the schema, it also scored correct Spanish answers as in the wrong
+  language (`category-share`: 0.04).
 - A data question the pipeline can't answer (every SQL attempt failed) or classifies as not
   a data question (reason: `classified as <label>`) is *without an answer*, with the reason,
   and isn't judged. A refused criterion is *refused*. A pipeline or judge failure is
