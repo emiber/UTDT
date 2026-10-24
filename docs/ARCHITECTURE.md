@@ -72,7 +72,7 @@ the category that sells the most, leaves the lowest margin percentage, so "sells
 and "leaves the most" differ. `sales_targets` has a sales target per month and category,
 around what each category sold: some months meet it and others don't, and Furniture misses
 most of 2025. `returns` has at most one return per order, with one of four reasons, for
-12.5% of the orders: Electronics is returned the most and Office Supplies the least. Sales
+about 12% of the orders: Electronics is returned the most and Office Supplies the least. Sales
 stay gross: `orders.amount` doesn't subtract returns, and the metadata says to subtract
 `refund_amount` only for net sales.
 
