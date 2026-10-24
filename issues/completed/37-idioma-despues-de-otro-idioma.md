@@ -2,7 +2,7 @@
 id: 37
 title: Responder siempre en el idioma del mensaje después de turnos en otro idioma
 type: fix
-status: refined
+status: closed
 parent:
 created: 2026-10-23
 ---
@@ -57,3 +57,27 @@ Decididas con la delegación del usuario ("Hacé lo que creas para terminar lo a
 
 ## Deferred decisions
 - **Medir también las respuestas de datos después de turnos en otro idioma.** Hoy no se vio que fallen.
+
+## Pull request
+Branch: `fix/37-idioma-despues-de-otro-idioma` → `main`
+
+### Qué hace
+- **Mide el bug y no cambia código.** El paso de la respuesta de texto (`buildReply`), con el historial en español de `capital-of-france-after-spanish`, respondió en inglés las 20 veces. Con 0 de 20 en otro idioma, la regla del issue (0 o 1 de 20) dice cerrar sin cambios: el campo `language` de #22 alcanza, y la respuesta en español de la corrida de #34 fue una falla aislada.
+- La medición fue un script descartable, que no se versiona: llama 20 veces a `buildReply` con la misma entrada que usa el eval y cuenta las respuestas en español.
+
+### Verification
+- Lint: n/a — no hay cambios de código en esta rama, solo el archivo del issue. El mismo código pasó el gate en la rama del epic #32 antes de su merge (`npm run lint` — pass).
+- Tests: n/a — por lo mismo. Ese gate dio `npm run test:coverage` — pass, con 33 archivos y 645 tests.
+- Coverage: n/a — sin cambios de código (99,75% de statements en ese gate; umbral 85%).
+- **Medición** (2026-10-24, `OPENAI_MODEL=gpt-5.4-mini`, con 5 tablas en el esquema): **0 de 20 en otro idioma.** Las 20 empiezan "I can only answer questions about the data…" o una variante. Por ejemplo: "I can only answer questions about the dataset: customers, products, orders, sales targets, and returns. Ask me…".
+- Criterios de aceptación:
+  - **La medición de 20 repeticiones en Verification, con un ejemplo: pass.**
+  - **Con 0 o 1 de 20, cerrar sin cambios de código, con la medición: pass.**
+  - Los criterios de "si fallaron 2 o más" no aplican.
+- Self-review: inline. Es un cambio trivial, solo el cierre del issue, y se revisó contra el mismo contrato.
+- Plan: el del issue refinado (medir y decidir por el umbral), con la delegación del usuario ("Hacé lo que creas para terminar lo antes posible", 2026-10-24).
+- Security: no security surface touched.
+- Docs: not needed (no cambia el comportamiento).
+
+### Out of scope / follow-ups
+None
