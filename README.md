@@ -105,12 +105,13 @@ the real pipeline, checks how each one was classified, and has OpenAI's Decision
 each answer to a data question and the language of each text reply to any other message. No
 server or access key needed.
 
-- **A golden case** is an `id` and a `question`, plus two optional fields:
-  `classification`, the label the message should get (`data_question` by default,
-  `conversation`, `needs_clarification` or `out_of_scope`), and `history`, earlier turns
-  written by hand (`question`, and optionally `sql` and `narrative`) for a follow-up such as
-  "and in 2024?". Only the last message runs; the history is context for the pipeline and
-  the judge. A bad label or history stops the eval before any OpenAI call.
+- **A golden case** is an `id`, a `question` and its `language` (`English` or `Spanish`,
+  the language the answer should be in), plus two optional fields: `classification`, the
+  label the message should get (`data_question` by default, `conversation`,
+  `needs_clarification` or `out_of_scope`), and `history`, earlier turns written by hand
+  (`question`, and optionally `sql` and `narrative`) for a follow-up such as "and in 2024?".
+  Only the last message runs; the history is context for the pipeline and the judge. A
+  missing language, or a bad label or history, stops the eval before any OpenAI call.
 - **Requirements:** `npm run seed`, and a `.env` with a real `OPENAI_API_KEY`, `OPENAI_MODEL`
   and `OPENAI_DECISIONS_MODEL` (today the Decisions API only supports `gpt-6-luna`). If
   something is missing it says what and exits without calling OpenAI.
@@ -130,8 +131,8 @@ server or access key needed.
   and *the narrative is faithful to the data* are averages from 0 to 2 (2 is best); *the
   chart fits* is an average probability, only over answers with a chart. *The answer is in
   the language of the message* is an average probability too, over the data answers and the
-  text replies: everything the bot wrote (texts, column names and titles) should be in the
-  language of the last message, whatever the language of the earlier turns. An answer with
+  text replies: the probability that everything the bot wrote (texts, column names and
+  titles) is in the case's `language`, whatever the language of the earlier turns. An answer with
   several results is judged as a whole. The counts say how
   many questions had no answer, errored, or had a criterion refused or not applicable, and
   those stay out of the averages. Scores vary between runs: read them as a trend, for example

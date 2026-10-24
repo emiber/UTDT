@@ -378,7 +378,8 @@ with the expected one, and has the Decisions API judge each answer to a data que
 the language of each text reply to any other message. It is **not** part of the quality
 gate, because it costs money and isn't deterministic.
 
-- **A golden case** is an `id`, a `question`, and two optional fields:
+- **A golden case** is an `id`, a `question`, its `language` (`English` or `Spanish`: the
+  language of the question, which the answer should be in), and two optional fields:
   - `classification` — the expected label, one of the classifier's four; `data_question`
     when missing;
   - `history` — earlier turns written by hand, oldest first, in the pipeline's
@@ -386,8 +387,9 @@ gate, because it costs money and isn't deterministic.
     run. It's passed to `answerQuestion` as is; only the last message runs. Empty or
     missing means a new conversation.
 - **Before the first OpenAI call** it checks `OPENAI_API_KEY`, `OPENAI_MODEL`,
-  `OPENAI_DECISIONS_MODEL`, the golden file (including each label and history turn) and
-  `data/data.db`. A problem prints why, naming the case, and exits 1, with no report.
+  `OPENAI_DECISIONS_MODEL`, the golden file (including each label, language and history
+  turn) and `data/data.db`. A problem prints why, naming the case, and exits 1, with no
+  report.
 - **The classification** compared is the pipeline's final label, after its low-confidence
   fallback: the data answer and the failed SQL carry `data_question` (or null), the text
   reply its own label. Equal → *correct*, different → *incorrect*, null (the classifier
@@ -435,16 +437,30 @@ gate, because it costs money and isn't deterministic.
     has a chart spec; otherwise it's *not applicable*.
 - **The language criterion**, *the answer is in the language of the message*, catches the
   bugs of #22 and #23 (earlier turns in another language pulled the answer into theirs). It's
-  a `predicate`: everything the bot wrote — its narratives or reply, its column names, and
-  its result and chart titles — is in the language of the question, whatever the language
-  of the earlier turns; values from the rows and proper names don't count. The judge works
-  the language out from the message: the golden case doesn't say it. For a data answer it
-  goes in a request of its own, **without the history but with the schema**; a text reply's
-  input (`judge-reply-input.liquid`) is just the message and the reply. With the history in
-  the input, the judge took the English examples of its header ("show it as a chart") for
-  the message, and scored correct Spanish answers to "No veo el gráfico" as in the wrong
-  language. Without the schema, it also scored correct Spanish answers as in the wrong
-  language (`category-share`: 0.04).
+  a `choice` question about what the bot wrote — its narratives or reply, its column names,
+  and its result and chart titles; the SQL, values from the rows and proper names don't
+  count — with the options `English`, `Spanish`, `mixed` and `other`. Its value is the
+  probability the judge gives the case's `language`, so it's still a probability, shown and
+  averaged like one; `mixed` and `other` never match. A refusal makes it *refused*; an answer
+  that isn't one of the options, or whose probabilities don't list every option, is the
+  case's error.
+  - **Why the case says the language:** the judge reads the message's language with noise.
+    As a single `predicate` ("everything the bot wrote is in the language of the question"),
+    it gave 0.03 to a short Spanish answer naming an English category
+    (`margin-share-by-category`), while it read both the message and the answer as Spanish.
+    Asked the message's language as a second `choice`, it read "mostralo como gráfico de
+    torta" as another language (up to 0.63) and Spanish questions as English (up to 0.45),
+    depending on the answer beside them, and no wording fixed every case (#38).
+  - **Why `mixed` is described:** its description says that a name or value in another
+    language doesn't make an answer mixed. With just "some parts in one language and some in
+    another", the same Spanish answers came out `mixed` with up to 0.40.
+  - **Its input:** for a data answer it goes in a request of its own, **without the history
+    but with the schema**; a text reply's input (`judge-reply-input.liquid`) is just the
+    message and the reply. With the history in the input, the judge took the English
+    examples of its header ("show it as a chart") for the message, and scored correct Spanish
+    answers to "No veo el gráfico" as in the wrong language. Without the schema, it also
+    scored correct Spanish answers as in the wrong language (`category-share`: 0.04). Both
+    were found with the earlier `predicate`.
 - A data question the pipeline can't answer (every SQL attempt failed) or classifies as not
   a data question (reason: `classified as <label>`) is *without an answer*, with the reason,
   and isn't judged. A refused criterion is *refused*. A pipeline or judge failure is
@@ -459,10 +475,12 @@ gate, because it costs money and isn't deterministic.
   No verdict, no thresholds: it exits 0 whenever the run finishes. The JSON report goes to
   `data/eval/eval-<timestamp>.json` (gitignored), with the models used, the summary, and
   per question the expected and the actual label (`expectedClassification`,
-  `classification`, null without a label), the history, the SQL (every query's, one after
-  the other), the narrative (or the text reply), each query's title, SQL, row count and
-  chart spec (`queries`), and each criterion's answer as the Decisions API returned it
-  (only `language` for a text reply).
+  `classification`, null without a label), the expected language (`expectedLanguage`), the
+  history, the SQL (every query's, one after the other), the narrative (or the text reply),
+  each query's title, SQL, row count and chart spec (`queries`), and each criterion's
+  answer as the Decisions API returned it
+  (only `language` for a text reply). The language also keeps the probability of the
+  expected language (`probability`), its value.
 
 ### Frontend (Vue 3)
 
