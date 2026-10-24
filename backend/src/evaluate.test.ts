@@ -157,7 +157,7 @@ describe('parseGolden', () => {
 
 describe('evaluateCase', () => {
   it('asks the judge both scores and the chart and language predicates, and keeps the answers as they came', async () => {
-    const judge = fakeDecisions([score(1.9)], [score(1.5), predicate(0.8), predicate(0.95)]);
+    const judge = fakeDecisions([score(1.9)], [score(1.5), predicate(0.8)], [predicate(0.95)]);
 
     const result = await evaluateCase(GOLDEN, deps(fakeLlm(sqlReply(SQL), insights(CHART)), judge));
 
@@ -180,15 +180,15 @@ describe('evaluateCase', () => {
       error: null,
       history: [],
     });
-    // One request for the SQL, and one for the rest of the answer.
-    expect(judge.requests).toHaveLength(2);
-    const [sql, rest] = judge.requests;
+    // One request for the SQL, one for the narrative and the chart, and one for the language.
+    expect(judge.requests).toHaveLength(3);
+    const [sql, rest, language] = judge.requests;
     expect(sql.questions.map((q) => [q.type, q.name])).toEqual([['score', 'sql']]);
     expect(rest.questions.map((q) => [q.type, q.name])).toEqual([
       ['score', 'narrative'],
       ['predicate', 'chart'],
-      ['predicate', 'language'],
     ]);
+    expect(language.questions.map((q) => [q.type, q.name])).toEqual([['predicate', 'language']]);
     for (const question of [sql.questions[0], rest.questions[0]]) {
       expect(question.type === 'score' && question.levels.map((l) => l.label)).toHaveLength(3);
     }
@@ -209,12 +209,12 @@ describe('evaluateCase', () => {
   });
 
   it('asks whether everything the bot wrote is in the language of the latest message', async () => {
-    const judge = fakeDecisions([score(2)], [score(2), predicate(1)]);
+    const judge = fakeDecisions([score(2)], [score(2)], [predicate(1)]);
 
     await evaluateCase(GOLDEN, deps(fakeLlm(sqlReply(SQL), insights()), judge));
 
     // Earlier turns in another language pulled the answer into theirs (#22 and #23).
-    const language = judge.requests[1].questions.find((q) => q.name === 'language');
+    const [language] = judge.requests[2].questions;
     const { instructions } = language as { instructions: string };
     expect(language).toMatchObject({ type: 'predicate', name: 'language' });
     expect(instructions).toContain('in the language of the question (the latest message)');
@@ -226,7 +226,7 @@ describe('evaluateCase', () => {
   });
 
   it('gives the judge the question, schema, SQL, rows, narrative and chart as content', async () => {
-    const judge = fakeDecisions([score(2)], [score(2), predicate(1), predicate(1)]);
+    const judge = fakeDecisions([score(2)], [score(2), predicate(1)], [predicate(1)]);
 
     await evaluateCase(GOLDEN, deps(fakeLlm(sqlReply(SQL), insights(CHART)), judge));
 
@@ -246,13 +246,14 @@ describe('evaluateCase', () => {
   });
 
   it('leaves the chart not applicable, without asking, when there is no chart', async () => {
-    const judge = fakeDecisions([score(2)], [score(1), predicate(1)]);
+    const judge = fakeDecisions([score(2)], [score(1)], [predicate(1)]);
 
     const result = await evaluateCase(GOLDEN, deps(fakeLlm(sqlReply(SQL), insights()), judge));
 
     expect(judge.requests.map((r) => r.questions.map((q) => q.name))).toEqual([
       ['sql'],
-      ['narrative', 'language'],
+      ['narrative'],
+      ['language'],
     ]);
     for (const request of judge.requests) {
       expect(String(request.input)).not.toContain('Chart it proposed');
@@ -262,7 +263,7 @@ describe('evaluateCase', () => {
   });
 
   it('judges an empty result on both scores, with the chart not applicable', async () => {
-    const judge = fakeDecisions([score(2)], [score(2), predicate(1)]);
+    const judge = fakeDecisions([score(2)], [score(2)], [predicate(1)]);
     const llm = fakeLlm(sqlReply('SELECT name FROM items WHERE qty > 99'), insights(CHART));
 
     const result = await evaluateCase(GOLDEN, deps(llm, judge));
@@ -295,7 +296,7 @@ describe('evaluateCase', () => {
   });
 
   it('keeps a refused criterion as refused and the others as judged', async () => {
-    const judge = fakeDecisions([REFUSAL], [score(2), predicate(1)]);
+    const judge = fakeDecisions([REFUSAL], [score(2)], [predicate(1)]);
 
     const result = await evaluateCase(GOLDEN, deps(fakeLlm(sqlReply(SQL), insights()), judge));
 
@@ -364,7 +365,7 @@ describe('evaluateCase', () => {
     ['a score without a score', { type: 'score', name: null, confidence: 1, probabilities: [] }],
     ['a predicate for a score question', predicate(0.5)],
   ])('records %s from the judge as the case error', async (_case, odd) => {
-    const judge = fakeDecisions([odd as DecisionAnswer], [score(2), predicate(1)]);
+    const judge = fakeDecisions([odd as DecisionAnswer], [score(2)], [predicate(1)]);
 
     const result = await evaluateCase(GOLDEN, deps(fakeLlm(sqlReply(SQL), insights()), judge));
 
@@ -534,7 +535,7 @@ describe('evaluateCase with several queries', () => {
     });
 
   it('keeps every query with its own row count and chart, and the texts joined', async () => {
-    const judge = fakeDecisions([score(2)], [score(2), predicate(1), predicate(1)]);
+    const judge = fakeDecisions([score(2)], [score(2), predicate(1)], [predicate(1)]);
 
     const result = await evaluateCase(GOLDEN, deps(fakeLlm(two(), sections(CHART, null)), judge));
 
@@ -551,7 +552,7 @@ describe('evaluateCase with several queries', () => {
   });
 
   it('gives the judge each result under its title, with its own SQL, rows, chart and text', async () => {
-    const judge = fakeDecisions([score(2)], [score(2), predicate(1), predicate(1)]);
+    const judge = fakeDecisions([score(2)], [score(2), predicate(1)], [predicate(1)]);
 
     await evaluateCase(GOLDEN, deps(fakeLlm(two(), sections(CHART, null)), judge));
 
@@ -579,28 +580,24 @@ describe('evaluateCase with several queries', () => {
   });
 
   it('asks about the chart when only one of the results has one', async () => {
-    const judge = fakeDecisions([score(2)], [score(2), predicate(0.5), predicate(1)]);
+    const judge = fakeDecisions([score(2)], [score(2), predicate(0.5)], [predicate(1)]);
 
     await evaluateCase(GOLDEN, deps(fakeLlm(two(), sections(null, CHART)), judge));
 
-    expect(judge.requests[1].questions.map((q) => q.name)).toEqual([
-      'narrative',
-      'chart',
-      'language',
-    ]);
+    expect(judge.requests[1].questions.map((q) => q.name)).toEqual(['narrative', 'chart']);
   });
 
   it('leaves the chart not applicable when none of the results has one', async () => {
-    const judge = fakeDecisions([score(2)], [score(2), predicate(1)]);
+    const judge = fakeDecisions([score(2)], [score(2)], [predicate(1)]);
 
     const result = await evaluateCase(GOLDEN, deps(fakeLlm(two(), sections(null, null)), judge));
 
-    expect(judge.requests[1].questions.map((q) => q.name)).toEqual(['narrative', 'language']);
+    expect(judge.requests[1].questions.map((q) => q.name)).toEqual(['narrative']);
     expect(result.criteria?.chart).toEqual({ status: 'not_applicable' });
   });
 
   it('tells the judge a question for separate results needs a query for each', async () => {
-    const judge = fakeDecisions([score(2)], [score(2), predicate(1)]);
+    const judge = fakeDecisions([score(2)], [score(2)], [predicate(1)]);
 
     await evaluateCase(GOLDEN, deps(fakeLlm(two(), sections(null, null)), judge));
 
@@ -610,7 +607,7 @@ describe('evaluateCase with several queries', () => {
   });
 
   it('shows a single query as before, with no result heading', async () => {
-    const judge = fakeDecisions([score(2)], [score(2), predicate(1)]);
+    const judge = fakeDecisions([score(2)], [score(2)], [predicate(1)]);
 
     await evaluateCase(GOLDEN, deps(fakeLlm(sqlReply(SQL), insights()), judge));
 
@@ -660,7 +657,7 @@ describe('evaluateCase with an expected label and a history', () => {
     const llm = fakeLlm(sqlReply(SQL), insights());
 
     await evaluateCase(FOLLOW_UP, {
-      ...deps(llm, fakeDecisions([score(2)], [score(2), predicate(1)])),
+      ...deps(llm, fakeDecisions([score(2)], [score(2)], [predicate(1)])),
       decisions,
     });
 
@@ -669,7 +666,7 @@ describe('evaluateCase with an expected label and a history', () => {
   });
 
   it('shows the judge the history before the question, as content, and keeps it in the result', async () => {
-    const judge = fakeDecisions([score(2)], [score(2), predicate(1), predicate(1)]);
+    const judge = fakeDecisions([score(2)], [score(2), predicate(1)], [predicate(1)]);
 
     const result = await evaluateCase(
       FOLLOW_UP,
@@ -692,7 +689,7 @@ describe('evaluateCase with an expected label and a history', () => {
       .replace(/\n\nSchema the bot knew:\n[\s\S]*?(?=\n\nSQL it ran:)/, '');
 
   it('judges the rest of the answer on the question and the answer alone', async () => {
-    const judge = fakeDecisions([score(2)], [score(2), predicate(1), predicate(1)]);
+    const judge = fakeDecisions([score(2)], [score(2), predicate(1)], [predicate(1)]);
 
     await evaluateCase(FOLLOW_UP, deps(fakeLlm(sqlReply(SQL), insights(CHART)), judge));
 
@@ -716,14 +713,34 @@ describe('evaluateCase with an expected label and a history', () => {
     expect(rest).toBe(withoutContext(sql));
   });
 
+  it('asks the language about the SQL input without the history, keeping the schema', async () => {
+    const judge = fakeDecisions([score(2)], [score(2), predicate(1)], [predicate(1)]);
+
+    await evaluateCase(FOLLOW_UP, deps(fakeLlm(sqlReply(SQL), insights(CHART)), judge));
+
+    // Without the schema, the judge scored correct Spanish answers as in the wrong language.
+    const [sql, , language] = judge.requests.map((r) => String(r.input));
+    expect(language).not.toContain('Conversation so far');
+    expect(language).toContain('Schema the bot knew:\nTable items: One row per item.');
+    expect(language).toBe(sql.replace(/Conversation so far[\s\S]*?(?=Question:\n)/, ''));
+  });
+
   it('leaves only the schema out of the rest of the answer when the case has no history', async () => {
-    const judge = fakeDecisions([score(2)], [score(2), predicate(1)]);
+    const judge = fakeDecisions([score(2)], [score(2)], [predicate(1)]);
 
     await evaluateCase(GOLDEN, deps(fakeLlm(sqlReply(SQL), insights()), judge));
 
     const [sql, rest] = judge.requests.map((r) => String(r.input));
     expect(rest).not.toBe(sql);
     expect(rest).toBe(withoutContext(sql));
+  });
+
+  it('records a failure of the language request as the case error', async () => {
+    const judge = fakeDecisions([score(2)], [score(2)], new Error('503 Busy'));
+
+    const result = await evaluateCase(GOLDEN, deps(fakeLlm(sqlReply(SQL), insights()), judge));
+
+    expect(result).toMatchObject({ status: 'error', error: 'OpenAI decision failed: 503 Busy' });
   });
 
   it('records a failure of the request for the rest of the answer as the case error', async () => {
@@ -740,7 +757,7 @@ describe('evaluateCase with an expected label and a history', () => {
   });
 
   it('shows the judge no history when the case has none', async () => {
-    const judge = fakeDecisions([score(2)], [score(2), predicate(1)]);
+    const judge = fakeDecisions([score(2)], [score(2)], [predicate(1)]);
 
     await evaluateCase(GOLDEN, deps(fakeLlm(sqlReply(SQL), insights()), judge));
 
@@ -750,7 +767,7 @@ describe('evaluateCase with an expected label and a history', () => {
   });
 
   it('tells the judge how the SQL answers a follow-up, when the case has earlier turns', async () => {
-    const judge = fakeDecisions([score(2)], [score(2), predicate(1)]);
+    const judge = fakeDecisions([score(2)], [score(2)], [predicate(1)]);
 
     await evaluateCase(FOLLOW_UP, deps(fakeLlm(sqlReply(SQL), insights()), judge));
 
@@ -768,7 +785,7 @@ describe('evaluateCase with an expected label and a history', () => {
   });
 
   it('asks the SQL question of a single question as before, without the follow-up rule', async () => {
-    const judge = fakeDecisions([score(2)], [score(2), predicate(1)]);
+    const judge = fakeDecisions([score(2)], [score(2)], [predicate(1)]);
 
     await evaluateCase(GOLDEN, deps(fakeLlm(sqlReply(SQL), insights()), judge));
 
@@ -943,7 +960,7 @@ describe('evaluateCase with an expected label and a history', () => {
     const failing = () => fakeDecisions(new Error('503 Busy'));
 
     it('judges the data answer of a data question, without a label', async () => {
-      const judge = fakeDecisions([score(2)], [score(2), predicate(1)]);
+      const judge = fakeDecisions([score(2)], [score(2)], [predicate(1)]);
 
       const result = await evaluateCase(GOLDEN, {
         ...deps(fakeLlm(sqlReply(SQL), insights()), judge),

@@ -141,7 +141,7 @@ const QUESTIONS: Record<Criterion, DecisionQuestion> = {
       'The proposed charts (type, x column, series, title) are a suitable way to show their results.',
   },
   // The bugs of #22 and #23: earlier turns in another language pulled the answer into theirs.
-  // It's asked with the narrative and the chart, about the answer alone (see evaluateCase).
+  // It's asked on its own, about an input without the history (see evaluateCase).
   language: {
     type: 'predicate',
     name: 'language',
@@ -311,8 +311,8 @@ export async function evaluateCase(golden: GoldenCase, deps: EvalDeps): Promise<
   if (!expectsData) return { ...answered, status: 'not_judged' };
   // No chart spec in any result: the chart criterion doesn't apply and the judge isn't asked.
   const asked: Criterion[] = result.results.some((r) => r.chart)
-    ? ['narrative', 'chart', 'language']
-    : ['narrative', 'language'];
+    ? ['narrative', 'chart']
+    : ['narrative'];
   const answer = {
     question: golden.question,
     // Each result's own text, without the heading the backend adds to it.
@@ -340,14 +340,25 @@ export async function evaluateCase(golden: GoldenCase, deps: EvalDeps): Promise<
         ['sql'],
         golden,
       )),
-      // The rest is judged on the question and the answer alone. With the history, the judge
-      // took the English examples of its header ("show it as a chart") for a Spanish message
-      // asking that, and scored correct answers as in the wrong language. With the schema, a
-      // table the answer doesn't use moved the narrative's score (from 0.83 to 0.19).
+      // The narrative and the chart are judged on the question and the answer alone: with the
+      // schema, a table the answer doesn't use moved the narrative's score (from 0.83 to 0.19).
       ...(await judgeCriteria(
         deps.judge,
         renderPrompt('judge-input', { ...answer, history: [], schemaContext: null }),
         asked,
+        golden,
+      )),
+      // The language, without the history: with it, the judge took the English examples of its
+      // header ("show it as a chart") for a Spanish message asking that. It keeps the schema:
+      // without it, the judge scored correct Spanish answers as in the wrong language.
+      ...(await judgeCriteria(
+        deps.judge,
+        renderPrompt('judge-input', {
+          ...answer,
+          history: [],
+          schemaContext: deps.schemaContext,
+        }),
+        ['language'],
         golden,
       )),
     };

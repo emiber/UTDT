@@ -102,7 +102,7 @@ describe('runEvalCommand', () => {
       bad,
       bad,
     );
-    judge = fakeDecisions([score(2)], [score(1.5), predicate(1)]);
+    judge = fakeDecisions([score(2)], [score(1.5)], [predicate(1)]);
 
     const code = await run();
 
@@ -170,7 +170,7 @@ describe('runEvalCommand', () => {
         suggestions: ['A?', 'B?', 'C?'],
       }),
     );
-    judge = fakeDecisions([score(2)], [score(2), predicate(1)]);
+    judge = fakeDecisions([score(2)], [score(2)], [predicate(1)]);
 
     expect(await run()).toBe(0);
 
@@ -263,7 +263,7 @@ describe('runEvalCommand', () => {
       insightsReply('Eight.'),
     );
     const choice = { type: 'choice', name: null, choice: 'x', confidence: 1, probabilities: [] };
-    judge = fakeDecisions([choice as DecisionAnswer], [score(2)], [score(2), predicate(1)]);
+    judge = fakeDecisions([choice as DecisionAnswer], [score(2)], [score(2)], [predicate(1)]);
 
     expect(await run()).toBe(0);
     expect(lines.slice(0, 2)).toEqual([
