@@ -78,3 +78,14 @@ Propuestas al escribir el issue, sin una pregunta aparte:
 ## Deferred decisions
 - **El idioma esperado en el golden.** Sería lo más firme, porque el judge detecta el español del mensaje con solo 0,71 a 0,78. Se suma si el criterio nuevo no alcanza.
 - **Sacar el esquema del input del idioma.** En #36, sacarlo empeoró el predicado. Con las preguntas de opción podría no hacer falta, pero se mide aparte.
+
+## Notes
+- 2026-10-24: **Cambio respecto del issue, decidido por el usuario durante la implementación.**
+  - **Por qué:** las dos preguntas de opción no alcanzaron el criterio de aceptación del re-juicio. El judge lee el idioma del mensaje con ruido, y ninguna redacción dejó todas las respuestas correctas en 0,5 o más:
+    - con la mejor, `margin-share-by-category` de #35 quedó en 0,44;
+    - con la más simple, `as-pie-chart` quedó en 0,36 y 0,48, porque el judge leía "mostralo como gráfico de torta" como otro idioma.
+  - **Qué se hizo:** se adelantó la decisión diferida *El idioma esperado en el golden*.
+    - Cada caso del golden lleva `language` (`English` o `Spanish`), obligatorio.
+    - El criterio es una sola pregunta de opción sobre el idioma del texto del bot (`English`, `Spanish`, `mixed` u `other`), y su valor es la probabilidad del idioma del caso.
+    - El reporte guarda la respuesta tal como vino, el valor y el idioma esperado (`expectedLanguage`).
+  - **Qué reemplaza:** las "dos preguntas de opción comparadas en código" de *Scope*, *Expected behavior*, *Data* y el primer criterio de aceptación. El campo del golden sale del *NOT in*. Los demás criterios de aceptación siguen igual.
