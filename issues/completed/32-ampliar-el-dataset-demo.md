@@ -2,7 +2,7 @@
 id: 32
 title: Ampliar el dataset demo con costos, objetivos y devoluciones
 type: epic
-status: refined
+status: closed
 parent:
 created: 2026-10-23
 ---
@@ -58,3 +58,36 @@ Propuestas al escribir el issue, sin una pregunta aparte:
 
 ## Notes
 - 2026-10-23: se suma #36, follow-up de #34: los puntajes del judge cambiaron al sumar `sales_targets` al esquema, aunque las respuestas eran las mismas. Va antes de #35, que suma otra tabla. El orden de los hijos queda #33, #34, #36 y #35.
+
+## Pull request
+Branch: `epic/32-ampliar-el-dataset-demo` → `main`
+
+### Epic summary
+El dataset demo suma tres datos de negocio que obligan al bot a calcular y a comparar, no solo a sumar:
+- el costo de cada producto, para preguntar por el margen;
+- objetivos mensuales de ventas por categoría, para comparar contra la meta;
+- devoluciones con su motivo, para preguntar por la tasa de devolución.
+
+Las ventas siguen brutas, y `customers`, `products` (salvo la columna nueva) y `orders` no cambian, así que las respuestas de antes siguen valiendo. El golden pasa de 17 a 23 casos.
+
+En el camino, el judge de `npm run eval` dejó de mover la narrativa y el gráfico cuando se suma una tabla al esquema (#36): una tabla que la respuesta no usaba había bajado la narrativa de `separate-lists` de 0,83 a 0,19.
+
+### Children
+- #33 Sumar el costo de los productos para preguntar por el margen
+- #34 Sumar objetivos mensuales para comparar las ventas contra la meta
+- #36 Evitar que los puntajes del judge cambien al sumar tablas al esquema
+- #35 Sumar devoluciones para preguntar por la tasa de devolución
+
+### Verification
+- **La rama del epic se sincronizó con `main`** (`e0ccfb1`), sin conflictos. Trajo los issues #37 y #38.
+- **El quality gate** sobre la rama del epic, después de sincronizarla: `npm run lint` — pass; `npm run test:coverage` — pass (33 archivos, 645 tests), con 99,75% de statements, 97,42% de branches, 99,62% de funciones y 100% de líneas (umbral 85%).
+- **Corrida real con los 23 casos:** es la de #35 (`eval-2026-10-24T02-01-35-651Z.json`). El código de la rama del epic es idéntico al de esa corrida: `git diff` contra el último commit de #35 solo muestra los archivos de los issues #37 y #38.
+  - SQL 1,91/2, narrativa 1,94/2, gráfico 0,98 e idioma 0,98, con 23 de 23 clasificaciones correctas.
+  - Los 6 casos nuevos responden bien y coinciden con los datos.
+  - Las líneas por caso están en el PR de #35.
+- **Lo que quedó anotado en los hijos:**
+  - en #34, la narrativa de `separate-lists` con el esquema más largo, que llevó a #36;
+  - en #35, la narrativa de `revenue-by-country` (1,60), aceptada con la delegación del usuario.
+- **Follow-ups abiertos durante el epic, fuera de él:**
+  - #37: el bot a veces vuelve a responder en el idioma de los turnos anteriores (el bug de #22);
+  - #38: el criterio de idioma da falsos negativos en respuestas cortas con nombres en inglés.
