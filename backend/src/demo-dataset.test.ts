@@ -4,7 +4,7 @@ import { openDatabase } from './db.ts';
 import { demoDataset } from './demo-dataset.ts';
 import { seedDatabase } from './seed.ts';
 
-const DEMO_TABLES = ['customers', 'orders', 'products', 'sales_targets'];
+const DEMO_TABLES = ['customers', 'orders', 'products', 'returns', 'sales_targets'];
 
 let db: DatabaseSync;
 
@@ -73,7 +73,7 @@ describe('demo dataset: metadata consistency', () => {
 });
 
 describe('demo dataset: content', () => {
-  it('has exactly the three meta_* tables plus customers, products, orders and sales_targets', () => {
+  it('has exactly the three meta_* tables plus the five demo tables', () => {
     const tables = all<{ name: string }>(
       "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
     );
@@ -84,6 +84,7 @@ describe('demo dataset: content', () => {
       'meta_tables',
       'orders',
       'products',
+      'returns',
       'sales_targets',
     ]);
   });
@@ -127,6 +128,17 @@ describe('demo dataset: content', () => {
         ['target_amount', 'REAL', 0],
       ],
     ],
+    [
+      'returns',
+      [
+        ['return_id', 'INTEGER', 1],
+        ['order_id', 'INTEGER', 0],
+        ['return_date', 'TEXT', 0],
+        ['quantity', 'INTEGER', 0],
+        ['refund_amount', 'REAL', 0],
+        ['reason', 'TEXT', 0],
+      ],
+    ],
   ])('defines %s with its columns, types and primary key', (table, expected) => {
     const columns = all<{ name: string; type: string; pk: number }>(
       'SELECT name, type, pk FROM pragma_table_info(?) ORDER BY cid',
@@ -143,6 +155,16 @@ describe('demo dataset: content', () => {
     expect(foreignKeys.map((fk) => [fk.from, fk.table, fk.to])).toEqual([
       ['customer_id', 'customers', 'customer_id'],
       ['product_id', 'products', 'product_id'],
+    ]);
+  });
+
+  it('links returns to orders with a foreign key', () => {
+    const foreignKeys = all<{ from: string; table: string; to: string }>(
+      'SELECT "from", "table", "to" FROM pragma_foreign_key_list(?)',
+      'returns',
+    );
+    expect(foreignKeys.map((fk) => [fk.from, fk.table, fk.to])).toEqual([
+      ['order_id', 'orders', 'order_id'],
     ]);
   });
 
@@ -169,7 +191,7 @@ describe('demo dataset: content', () => {
     expect(segments.map((s) => s.segment)).toEqual(['Business', 'Consumer']);
   });
 
-  it('has no orphan orders', () => {
+  it('has no orphan orders or returns', () => {
     expect(all('SELECT * FROM pragma_foreign_key_check')).toEqual([]);
   });
 
@@ -288,5 +310,74 @@ describe('demo dataset: content', () => {
       all<{ name: string }>('SELECT name FROM pragma_index_info(?)', index.name).map((c) => c.name),
     );
     expect(indexedColumns).toEqual([['customer_id'], ['product_id']]);
+  });
+
+  it('indexes returns by order_id', () => {
+    const indexes = all<{ name: string }>(
+      "SELECT name FROM pragma_index_list('returns') WHERE origin = 'c'",
+    );
+    expect(
+      indexes.map((index) =>
+        all<{ name: string }>('SELECT name FROM pragma_index_info(?)', index.name).map(
+          (c) => c.name,
+        ),
+      ),
+    ).toEqual([['order_id']]);
+  });
+
+  describe('returns', () => {
+    it('has at most one per order, of 1 to the units ordered, after the order and within 2025', () => {
+      const wrong = scalar(`
+        SELECT count(*) FROM returns r JOIN orders o USING (order_id)
+        WHERE r.quantity < 1 OR r.quantity > o.quantity
+           OR date(r.return_date) IS NOT r.return_date
+           OR r.return_date <= o.order_date OR r.return_date > '2025-12-31'
+      `);
+      expect(wrong).toBe(0);
+      expect(scalar('SELECT count(DISTINCT order_id) FROM returns')).toBe(
+        scalar('SELECT count(*) FROM returns'),
+      );
+    });
+
+    it('refunds the units returned at the unit price, for one of the four reasons', () => {
+      const wrong = scalar(`
+        SELECT count(*) FROM returns r JOIN orders o USING (order_id) JOIN products p USING (product_id)
+        WHERE abs(r.refund_amount - round(r.quantity * p.unit_price, 2)) > 1e-9
+           OR r.reason NOT IN ('Defective', 'Wrong item', 'No longer needed', 'Damaged in shipping')
+      `);
+      expect(wrong).toBe(0);
+    });
+
+    it('returns 5% to 15% of the orders', () => {
+      const share = scalar(
+        'SELECT 1.0 * (SELECT count(*) FROM returns) / (SELECT count(*) FROM orders)',
+      );
+      expect(share).toBeGreaterThanOrEqual(0.05);
+      expect(share).toBeLessThanOrEqual(0.15);
+    });
+
+    it('returns Electronics the most and Office Supplies the least, by orders and by units', () => {
+      const rates = all<{ category: string; orders: number; units: number }>(`
+        SELECT p.category,
+               1.0 * count(r.return_id) / count(*) AS orders,
+               1.0 * coalesce(sum(r.quantity), 0) / sum(o.quantity) AS units
+        FROM orders o JOIN products p USING (product_id) LEFT JOIN returns r USING (order_id)
+        GROUP BY p.category
+      `);
+      // So "which category is returned the most?" has one answer, however it's measured.
+      for (const key of ['orders', 'units'] as const) {
+        const sorted = [...rates].sort((a, b) => b[key] - a[key]).map((r) => r.category);
+        expect(sorted[0]).toBe('Electronics');
+        expect(sorted.at(-1)).toBe('Office Supplies');
+      }
+    });
+
+    it('has every reason, and a single most common one', () => {
+      const counts = all<{ n: number }>(
+        'SELECT count(*) AS n FROM returns GROUP BY reason ORDER BY n DESC',
+      ).map((r) => r.n);
+      expect(counts).toHaveLength(4);
+      expect(counts[0]).toBeGreaterThan(counts[1]);
+    });
   });
 });

@@ -139,5 +139,10 @@
   {
     "id": "categories-below-target-2025",
     "question": "Which categories missed their total sales target for 2025?"
-  }
+  },
+  {
+    "id": "return-rate-by-category",
+    "question": "¿Qué categoría tiene la mayor tasa de devolución?"
+  },
+  { "id": "most-common-return-reason", "question": "What is the most common return reason?" }
 ]

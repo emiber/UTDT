@@ -35,6 +35,15 @@ const schema = `
     target_amount REAL NOT NULL,
     PRIMARY KEY (month, category)
   );
+  CREATE TABLE returns (
+    return_id INTEGER PRIMARY KEY,
+    order_id INTEGER NOT NULL REFERENCES orders (order_id),
+    return_date TEXT NOT NULL,
+    quantity INTEGER NOT NULL,
+    refund_amount REAL NOT NULL,
+    reason TEXT NOT NULL
+  );
+  CREATE INDEX idx_returns_order_id ON returns (order_id);
 `;
 
 // [customer_id, name, country, segment]
@@ -143,6 +152,55 @@ function generateTargets(orders: SQLInputValue[][]): SQLInputValue[][] {
   return rows;
 }
 
+// Out of every 20 orders of a category, about how many are returned: Electronics the most.
+const RETURN_SHARE: Record<string, number> = {
+  Electronics: 4,
+  Accessories: 2,
+  Furniture: 2,
+  'Office Supplies': 1,
+};
+
+// Picked by order id, so 'Defective' is the most common reason.
+const RETURN_REASONS = [
+  'Defective',
+  'Defective',
+  'Defective',
+  'Wrong item',
+  'No longer needed',
+  'Damaged in shipping',
+  'Wrong item',
+  'No longer needed',
+  'Defective',
+  'Damaged in shipping',
+];
+
+/**
+ * A return for some orders, from a fixed formula: about 12% of them, more for Electronics and
+ * fewer for Office Supplies. Each returns part or all of its units, 3 to 30 days after the
+ * order, refunded at the unit price. An order whose return would fall after 2025 has none.
+ */
+function generateReturns(orders: SQLInputValue[][]): SQLInputValue[][] {
+  const rows: SQLInputValue[][] = [];
+  for (const [orderId, , productId, orderDate, quantity] of orders) {
+    const id = orderId as number;
+    const [, , category, unitPrice] = products[(productId as number) - 1];
+    if ((id * 7 + (productId as number) * 3) % 20 >= RETURN_SHARE[category]) continue;
+    const returnDate = addDays(orderDate as string, 3 + ((id * 5) % 28));
+    if (returnDate > '2025-12-31') continue;
+    const returned = ((id * 3) % (quantity as number)) + 1;
+    const refund = Math.round(returned * unitPrice * 100) / 100;
+    rows.push([rows.length + 1, id, returnDate, returned, refund, RETURN_REASONS[id % 10]]);
+  }
+  return rows;
+}
+
+/** An ISO date (YYYY-MM-DD) this many days later. */
+function addDays(isoDay: string, days: number): string {
+  const date = new Date(`${isoDay}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
 function isoDate(year: number, month: number, day: number): string {
   return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
@@ -168,6 +226,11 @@ export const demoDataset: Dataset = {
       columns: ['month', 'category', 'target_amount'],
       rows: generateTargets(orders),
     },
+    {
+      table: 'returns',
+      columns: ['return_id', 'order_id', 'return_date', 'quantity', 'refund_amount', 'reason'],
+      rows: generateReturns(orders),
+    },
   ],
   metadata: {
     tables: [
@@ -189,6 +252,11 @@ export const demoDataset: Dataset = {
         tableName: 'sales_targets',
         description:
           'Monthly sales target per product category, in USD, from January 2024 to December 2025. Compare it with the sum of orders.amount for that month and category.',
+      },
+      {
+        tableName: 'returns',
+        description:
+          'One row per return of all or part of an order, at most one per order, in 2024 and 2025. Sales (orders.amount) do not subtract returns: subtract refund_amount only for net sales.',
       },
     ],
     columns: [
@@ -305,6 +373,44 @@ export const demoDataset: Dataset = {
         description:
           "Sales target in USD for that month and category. A month's total target is the sum over its categories.",
       },
+      {
+        tableName: 'returns',
+        columnName: 'return_id',
+        dataType: 'INTEGER',
+        description: 'Unique return identifier.',
+      },
+      {
+        tableName: 'returns',
+        columnName: 'order_id',
+        dataType: 'INTEGER',
+        description: 'The order returned.',
+      },
+      {
+        tableName: 'returns',
+        columnName: 'return_date',
+        dataType: 'TEXT',
+        description: "Date of the return, as an ISO date (YYYY-MM-DD), after the order's date.",
+      },
+      {
+        tableName: 'returns',
+        columnName: 'quantity',
+        dataType: 'INTEGER',
+        description: 'Units returned: from 1 to the units ordered.',
+      },
+      {
+        tableName: 'returns',
+        columnName: 'refund_amount',
+        dataType: 'REAL',
+        description:
+          'Amount refunded in USD: the units returned times the unit price. orders.amount does not subtract it, so sales are gross; subtract it only for net sales.',
+      },
+      {
+        tableName: 'returns',
+        columnName: 'reason',
+        dataType: 'TEXT',
+        description:
+          "Why it was returned: 'Defective', 'Wrong item', 'No longer needed' or 'Damaged in shipping'.",
+      },
     ],
     relationships: [
       {
@@ -320,6 +426,13 @@ export const demoDataset: Dataset = {
         toTable: 'products',
         toColumn: 'product_id',
         description: 'The product that was ordered.',
+      },
+      {
+        fromTable: 'returns',
+        fromColumn: 'order_id',
+        toTable: 'orders',
+        toColumn: 'order_id',
+        description: 'The order that was returned.',
       },
     ],
   },
