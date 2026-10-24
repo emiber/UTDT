@@ -28,11 +28,28 @@ const score = (value: number): DecisionAnswer => ({
   confidence: 0.9,
   probabilities: [],
 });
-const predicate = (probability: number): DecisionAnswer => ({
-  type: 'predicate',
-  name: null,
-  probability,
+const choiceAnswer = (
+  name: string,
+  choice: string,
+  probabilities: Record<string, number>,
+): DecisionAnswer => ({
+  type: 'choice',
+  name,
+  choice,
+  confidence: probabilities[choice],
+  probabilities: Object.entries(probabilities).map(([value, probability]) => ({
+    value,
+    probability,
+  })),
 });
+/** The language answer: the bot wrote English with this probability, Spanish otherwise. */
+const language = (english: number): DecisionAnswer =>
+  choiceAnswer('language', english >= 0.5 ? 'English' : 'Spanish', {
+    English: english,
+    Spanish: 1 - english,
+    mixed: 0,
+    other: 0,
+  });
 
 let dir: string;
 let lines: string[];
@@ -56,8 +73,8 @@ beforeEach(() => {
   });
   db.close();
   writeGolden([
-    { id: 'units', question: 'Units per item?' },
-    { id: 'colors', question: 'Colors?' },
+    { id: 'units', question: 'Units per item?', language: 'English' },
+    { id: 'colors', question: 'Colors?', language: 'English' },
   ]);
   lines = [];
 });
@@ -102,7 +119,7 @@ describe('runEvalCommand', () => {
       bad,
       bad,
     );
-    judge = fakeDecisions([score(2)], [score(1.5)], [predicate(1)]);
+    judge = fakeDecisions([score(2)], [score(1.5)], [language(1)]);
 
     const code = await run();
 
@@ -136,6 +153,7 @@ describe('runEvalCommand', () => {
       id: 'units',
       question: 'Units per item?',
       expectedClassification: 'data_question',
+      expectedLanguage: 'English',
       classification: 'data_question',
       history: [],
       sql: 'SELECT name, qty FROM items',
@@ -144,7 +162,7 @@ describe('runEvalCommand', () => {
       criteria: {
         sql: { status: 'judged', answer: score(2) },
         chart: { status: 'not_applicable' },
-        language: { status: 'judged', answer: predicate(1) },
+        language: { status: 'judged', answer: language(1), probability: 1 },
       },
     });
     expect(report.results[1]).toMatchObject({
@@ -154,7 +172,13 @@ describe('runEvalCommand', () => {
   });
 
   it('writes every query of an answer with several results in the report', async () => {
-    writeGolden([{ id: 'both', question: 'Units per item and the small ones, separately?' }]);
+    writeGolden([
+      {
+        id: 'both',
+        question: 'Units per item and the small ones, separately?',
+        language: 'English',
+      },
+    ]);
     llm = fakeLlm(
       jsonResponse({
         queries: [
@@ -170,7 +194,7 @@ describe('runEvalCommand', () => {
         suggestions: ['A?', 'B?', 'C?'],
       }),
     );
-    judge = fakeDecisions([score(2)], [score(2)], [predicate(1)]);
+    judge = fakeDecisions([score(2)], [score(2)], [language(1)]);
 
     expect(await run()).toBe(0);
 
@@ -191,14 +215,20 @@ describe('runEvalCommand', () => {
   it('compares each expected label, judges the text replies on their language, and writes the labels and the history in the report', async () => {
     const history = [{ question: 'Units per item?', sql: 'SELECT name, qty FROM items' }];
     writeGolden([
-      { id: 'thanks', question: 'Thanks!', classification: 'conversation', history },
-      { id: 'weather', question: 'Weather?', classification: 'out_of_scope' },
+      {
+        id: 'thanks',
+        question: 'Thanks!',
+        classification: 'conversation',
+        language: 'English',
+        history,
+      },
+      { id: 'weather', question: 'Weather?', classification: 'out_of_scope', language: 'English' },
     ]);
     llm = fakeLlm(
       jsonResponse({ narrative: 'You are welcome!', suggestions: ['A?', 'B?', 'C?'] }),
       jsonResponse({ narrative: 'Nice to chat!', suggestions: ['A?', 'B?', 'C?'] }),
     );
-    judge = fakeDecisions([predicate(1)], [predicate(0.4)]);
+    judge = fakeDecisions([language(1)], [language(0.4)]);
 
     expect(await run({ createDecisions: () => fakeClassifier('conversation') })).toBe(0);
 
@@ -227,14 +257,14 @@ describe('runEvalCommand', () => {
         expectedClassification: 'conversation',
         classification: 'conversation',
         narrative: 'You are welcome!',
-        criteria: { language: { status: 'judged', answer: predicate(1) } },
+        criteria: { language: { status: 'judged', answer: language(1), probability: 1 } },
         history,
       },
       {
         id: 'weather',
         expectedClassification: 'out_of_scope',
         classification: 'conversation',
-        criteria: { language: { status: 'judged', answer: predicate(0.4) } },
+        criteria: { language: { status: 'judged', answer: language(0.4), probability: 0.4 } },
         history: [],
       },
     ]);
@@ -263,7 +293,7 @@ describe('runEvalCommand', () => {
       insightsReply('Eight.'),
     );
     const choice = { type: 'choice', name: null, choice: 'x', confidence: 1, probabilities: [] };
-    judge = fakeDecisions([choice as DecisionAnswer], [score(2)], [score(2)], [predicate(1)]);
+    judge = fakeDecisions([choice as DecisionAnswer], [score(2)], [score(2)], [language(1)]);
 
     expect(await run()).toBe(0);
     expect(lines.slice(0, 2)).toEqual([
@@ -337,8 +367,16 @@ describe('runEvalCommand', () => {
         'Case "a" has an unknown classification: "chitchat".',
       ],
       [
+        'a golden case without a language',
+        () => writeGolden([{ id: 'a', question: 'Q?' }]),
+        'Case "a" needs a language: "English" or "Spanish".',
+      ],
+      [
         'a golden case with a malformed history',
-        () => writeGolden([{ id: 'a', question: 'Q?', history: [{ sql: 'SELECT 1' }] }]),
+        () =>
+          writeGolden([
+            { id: 'a', question: 'Q?', language: 'English', history: [{ sql: 'SELECT 1' }] },
+          ]),
         'Case "a", history turn 1, has no question.',
       ],
       ['a missing data.db', () => rmSync(path.join(dir, 'data.db')), 'npm run seed'],

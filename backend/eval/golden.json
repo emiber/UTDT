@@ -1,38 +1,57 @@
 [
-  { "id": "sales-by-month-2025", "question": "What were the total sales per month in 2025?" },
+  {
+    "id": "sales-by-month-2025",
+    "question": "What were the total sales per month in 2025?",
+    "language": "English"
+  },
   {
     "id": "revenue-by-country",
-    "question": "Which country had the highest revenue? Show the revenue per country."
+    "question": "Which country had the highest revenue? Show the revenue per country.",
+    "language": "English"
   },
-  { "id": "top-products-by-units", "question": "What are the top 5 products by units sold?" },
+  {
+    "id": "top-products-by-units",
+    "question": "What are the top 5 products by units sold?",
+    "language": "English"
+  },
   {
     "id": "category-share",
-    "question": "¿Qué porcentaje de las ventas representa cada categoría?"
+    "question": "¿Qué porcentaje de las ventas representa cada categoría?",
+    "language": "Spanish"
   },
-  { "id": "customer-count", "question": "How many customers are there?" },
+  { "id": "customer-count", "question": "How many customers are there?", "language": "English" },
   {
     "id": "average-order-by-segment",
-    "question": "What is the average order amount per customer segment?"
+    "question": "What is the average order amount per customer segment?",
+    "language": "English"
   },
-  { "id": "orders-2024", "question": "How many orders were placed in 2024?" },
+  {
+    "id": "orders-2024",
+    "question": "How many orders were placed in 2024?",
+    "language": "English"
+  },
   {
     "id": "separate-lists",
-    "question": "Quiero un listado de los 5 clientes con mas ventas y un listado separado de los 3 productos con mas ventas"
+    "question": "Quiero un listado de los 5 clientes con mas ventas y un listado separado de los 3 productos con mas ventas",
+    "language": "Spanish"
   },
-  { "id": "greeting", "question": "Hola", "classification": "conversation" },
+  { "id": "greeting", "question": "Hola", "language": "Spanish", "classification": "conversation" },
   {
     "id": "capital-of-france",
     "question": "¿Cuál es la capital de Francia?",
+    "language": "Spanish",
     "classification": "out_of_scope"
   },
   {
     "id": "how-are-we-doing",
     "question": "¿Cómo venimos?",
+    "language": "Spanish",
     "classification": "needs_clarification"
   },
   {
     "id": "chart-not-shown",
     "question": "No veo el gráfico",
+    "language": "Spanish",
     "classification": "data_question",
     "history": [
       {
@@ -45,6 +64,7 @@
   {
     "id": "as-pie-chart",
     "question": "mostralo como gráfico de torta",
+    "language": "Spanish",
     "classification": "data_question",
     "history": [
       {
@@ -57,6 +77,7 @@
   {
     "id": "and-in-2024",
     "question": "¿y en 2024?",
+    "language": "Spanish",
     "classification": "data_question",
     "history": [
       {
@@ -69,6 +90,7 @@
   {
     "id": "thanks-after-answer",
     "question": "gracias!",
+    "language": "Spanish",
     "classification": "conversation",
     "history": [
       {
@@ -81,6 +103,7 @@
   {
     "id": "capital-of-france-after-spanish",
     "question": "What is the capital of France?",
+    "language": "English",
     "classification": "out_of_scope",
     "history": [
       {
@@ -107,6 +130,7 @@
   {
     "id": "top-products-after-spanish",
     "question": "Top 5 products by units sold",
+    "language": "English",
     "classification": "data_question",
     "history": [
       {
@@ -132,17 +156,32 @@
   },
   {
     "id": "margin-share-by-category",
-    "question": "¿Qué categoría tiene el mayor margen porcentual?"
+    "question": "¿Qué categoría tiene el mayor margen porcentual?",
+    "language": "Spanish"
   },
-  { "id": "margin-by-country-2025", "question": "What was the total margin per country in 2025?" },
-  { "id": "target-march-2025", "question": "¿Llegamos al objetivo de ventas en marzo de 2025?" },
+  {
+    "id": "margin-by-country-2025",
+    "question": "What was the total margin per country in 2025?",
+    "language": "English"
+  },
+  {
+    "id": "target-march-2025",
+    "question": "¿Llegamos al objetivo de ventas en marzo de 2025?",
+    "language": "Spanish"
+  },
   {
     "id": "categories-below-target-2025",
-    "question": "Which categories missed their total sales target for 2025?"
+    "question": "Which categories missed their total sales target for 2025?",
+    "language": "English"
   },
   {
     "id": "return-rate-by-category",
-    "question": "¿Qué categoría tiene la mayor tasa de devolución?"
+    "question": "¿Qué categoría tiene la mayor tasa de devolución?",
+    "language": "Spanish"
   },
-  { "id": "most-common-return-reason", "question": "What is the most common return reason?" }
+  {
+    "id": "most-common-return-reason",
+    "question": "What is the most common return reason?",
+    "language": "English"
+  }
 ]
