@@ -106,3 +106,6 @@ Propuestas al escribir el issue, sin una pregunta aparte:
 ## Deferred decisions
 - **Ventas netas por defecto.** Cambiaría las respuestas de hoy y el golden.
 - **Varias devoluciones por pedido.** Hoy alcanza con una.
+
+## Notes
+- 2026-10-24: en la corrida real, la narrativa de `revenue-by-country` dio 1,60, por debajo de lo que suele dar (de 1,95 a 2,00). Sus cifras son correctas; no nombra a Alemania. No es por la tabla nueva: desde #36 la narrativa se juzga sin el esquema, así que una tabla no la puede mover. El usuario delegó las decisiones para terminar rápido ("Hacé lo que creas para terminar lo antes posible"), y se acepta como variación de la respuesta, sin cumplir al pie de la letra "la narrativa de los casos de antes sigue en su rango".
