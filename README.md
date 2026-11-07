@@ -171,7 +171,8 @@ frontend/src/   Vue app (App.vue), routes (router.ts), API client (api.ts), acce
                 styles (styles/)
 data/           SQLite files, generated and gitignored
 docs/           ARCHITECTURE.md: design, stack, quality gate, deferred decisions;
-                presentacion/: deck and script of a class on agents (in Spanish)
+                presentacion/: deck and script of a class on agents (in Spanish), and the
+                deck's generator (build.cjs)
 issues/         local issue tracker (Markdown files): pending ones here, closed ones in
                 issues/completed/
 workflow/       AI-assisted workflow guides
