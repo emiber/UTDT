@@ -203,7 +203,7 @@ Sin una spec, el agente completa los huecos inventando.
 - **Reglas escritas:** el agente las lee siempre: nunca commitear código en `main`, nunca subir secretos, hacer lo mínimo.
 - **Dos modelos:** la regla: uno más capaz planifica (Opus) y uno más rápido implementa (Sonnet).
 
-> Nota: en la demo el merge es automático: si el gate está verde y la self-review no tiene bloqueantes, el agente mergea. Está autorizado así porque es un POC local, sin repo remoto. Con un repo remoto, una persona aprueba el PR antes del merge.
+> Nota: en la demo el merge es automático: si el gate está verde y la self-review no tiene bloqueantes, el agente mergea. Está autorizado así porque el proyecto se trabajó en local, sin repo remoto; después se publicó en GitHub para compartirlo. En un equipo, con un repo remoto, una persona aprueba el PR antes del merge.
 >
 > La regla de modelos está escrita en el repo, pero en esta demo casi todo lo hizo Opus: lo dicen los commits (256 con Opus y 10 con Sonnet).
 
@@ -223,7 +223,7 @@ Sin una spec, el agente completa los huecos inventando.
 >
 > Lo que no entra importa tanto como lo que entra, porque evita que el agente haga de más.
 >
-> Los issues son archivos locales que se commitean directo en `main`, porque este proyecto no tiene repo remoto. Es la única excepción a la regla de no commitear en `main`.
+> Los issues son archivos del repo que se commitean directo en `main`: es la única excepción a la regla de no commitear en `main`, pensada para un proyecto trabajado en local, sin repo remoto. Se ven en GitHub con el resto del repo, con un índice en [issues/README.md](../../issues/README.md).
 
 ### Slide 16 — Trabajar el issue
 1. Crea una rama (`feat/30-listados-separados`). Un hook pre-commit impide commitear código en `main`.
@@ -234,7 +234,7 @@ Sin una spec, el agente completa los huecos inventando.
 6. Escribe el PR dentro del issue: qué hace, qué encontró y una sección *Verification* por cada gate.
 7. Mergea a `main` solo si el gate pasa y la self-review no tiene bloqueantes. En la demo es automático. *(Merge)*
 
-> Nota: el hook es un reemplazo local de la protección de ramas: deja pasar solo archivos de `issues/` y commits de merge. En la demo el merge es automático porque es un POC local, sin repo remoto. Con un repo remoto, una persona aprobaría el PR antes.
+> Nota: el hook es un reemplazo local de la protección de ramas: deja pasar solo archivos de `issues/` y commits de merge. En la demo el merge es automático porque se trabajó en local, sin repo remoto. En un equipo, con un repo remoto, una persona aprobaría el PR antes.
 
 ### Slide 17 — La revisión: por qué un agente nuevo
 - Autor (conoce sus supuestos) → diff + issue (lo único que pasa) → revisor nuevo (contexto limpio) → resultado (bloqueantes o sugerencias).
