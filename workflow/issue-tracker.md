@@ -1,6 +1,6 @@
 # Issue tracker — local Markdown files
 
-This project keeps its issues as Markdown files in the repo, under `issues/`. There is no remote tracker and no remote repository: everything lives in this local Git repo. `.workflow-config` records the choice (`issue_tracker=local`). Every command that touches issues (`/create-issue`, `/refine-issue`, `/work-issue`, `/finish-epic`, `/review-pr`) reads and writes them as described here. This file is the **single source** for the issue file format and the concrete operations; the other guides point here instead of repeating them.
+This project keeps its issues as Markdown files in the repo, under `issues/`. There is no remote tracker: issues live in this Git repo, and the GitHub remote only carries a copy of it (`workflow/rules.md`, rule 6). `.workflow-config` records the choice (`issue_tracker=local`). Every command that touches issues (`/create-issue`, `/refine-issue`, `/work-issue`, `/finish-epic`, `/review-pr`) reads and writes them as described here. This file is the **single source** for the issue file format and the concrete operations; the other guides point here instead of repeating them.
 
 ## Issue files
 
@@ -84,4 +84,4 @@ The full model — including the integration branch — is in `workflow/epics.md
 
 ## Local PRs
 
-There's no hosting platform, so a **PR is a local branch**: its commits are the change, and the `## Pull request` section of its issue file (on that branch) is the PR description. The agent merges it into its base as soon as every gate passes (see `workflow/git-flow.md` step 8), so normally none stay open. A branch that stopped short — blockers, a failing gate, a conflict — stays unmerged. List those with `git branch --no-merged main` (and `git branch --no-merged epic/<epicN>-<slug>` for an epic's children); `/review-pr <n>` can review one. After the merge, the PR description stays in the issue file, and `git show <merge-commit>` shows the change.
+PRs don't go to a hosting platform (the GitHub remote only shares the repo), so a **PR is a local branch**: its commits are the change, and the `## Pull request` section of its issue file (on that branch) is the PR description. The agent merges it into its base as soon as every gate passes (see `workflow/git-flow.md` step 8), so normally none stay open. A branch that stopped short — blockers, a failing gate, a conflict — stays unmerged. List those with `git branch --no-merged main` (and `git branch --no-merged epic/<epicN>-<slug>` for an epic's children); `/review-pr <n>` can review one. After the merge, the PR description stays in the issue file, and `git show <merge-commit>` shows the change.

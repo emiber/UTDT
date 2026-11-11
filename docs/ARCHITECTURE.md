@@ -652,7 +652,7 @@ only what the scaffold's code uses. `openai` and `liquidjs` came with SQL genera
     again passes; the likely fix is outside the repo (see `issues/pendientes.md`).
 - **Lint command:** `npm run lint` (ESLint + `prettier --check` + type check of both packages)
 - **Test-with-coverage command:** `npm run test:coverage`
-- These two commands are the whole gate: the project is local-only, so there's no CI. `/work-issue` runs them before every PR, and anyone checking a branch runs the same ones.
+- These two commands are the whole gate: there's no CI. `/work-issue` runs them before every PR, and anyone checking a branch runs the same ones.
 - Tests are offline and deterministic: SQLite runs in-memory or in temp files, and OpenAI is
   always a fake client. `npm run eval` (real LLM calls) is outside the gate.
 

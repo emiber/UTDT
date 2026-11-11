@@ -2,5 +2,6 @@
 # The agent reads this file so it doesn't have to ask every time.
 
 # Issue tracker: local — Markdown files under issues/ (see workflow/issue-tracker.md).
-# The project is local-only: no remote, no hosting platform.
+# The workflow is local: no hosting platform for issues or PRs, no CI. The repo has a
+# GitHub remote (origin) only to share it.
 issue_tracker=local

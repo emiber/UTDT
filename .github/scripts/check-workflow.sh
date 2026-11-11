@@ -4,7 +4,7 @@
 #
 #   bash .github/scripts/check-workflow.sh
 #
-# The project is local-only (no CI): run it after changing the workflow files.
+# There's no CI: run it after changing the workflow files.
 # /init-project runs it in its integrity check. Prints one error per problem and
 # exits 1 if any.
 #

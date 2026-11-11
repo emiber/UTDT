@@ -5,7 +5,7 @@ description: Prepare the integration PR (epic branch → main) when an epic's ch
 
 # finish-epic
 
-Close out the target epic (its issue number — provided as the argument, or stated by the user) by preparing its integration PR, following the contract in `workflow/epics.md`. This is the canonical playbook: Codex runs it directly and the Claude Code `/finish-epic` command delegates to it. The project is local-only: the PR is the epic branch, and the agent merges it into `main` once the quality gate passes; commits and merges are automatic (`workflow/rules.md`).
+Close out the target epic (its issue number — provided as the argument, or stated by the user) by preparing its integration PR, following the contract in `workflow/epics.md`. This is the canonical playbook: Codex runs it directly and the Claude Code `/finish-epic` command delegates to it. The workflow is local: the PR is the epic branch, and the agent merges it into `main` once the quality gate passes; commits and merges are automatic (`workflow/rules.md`).
 
 1. Read `workflow/rules.md`, `workflow/principles.md`, `workflow/epics.md`, and `workflow/issue-tracker.md`.
 2. Run the preflight from `workflow/epics.md` (`/finish-epic` section). It's read-only — if one fails, stop and report the fix. It confirms the target really is an epic (`type: epic`) and that its integration branch `epic/<n>-<slug>` exists.
