@@ -180,7 +180,8 @@ workflow/       AI-assisted workflow guides
 
 ## Workflow
 
-This project uses an AI-assisted, local-only workflow: issues are Markdown files under
+This project uses an AI-assisted workflow that runs locally (GitHub only hosts a copy to
+share it): issues are Markdown files under
 `issues/` (written in Spanish), and every change goes on its own branch. The agent commits
 it and merges it once the quality gate and the self-review pass. Use `/create-issue`,
 `/refine-issue <n>` and `/work-issue <n>`. Full details:

@@ -4,7 +4,7 @@ Guidance for code agents (Codex and compatible) in this project.
 
 The full workflow lives in `workflow/`. Read, in order:
 
-1. `workflow/rules.md` — the canonical hard rules (merge, commits, local-only, secrets, language).
+1. `workflow/rules.md` — the canonical hard rules (merge, commits, the GitHub remote, secrets, language).
 2. `workflow/principles.md` — principles that govern every decision. The main one: do the minimum that solves the problem; don't over-engineer.
 3. `workflow/scaffolding.md` — how to define the architecture and stack of a new project.
 4. `workflow/issue-creation.md` — how to create a new issue file under `issues/`.
@@ -21,7 +21,7 @@ The canonical list is in `workflow/rules.md`. The essential safety rules, inline
 
 - Never commit work directly to `main`. Only issue files under `issues/` are committed there, by the `create-issue` and `refine-issue` skills. Everything else goes on a branch, which you merge into its base (`git merge --no-ff`) once the quality gate is green and the self-review has no open blockers.
 - Commits and merges are automatic: the user authorized them for this local POC, so don't ask first. Never merge with a failing gate, and never use `--no-verify`.
-- Local-only: this project has no remote. Never add one, push, or publish anything to an external service unless the user asks.
+- Local workflow, GitHub only to share: the repo has a GitHub remote (`origin`), but issues, PRs and merges stay local. Push only when the user asks; never add another remote or publish anything else to an external service unless the user asks.
 - Never commit secrets or credentials. Keep them in gitignored `.env` files; provide a `.env.example` with placeholder values.
 - Plan before non-trivial work, and ask when something is ambiguous — don't invent requirements.
 - Language: issues, their PR sections, and commit messages in Spanish; code and docs in English (details in `workflow/rules.md`, rule 8). Reply in the language the user writes in.

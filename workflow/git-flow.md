@@ -1,6 +1,6 @@
 # Git flow — contract
 
-Guide for `/work-issue <n>`. Defines the `main → branch → implementation → local PR → merge` cycle. This project is **local-only**: there's no remote and no hosting platform, so the PR is a branch described in its issue file (see `workflow/issue-tracker.md`, Local PRs). Once every gate passes, the agent merges it into its base (step 8): the user authorized automatic commits and merges for this POC (`workflow/rules.md`). This contract is **strict**: don't modify it unless the user asks. Issues that belong to an epic add an integration-branch layer on top of this cycle (child branches target the epic's branch, not `main`) — see `workflow/epics.md`.
+Guide for `/work-issue <n>`. Defines the `main → branch → implementation → local PR → merge` cycle. This project's workflow is **local**: the repo has a GitHub remote only to share it, and there's no hosting platform for PRs, so the PR is a branch described in its issue file (see `workflow/issue-tracker.md`, Local PRs). Once every gate passes, the agent merges it into its base (step 8): the user authorized automatic commits and merges for this POC (`workflow/rules.md`). This contract is **strict**: don't modify it unless the user asks. Issues that belong to an epic add an integration-branch layer on top of this cycle (child branches target the epic's branch, not `main`) — see `workflow/epics.md`.
 
 ## Preflight checks
 
@@ -31,7 +31,7 @@ If the issue is itself an epic (`type: epic`), don't implement it directly: its 
 git checkout main
 ```
 
-There's no remote to pull from: local `main` is the source of truth.
+There's nothing to pull: the GitHub remote is only a copy to share, and local `main` is the source of truth.
 
 ### 3. Create the working branch
 
@@ -98,7 +98,7 @@ A **trivial** change (see step 4) may skip the separate agent: check the diff ag
 
 ### 6. Prepare the local PR
 
-No push, no platform: the PR is the working branch plus a description in its issue file. On the working branch:
+Nothing goes to GitHub: the PR is the working branch plus a description in its issue file. On the working branch:
 
 1. **Base branch**: `main` normally; the epic's integration branch (`epic/<epicN>-<slug>`) if the issue is a child of an epic.
 2. **Append a `## Pull request` section** to the issue file:
@@ -169,7 +169,7 @@ An issue isn't done until all of these hold. Check them before preparing the PR:
 - Never commit to `main` directly. The one exception: issue files under `issues/`, committed by `/create-issue` and `/refine-issue` (see `workflow/issue-tracker.md`).
 - Merge a working branch into its base only when it's ready (step 8): never with a failing gate, open self-review blockers, or an unwritten `## Pull request` section.
 - Commits and merges are automatic: the user authorized them for this POC (`workflow/rules.md`), so don't ask before committing or merging.
-- This project is local-only: never add a remote or push anywhere unless the user asks.
+- The GitHub remote is only to share the repo: push only when the user asks, and never add another remote.
 - Never rewrite the history of `main` or an epic branch (no rebase, `reset --hard`, or amend there).
 - Never skip git hooks (`--no-verify`) or weaken tests just to get a green run.
 - If any step fails, stop the flow and report; don't improvise destructive workarounds.

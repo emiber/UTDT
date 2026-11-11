@@ -2,7 +2,7 @@
 
 A base for kicking off projects with AI-assisted development. Optimized for **Claude Code**, with best-effort support for **GitHub Copilot** and **Codex**.
 
-This project runs the workflow **fully locally**: no remote repository, no hosting platform, no CI. Issues are Markdown files in the repo (`issues/`), a "PR" is a local branch that the agent merges once every gate passes, and the quality gate runs on your machine.
+This project runs the workflow **locally**: no hosting platform for issues or PRs, and no CI. The repo has a GitHub remote only to share it. Issues are Markdown files in the repo (`issues/`), a "PR" is a local branch that the agent merges once every gate passes, and the quality gate runs on your machine.
 
 > **This file documents the workflow itself.** The project's own README lives at the repo root (`README.md`) and is generated/replaced by `/init-project`. This file is not touched by scaffolding.
 
@@ -99,7 +99,7 @@ Reply to the user in the language they write in. In this project, issues, their 
 
 A few rules the agents enforce (full detail in `workflow/principles.md` and `workflow/git-flow.md`):
 
-- **Local-only.** No remote, no push, nothing published to an external service unless you ask.
+- **Local workflow, GitHub only to share.** The agent pushes only when you ask, and publishes nothing else to an external service unless you ask.
 - **Atomic components + tests.** Prefer the smallest composable units; each ships with unit tests and coverage meets the project threshold (default 85%).
 - **Plan approval before code.** `/work-issue` posts a structured plan and waits for your explicit OK before writing code (trivial changes: a one-sentence confirmation).
 - **Independent self-review before the PR.** A fresh agent with a clean context reviews the diff against the issue, the Definition of Done, and a security checklist; blockers are fixed before the PR is prepared.

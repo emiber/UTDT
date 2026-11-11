@@ -25,8 +25,11 @@ rules inline and point here for the full list. If a rule changes, change it here
    the working branch, in small, descriptive commits. A change made outside a workflow
    command follows the same path: its own `<type>/<slug>` branch, the quality gate, then
    the merge. Commit only what belongs to the change.
-6. **Local-only.** This project has no remote: never add one, push, or publish
-   anything (issues, code, PRs) to an external service unless the user asks.
+6. **Local workflow; GitHub only to share.** The repo has a GitHub remote (`origin`) so
+   it can be shared. The work stays local: issues are files under `issues/`, a PR is a
+   local branch the agent merges, and there's no CI. Push to `origin` only when the user
+   asks. Never add another remote, open issues or PRs on GitHub, or publish anything to
+   another external service unless the user asks.
 7. **Never commit secrets or credentials.** Keep them in gitignored `.env` files
    and provide a `.env.example` with placeholder values.
 8. **Language.** Issues (files under `issues/`), their `## Pull request` sections, and
